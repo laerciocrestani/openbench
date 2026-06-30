@@ -1,0 +1,33 @@
+# Binaries
+/gitia
+/bin/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test
+*.test
+*.out
+coverage.txt
+
+# Go workspace
+go.work
+go.work.sum
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Local config
+.gitia.yaml
+.env
+.env.*
+
+# OS
+.DS_Store
+Thumbs.db

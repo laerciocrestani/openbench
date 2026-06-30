@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "hooks": {
+    "beforeShellExecution": [
+      {
+        "command": "./hooks/block-agent-git.sh",
+        "matcher": "git (commit|push)"
+      }
+    ]
+  }
+}
