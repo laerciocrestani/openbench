@@ -14,6 +14,33 @@ cd gitia
 go install ./cmd/gitia
 ```
 
+O `go install` instala o binário em `~/go/bin/gitia`. Se o comando `gitia` não for encontrado, adicione o diretório ao PATH.
+
+**Solução permanente** — adicione ao `~/.zshrc`:
+
+```bash
+export PATH="$PATH:$HOME/go/bin"
+```
+
+Recarregue o shell:
+
+```bash
+source ~/.zshrc
+```
+
+Confirme:
+
+```bash
+which gitia
+gitia --help
+```
+
+**Solução temporária** (sem alterar o shell):
+
+```bash
+~/go/bin/gitia config init
+```
+
 Requisitos:
 
 - `git`
