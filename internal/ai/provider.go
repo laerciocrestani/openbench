@@ -18,6 +18,8 @@ type CommitSuggestion struct {
 
 type Provider interface {
 	SuggestCommit(ctx context.Context, diff string, lang string) (*CommitSuggestion, error)
+	SuggestPR(ctx context.Context, diff, branch, base, lang, commitLog string) (*PRSuggestion, error)
+	UsageStats() UsageSummary
 }
 
 func New(cfg *config.Config) (Provider, error) {

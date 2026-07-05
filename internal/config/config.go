@@ -23,13 +23,15 @@ const (
 )
 
 type Config struct {
-	Provider     Provider `yaml:"provider"`
-	APIKey       string   `yaml:"api_key"`
-	Model        string   `yaml:"model"`
-	Language     string   `yaml:"language"`
-	BaseBranch   string   `yaml:"base_branch"`
-	CoAuthor     string   `yaml:"co_author"`
-	MaxDiffBytes int      `yaml:"max_diff_bytes"`
+	Provider         Provider `yaml:"provider"`
+	APIKey           string   `yaml:"api_key"`
+	Model            string   `yaml:"model"`
+	Language         string   `yaml:"language"`
+	BaseBranch       string   `yaml:"base_branch"`
+	CoAuthor         string   `yaml:"co_author"`
+	MaxDiffBytes     int      `yaml:"max_diff_bytes"`
+	InputPricePer1M  float64  `yaml:"input_price_per_1m,omitempty"`
+	OutputPricePer1M float64  `yaml:"output_price_per_1m,omitempty"`
 }
 
 func Default() Config {

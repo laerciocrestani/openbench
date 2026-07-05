@@ -16,6 +16,7 @@ type openAIClient struct {
 	cfg        *config.Config
 	endpoint   string
 	httpClient *http.Client
+	usage      UsageSummary
 }
 
 type chatRequest struct {
@@ -34,6 +35,12 @@ type chatResponse struct {
 			Content string `json:"content"`
 		} `json:"message"`
 	} `json:"choices"`
+	Usage *struct {
+		PromptTokens     int      `json:"prompt_tokens"`
+		CompletionTokens int      `json:"completion_tokens"`
+		TotalTokens      int      `json:"total_tokens"`
+		Cost             *float64 `json:"cost"`
+	} `json:"usage"`
 	Error *struct {
 		Message string `json:"message"`
 	} `json:"error"`
@@ -49,13 +56,17 @@ func NewOpenAI(cfg *config.Config, endpoint string) Provider {
 	}
 }
 
+func (c *openAIClient) UsageStats() UsageSummary {
+	return c.usage
+}
+
 func (c *openAIClient) SuggestCommit(ctx context.Context, diff string, lang string) (*CommitSuggestion, error) {
 	diff = truncateDiff(diff, c.cfg.MaxDiffBytes)
 	prompt := buildPrompt(diff, lang)
 
 	var lastErr error
 	for attempt := 0; attempt < 2; attempt++ {
-		content, err := c.chat(ctx, prompt)
+		content, err := c.chat(ctx, prompt, usageLabel("commit", attempt))
 		if err != nil {
 			return nil, err
 		}
@@ -69,7 +80,11 @@ func (c *openAIClient) SuggestCommit(ctx context.Context, diff string, lang stri
 	return nil, lastErr
 }
 
-func (c *openAIClient) chat(ctx context.Context, prompt string) (string, error) {
+func (c *openAIClient) SuggestPR(ctx context.Context, diff, branch, base, lang, commitLog string) (*PRSuggestion, error) {
+	return suggestPRWithRetry(ctx, diff, branch, base, lang, commitLog, c.cfg.MaxDiffBytes, c.chat)
+}
+
+func (c *openAIClient) chat(ctx context.Context, prompt, label string) (string, error) {
 	reqBody := chatRequest{
 		Model: c.cfg.Model,
 		Messages: []chatMessage{
@@ -120,6 +135,21 @@ func (c *openAIClient) chat(ctx context.Context, prompt string) (string, error) 
 
 	if len(chatResp.Choices) == 0 {
 		return "", fmt.Errorf("API retornou resposta vazia")
+	}
+
+	if chatResp.Usage != nil {
+		var apiCost *float64
+		if c.cfg.Provider == config.ProviderOpenRouter {
+			apiCost = chatResp.Usage.Cost
+		}
+		c.usage.Add(buildUsageRecord(
+			label,
+			chatResp.Usage.PromptTokens,
+			chatResp.Usage.CompletionTokens,
+			chatResp.Usage.TotalTokens,
+			apiCost,
+			c.cfg,
+		))
 	}
 
 	return chatResp.Choices[0].Message.Content, nil

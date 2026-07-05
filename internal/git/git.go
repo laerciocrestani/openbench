@@ -60,6 +60,47 @@ func (r *Repo) DiffBranch(base string) (string, error) {
 	return r.run("diff", fmt.Sprintf("%s...HEAD", base))
 }
 
+func (r *Repo) HasStagedChanges() (bool, error) {
+	diff, err := r.DiffStaged()
+	if err != nil {
+		return false, err
+	}
+	return strings.TrimSpace(diff) != "", nil
+}
+
+func (r *Repo) ResolveBase(preferred string) (string, error) {
+	candidates := []string{preferred}
+	if preferred != "" {
+		candidates = append(candidates, "origin/"+preferred)
+	}
+
+	seen := make(map[string]bool)
+	for _, ref := range candidates {
+		ref = strings.TrimSpace(ref)
+		if ref == "" || seen[ref] {
+			continue
+		}
+		seen[ref] = true
+		if _, err := r.run("rev-parse", "--verify", ref); err == nil {
+			return ref, nil
+		}
+	}
+
+	return "", fmt.Errorf("branch base %q não encontrada (tente git fetch)", preferred)
+}
+
+func (r *Repo) LogOnBranch(base string) (string, error) {
+	return r.run("log", fmt.Sprintf("%s..HEAD", base), "--oneline", "--no-decorate")
+}
+
+func (r *Repo) IsSameAsBase(base string) (bool, error) {
+	count, err := r.run("rev-list", "--count", fmt.Sprintf("%s..HEAD", base))
+	if err != nil {
+		return false, err
+	}
+	return count == "0", nil
+}
+
 func (r *Repo) CurrentBranch() (string, error) {
 	return r.run("rev-parse", "--abbrev-ref", "HEAD")
 }

@@ -7,7 +7,7 @@ import (
 	"os/exec"
 	"strings"
 
-	"github.com/laerciocrestani/gitia/internal/formatter"
+	"github.com/laerciocrestani/gitia/internal/ai"
 )
 
 type Client struct {
@@ -47,7 +47,7 @@ func (c *Client) Exists() (bool, string, error) {
 	return true, out, nil
 }
 
-func (c *Client) Create(title, commitMessage, base string, draft bool) (string, error) {
+func (c *Client) Create(suggestion *ai.PRSuggestion, base string, draft bool) (string, error) {
 	exists, url, err := c.Exists()
 	if err != nil {
 		return "", err
@@ -56,13 +56,13 @@ func (c *Client) Create(title, commitMessage, base string, draft bool) (string, 
 		return url, fmt.Errorf("PR já existe: %s", url)
 	}
 
-	body := buildPRBody(commitMessage)
+	body := FormatBody(suggestion)
 
 	args := []string{
 		"pr", "create",
-		"--title", title,
+		"--title", suggestion.Title,
 		"--body", body,
-		"--base", base,
+		"--base", baseForGH(base),
 	}
 	if draft {
 		args = append(args, "--draft")
@@ -71,36 +71,52 @@ func (c *Client) Create(title, commitMessage, base string, draft bool) (string, 
 	return c.run(args...)
 }
 
-func buildPRBody(commitMessage string) string {
-	bullets := formatter.BodyBullets(commitMessage)
-
+func FormatBody(s *ai.PRSuggestion) string {
 	var b strings.Builder
+
 	b.WriteString("## Summary\n")
-	if len(bullets) == 0 {
-		b.WriteString("- ")
-		b.WriteString(formatter.TitleLine(commitMessage))
-		b.WriteString("\n")
-	} else {
-		for _, bullet := range bullets {
-			b.WriteString("- ")
-			b.WriteString(bullet)
-			b.WriteString("\n")
-		}
-	}
+	writeBullets(&b, s.Summary)
+
+	b.WriteString("\n## Changes\n")
+	writeBullets(&b, s.Changes)
 
 	b.WriteString("\n## Test plan\n")
-	b.WriteString("- [ ] Verificar alterações localmente\n")
-	b.WriteString("- [ ] Confirmar que testes passam\n")
+	writeChecklist(&b, s.TestPlan)
+
+	if len(s.Notes) > 0 {
+		b.WriteString("\n## Notes\n")
+		writeBullets(&b, s.Notes)
+	}
 
 	return b.String()
 }
 
-func (c *Client) PreviewCreate(title, commitMessage, base string, draft bool) string {
-	body := buildPRBody(commitMessage)
+func writeBullets(b *strings.Builder, items []string) {
+	for _, item := range items {
+		b.WriteString("- ")
+		b.WriteString(strings.TrimSpace(item))
+		b.WriteString("\n")
+	}
+}
+
+func writeChecklist(b *strings.Builder, items []string) {
+	for _, item := range items {
+		b.WriteString("- [ ] ")
+		b.WriteString(strings.TrimSpace(item))
+		b.WriteString("\n")
+	}
+}
+
+func baseForGH(base string) string {
+	return strings.TrimPrefix(base, "origin/")
+}
+
+func (c *Client) PreviewCreate(suggestion *ai.PRSuggestion, base string, draft bool) string {
+	body := FormatBody(suggestion)
 	draftFlag := ""
 	if draft {
 		draftFlag = " --draft"
 	}
 	return fmt.Sprintf("gh pr create --title %q --body %q --base %q%s",
-		title, body, base, draftFlag)
+		suggestion.Title, body, baseForGH(base), draftFlag)
 }
