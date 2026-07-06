@@ -33,14 +33,19 @@ func InitInteractive() error {
 	prevProvider := cfg.Provider
 
 	provider, err := sess.Select(reader, ui.SelectConfig{
-		Label:   "Provedor",
-		Options: []string{"openrouter", "openai", "gemini"},
-		Default: string(cfg.Provider),
+		Label:      "Provedor",
+		Options:    []string{"openrouter", "openai", "gemini"},
+		Default:    string(cfg.Provider),
+		AllowOther: true,
 	})
 	if err != nil {
 		return err
 	}
-	cfg.Provider = Provider(provider)
+	p, err := normalizeProvider(provider)
+	if err != nil {
+		return err
+	}
+	cfg.Provider = p
 
 	modelDefault := cfg.Model
 	if cfg.Provider != prevProvider || modelDefault == "" {
@@ -78,36 +83,71 @@ func InitInteractive() error {
 
 	sess.Section("Preferências")
 
-	lang, err := promptKeep(sess, reader, "Idioma das mensagens", cfg.Language, cfg.Language)
+	langDefault := cfg.Language
+	if langDefault == "" {
+		langDefault = "pt-BR"
+	}
+	lang, err := sess.Select(reader, ui.SelectConfig{
+		Label:      "Idioma das mensagens",
+		Options:    []string{"pt-BR", "en-US", "pt", "en"},
+		Default:    langDefault,
+		AllowOther: true,
+	})
 	if err != nil {
 		return err
 	}
 	cfg.Language = lang
 
-	base, err := promptKeep(sess, reader, "Branch base", cfg.BaseBranch, cfg.BaseBranch)
+	baseDefault := cfg.BaseBranch
+	if baseDefault == "" {
+		baseDefault = "main"
+	}
+	base, err := sess.Select(reader, ui.SelectConfig{
+		Label:      "Branch base",
+		Options:    []string{"main", "master", "develop"},
+		Default:    baseDefault,
+		AllowOther: true,
+	})
 	if err != nil {
 		return err
 	}
 	cfg.BaseBranch = base
 
-	coAuthorDefault := cfg.CoAuthor
-	if coAuthorDefault == "" {
-		coAuthorDefault = "(vazio)"
+	coAuthorOptions := []string{"(nenhum)"}
+	coAuthorDefault := "(nenhum)"
+	if strings.TrimSpace(cfg.CoAuthor) != "" {
+		coAuthorOptions = append(coAuthorOptions, cfg.CoAuthor)
+		coAuthorDefault = cfg.CoAuthor
 	}
-	coAuthor, err := promptKeep(sess, reader, "Co-author trailer (opcional)", coAuthorDefault, cfg.CoAuthor)
+	coAuthorChoice, err := sess.Select(reader, ui.SelectConfig{
+		Label:      "Co-author trailer (opcional)",
+		Options:    coAuthorOptions,
+		Default:    coAuthorDefault,
+		AllowOther: true,
+	})
 	if err != nil {
 		return err
 	}
-	cfg.CoAuthor = coAuthor
+	if coAuthorChoice == "(nenhum)" {
+		cfg.CoAuthor = ""
+	} else {
+		cfg.CoAuthor = coAuthorChoice
+	}
 
-	fmt.Fprintln(os.Stderr)
-	sess.Info("Limpar o terminal antes de cada comando deixa só a saída do GitAi visível,")
-	sess.Info("sem misturar com histórico anterior no console.")
-	clear, err := promptYesNo(sess, reader, "Ativar limpeza do terminal?", cfg.ClearScreen)
+	clearDefault := "Não"
+	if cfg.ClearScreen {
+		clearDefault = "Sim"
+	}
+	clearChoice, err := sess.Select(reader, ui.SelectConfig{
+		Label:      "Limpar terminal antes de cada comando",
+		Options:    []string{"Sim", "Não"},
+		Default:    clearDefault,
+		AllowOther: false,
+	})
 	if err != nil {
 		return err
 	}
-	cfg.ClearScreen = clear
+	cfg.ClearScreen = clearChoice == "Sim"
 
 	if strings.TrimSpace(cfg.APIKey) == "" && strings.TrimSpace(os.Getenv(EnvAPIKey)) == "" {
 		return fmt.Errorf("chave API obrigatória — defina no wizard ou na variável %s", EnvAPIKey)
@@ -122,6 +162,16 @@ func InitInteractive() error {
 	sess.Detail(savePath)
 	sess.Success("Configuration saved ✨")
 	return nil
+}
+
+func normalizeProvider(raw string) (Provider, error) {
+	p := Provider(strings.ToLower(strings.TrimSpace(raw)))
+	switch p {
+	case ProviderOpenAI, ProviderGemini, ProviderOpenRouter:
+		return p, nil
+	default:
+		return "", fmt.Errorf("provedor %q inválido — use openrouter, openai ou gemini", raw)
+	}
 }
 
 func hasSavedConfig(cfg *Config) bool {
@@ -176,58 +226,40 @@ func apiKeyHint(p Provider) string {
 	}
 }
 
-func promptKeep(sess *ui.Session, reader *bufio.Reader, label, displayDefault, current string) (string, error) {
-	sess.Prompt(fmt.Sprintf("%s [%s]: ", label, displayDefault))
-	input, err := reader.ReadString('\n')
-	if err != nil {
-		return "", err
-	}
-	input = strings.TrimSpace(input)
-	if input == "" {
-		return current, nil
-	}
-	return input, nil
-}
-
 func promptAPIKey(sess *ui.Session, reader *bufio.Reader, provider Provider, current string) (string, error) {
-	sess.Info("Chave em " + apiKeyHint(provider))
 	current = strings.TrimSpace(current)
-	if current == "" {
-		sess.Prompt("Chave API: ")
-	} else {
-		sess.Prompt(fmt.Sprintf("Chave API [%s, Enter mantém]: ", MaskAPIKey(current)))
+
+	if current != "" {
+		keepLabel := fmt.Sprintf("Manter atual (%s)", MaskAPIKey(current))
+		choice, err := sess.Select(reader, ui.SelectConfig{
+			Label:      "Chave API",
+			Options:    []string{keepLabel, "Digitar nova chave"},
+			Default:    keepLabel,
+			AllowOther: true,
+		})
+		if err != nil {
+			return "", err
+		}
+		if choice == keepLabel {
+			return current, nil
+		}
+		if choice != "Digitar nova chave" {
+			return choice, nil
+		}
 	}
+
+	sess.Info("Chave em " + apiKeyHint(provider))
+	sess.Prompt("Chave API: ")
 	input, err := reader.ReadString('\n')
 	if err != nil {
 		return "", err
 	}
 	input = strings.TrimSpace(input)
-	if input == "" {
+	if input == "" && current != "" {
 		return current, nil
+	}
+	if input == "" {
+		return "", fmt.Errorf("chave API obrigatória")
 	}
 	return input, nil
-}
-
-func promptYesNo(sess *ui.Session, reader *bufio.Reader, label string, current bool) (bool, error) {
-	defaultLabel := "n"
-	if current {
-		defaultLabel = "s"
-	}
-	sess.Prompt(fmt.Sprintf("%s (s/n) [%s]: ", label, defaultLabel))
-	input, err := reader.ReadString('\n')
-	if err != nil {
-		return false, err
-	}
-	input = strings.TrimSpace(strings.ToLower(input))
-	if input == "" {
-		return current, nil
-	}
-	switch input {
-	case "s", "sim", "y", "yes":
-		return true, nil
-	case "n", "nao", "não", "no":
-		return false, nil
-	default:
-		return false, fmt.Errorf("resposta inválida: %q (use s ou n)", input)
-	}
 }

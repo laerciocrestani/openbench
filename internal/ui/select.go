@@ -10,7 +10,7 @@ import (
 	"golang.org/x/term"
 )
 
-const otherOption = "Outro..."
+const otherOption = "Outro"
 
 // SelectConfig configura um seletor interativo com navegação por setas.
 type SelectConfig struct {
@@ -71,6 +71,9 @@ func (s *Session) selectInteractive(label string, options []string, start int) (
 	}
 	defer term.Restore(fd, oldState)
 
+	out := os.Stderr
+	const eol = "\r\n"
+
 	cursor := start
 	if cursor < 0 {
 		cursor = 0
@@ -80,14 +83,15 @@ func (s *Session) selectInteractive(label string, options []string, start int) (
 	}
 
 	lines := len(options) + 3
+
 	render := func() {
-		fmt.Fprint(s.out, "\033[?25l") // hide cursor
+		fmt.Fprint(out, "\033[?25l")
 		var b strings.Builder
-		b.WriteString("\r\033[K")
 		b.WriteString(s.paint(label, bold+cyan))
-		b.WriteString("\n")
+		b.WriteString(eol)
 		b.WriteString(s.paint("  ↑↓ navegar · Enter confirmar", dim))
-		b.WriteString("\n\n")
+		b.WriteString(eol)
+		b.WriteString(eol)
 		for i, opt := range options {
 			marker := " "
 			style := dim
@@ -97,17 +101,18 @@ func (s *Session) selectInteractive(label string, options []string, start int) (
 			}
 			line := fmt.Sprintf("  (%s) %s", marker, opt)
 			b.WriteString(s.paint(line, style))
-			b.WriteString("\n")
+			b.WriteString(eol)
 		}
-		fmt.Fprint(s.out, b.String())
+		fmt.Fprint(out, b.String())
 	}
 
 	clear := func() {
-		fmt.Fprintf(s.out, "\033[%dA\033[J", lines)
+		fmt.Fprintf(out, "\033[%dA\033[J", lines)
 	}
 
+	fmt.Fprint(out, eol)
 	render()
-	defer fmt.Fprint(s.out, "\033[?25h") // show cursor
+	defer fmt.Fprint(out, "\033[?25h")
 
 	for {
 		key, err := readKey(os.Stdin)
@@ -119,7 +124,7 @@ func (s *Session) selectInteractive(label string, options []string, start int) (
 		switch key {
 		case keyEnter:
 			clear()
-			fmt.Fprintf(s.out, "  %s %s\n\n", s.paint("✓", green), s.paint(label+": "+options[cursor], dim))
+			fmt.Fprintf(out, "  %s %s%s%s", s.paint("✓", green), s.paint(label+": "+options[cursor], dim), eol, eol)
 			return cursor, nil
 		case keyCancel:
 			clear()
@@ -212,7 +217,8 @@ func (s *Session) selectFallback(reader *bufio.Reader, label string, options []s
 }
 
 func (s *Session) promptCustom(reader *bufio.Reader, label string) (string, error) {
-	s.Prompt(label + " (personalizado): ")
+	fmt.Fprintln(os.Stderr)
+	s.Prompt(label + ": ")
 	input, err := reader.ReadString('\n')
 	if err != nil {
 		return "", err
@@ -229,28 +235,7 @@ func indexOf(options []string, value string) int {
 	return -1
 }
 
-// SelectEnabled indica se o seletor interativo pode ser usado.
-func SelectEnabled() bool {
-	if os.Getenv("NO_COLOR") != "" || os.Getenv("GITAI_NO_UI") != "" || os.Getenv("CI") != "" {
-		return false
-	}
-	return term.IsTerminal(int(os.Stdin.Fd()))
-}
-
 // StdinReader retorna um reader para prompts de texto após o seletor.
 func StdinReader() *bufio.Reader {
 	return bufio.NewReader(os.Stdin)
-}
-
-// DiscardLine limpa bytes pendentes no stdin (útil após modo raw).
-func DiscardLine(r io.Reader) {
-	br, ok := r.(*bufio.Reader)
-	if !ok {
-		return
-	}
-	for br.Buffered() > 0 {
-		if _, err := br.ReadByte(); err != nil {
-			return
-		}
-	}
 }
