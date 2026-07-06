@@ -13,8 +13,20 @@ func Run() error {
 	}
 
 	initTheme()
-	m := newApp()
+	cfg := loadRefreshConfig()
+	m := newApp(cfg)
 	p := tea.NewProgram(m, tea.WithAltScreen())
+
+	var watcher *repoWatcher
+	if cfg.watchFiles {
+		if root, err := repoRoot(); err == nil {
+			watcher, _ = startRepoWatcher(p, root)
+		}
+	}
+	if watcher != nil {
+		defer watcher.Close()
+	}
+
 	if _, err := p.Run(); err != nil {
 		return err
 	}

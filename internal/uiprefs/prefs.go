@@ -4,13 +4,20 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"time"
 
 	"gopkg.in/yaml.v3"
 )
 
+const (
+	defaultAutoRefreshSeconds = 5
+)
+
 type filePrefs struct {
-	InteractiveUI *bool `yaml:"interactive_ui"`
-	UIColor       *bool `yaml:"ui_color"`
+	InteractiveUI        *bool `yaml:"interactive_ui"`
+	UIColor              *bool `yaml:"ui_color"`
+	UIAutoRefreshSeconds *int  `yaml:"ui_auto_refresh_seconds"`
+	UIWatchFiles         *bool `yaml:"ui_watch_files"`
 }
 
 // InteractiveUIEnabled indica se `gitai` sem subcomando deve abrir a TUI.
@@ -24,6 +31,29 @@ func InteractiveUIEnabled() bool {
 		return true
 	}
 	return *prefs.InteractiveUI
+}
+
+// AutoRefreshInterval retorna o intervalo de polling do dashboard TUI.
+// 0 desliga o polling (watcher fsnotify continua se ui_watch_files for true).
+func AutoRefreshInterval() time.Duration {
+	secs := defaultAutoRefreshSeconds
+	prefs := loadPrefs()
+	if prefs.UIAutoRefreshSeconds != nil {
+		secs = *prefs.UIAutoRefreshSeconds
+	}
+	if secs <= 0 {
+		return 0
+	}
+	return time.Duration(secs) * time.Second
+}
+
+// WatchFilesEnabled indica se a TUI observa mudanças no filesystem (fsnotify).
+func WatchFilesEnabled() bool {
+	prefs := loadPrefs()
+	if prefs.UIWatchFiles == nil {
+		return true
+	}
+	return *prefs.UIWatchFiles
 }
 
 // ColorsEnabled indica se cores ANSI/lipgloss estão ativas.
@@ -51,6 +81,12 @@ func loadPrefs() filePrefs {
 		}
 		if p.UIColor != nil {
 			merged.UIColor = p.UIColor
+		}
+		if p.UIAutoRefreshSeconds != nil {
+			merged.UIAutoRefreshSeconds = p.UIAutoRefreshSeconds
+		}
+		if p.UIWatchFiles != nil {
+			merged.UIWatchFiles = p.UIWatchFiles
 		}
 	}
 	return merged

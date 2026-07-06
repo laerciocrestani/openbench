@@ -34,8 +34,10 @@ type Config struct {
 	InputPricePer1M  float64  `yaml:"input_price_per_1m,omitempty"`
 	OutputPricePer1M float64  `yaml:"output_price_per_1m,omitempty"`
 	ClearScreen      bool     `yaml:"clear_screen,omitempty"`
-	InteractiveUI    bool     `yaml:"interactive_ui,omitempty"`
-	UIColor          bool     `yaml:"ui_color,omitempty"`
+	InteractiveUI        bool `yaml:"interactive_ui,omitempty"`
+	UIColor              bool `yaml:"ui_color,omitempty"`
+	UIAutoRefreshSeconds int  `yaml:"ui_auto_refresh_seconds,omitempty"`
+	UIWatchFiles         bool `yaml:"ui_watch_files,omitempty"`
 }
 
 func Default() Config {
@@ -45,8 +47,10 @@ func Default() Config {
 		Language:      "pt-BR",
 		BaseBranch:    "main",
 		MaxDiffBytes:  120000,
-		InteractiveUI: true,
-		UIColor:       true,
+		InteractiveUI:        true,
+		UIColor:              true,
+		UIAutoRefreshSeconds: 5,
+		UIWatchFiles:         true,
 	}
 }
 

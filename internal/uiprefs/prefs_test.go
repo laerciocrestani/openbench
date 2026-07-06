@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestInteractiveUIEnabled_default(t *testing.T) {
@@ -88,5 +89,49 @@ func TestColorsEnabled_noColorEnv(t *testing.T) {
 
 	if ColorsEnabled() {
 		t.Fatal("expected NO_COLOR to disable colors")
+	}
+}
+
+func TestAutoRefreshInterval_default(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	path := filepath.Join(dir, "config.yaml")
+	if err := os.WriteFile(path, []byte("provider: openrouter\napi_key: test-key\nmodel: m\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("GITAI_CONFIG", path)
+
+	if got := AutoRefreshInterval(); got != 5*time.Second {
+		t.Fatalf("expected 5s default, got %v", got)
+	}
+}
+
+func TestAutoRefreshInterval_configOff(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	path := filepath.Join(dir, "config.yaml")
+	yaml := "provider: openrouter\napi_key: test-key\nmodel: m\nui_auto_refresh_seconds: 0\n"
+	if err := os.WriteFile(path, []byte(yaml), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("GITAI_CONFIG", path)
+
+	if got := AutoRefreshInterval(); got != 0 {
+		t.Fatalf("expected polling disabled, got %v", got)
+	}
+}
+
+func TestWatchFilesEnabled_configOff(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	path := filepath.Join(dir, "config.yaml")
+	yaml := "provider: openrouter\napi_key: test-key\nmodel: m\nui_watch_files: false\n"
+	if err := os.WriteFile(path, []byte(yaml), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("GITAI_CONFIG", path)
+
+	if WatchFilesEnabled() {
+		t.Fatal("expected file watcher disabled from config")
 	}
 }

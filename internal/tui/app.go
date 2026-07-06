@@ -12,8 +12,9 @@ import (
 )
 
 type snapshotMsg struct {
-	snap *app.WorkspaceSnapshot
-	err  error
+	snap   *app.WorkspaceSnapshot
+	err    error
+	silent bool
 }
 
 type diffLoadedMsg struct {
@@ -23,35 +24,73 @@ type diffLoadedMsg struct {
 }
 
 type appModel struct {
-	screen   Screen
-	snapshot *app.WorkspaceSnapshot
-	width    int
-	height   int
-	loading  bool
-	err      error
-	status   string
-	diff     diffModel
-	report   reportModel
-	action   *actionState
+	screen         Screen
+	snapshot       *app.WorkspaceSnapshot
+	width          int
+	height         int
+	loading        bool
+	err            error
+	status         string
+	diff           diffModel
+	report         reportModel
+	action         *actionState
+	refresh        refreshConfig
+	refreshPending bool
 }
 
-func newApp() appModel {
+func newApp(cfg refreshConfig) appModel {
 	return appModel{
 		screen:  ScreenDashboard,
 		loading: true,
 		status:  "Carregando repositório…",
 		diff:    newDiffModel(),
 		report:  newReportModel(),
+		refresh: cfg,
 	}
 }
 
 func (m appModel) Init() tea.Cmd {
-	return loadSnapshot
+	return tea.Batch(loadSnapshot, initRefreshCmds(m.refresh))
 }
 
 func loadSnapshot() tea.Msg {
 	snap, err := app.LoadWorkspaceSnapshot()
 	return snapshotMsg{snap: snap, err: err}
+}
+
+func (m appModel) applySnapshot(msg snapshotMsg) (appModel, tea.Cmd) {
+	var cmds []tea.Cmd
+
+	if msg.silent && msg.err == nil && !snapshotChanged(m.snapshot, msg.snap) {
+		m.refreshPending = false
+		cmds = append(cmds, m.reschedulePollIfNeeded())
+		return m, tea.Batch(cmds...)
+	}
+
+	if !msg.silent {
+		m.loading = false
+	}
+
+	m.refreshPending = false
+	m.snapshot = msg.snap
+	m.err = msg.err
+
+	if msg.err != nil {
+		if !msg.silent {
+			m.status = msg.err.Error()
+		}
+	} else if !msg.silent {
+		m.status = "Pronto"
+	} else {
+		m.status = "Atualizado"
+	}
+
+	if msg.err == nil && m.screen == ScreenDiff {
+		cmds = append(cmds, loadDiffCmd(msg.snap))
+	}
+
+	cmds = append(cmds, m.reschedulePollIfNeeded())
+	return m, tea.Batch(cmds...)
 }
 
 func loadDiffCmd(snap *app.WorkspaceSnapshot) tea.Cmd {
@@ -75,15 +114,21 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case snapshotMsg:
-		m.loading = false
-		m.snapshot = msg.snap
-		m.err = msg.err
-		if msg.err != nil {
-			m.status = msg.err.Error()
-		} else {
-			m.status = "Pronto"
+		return m.applySnapshot(msg)
+
+	case pollRefreshMsg:
+		return m.requestAutoRefresh()
+
+	case watchRefreshMsg:
+		return m.requestAutoRefresh()
+
+	case debouncedRefreshMsg:
+		if !m.canAutoRefresh() {
+			m.refreshPending = false
+			return m, m.reschedulePollIfNeeded()
 		}
-		return m, nil
+		m.refreshPending = false
+		return m, loadSnapshotSilent()
 
 	case diffLoadedMsg:
 		m.diff.Load(msg.title, msg.diff, msg.err)
