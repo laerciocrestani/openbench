@@ -123,9 +123,10 @@ func BuildReport(period Period) (*Report, error) {
 	}
 
 	report := &Report{
-		Period:    period,
-		Entries:   filtered,
-		ByModel:   map[string]ModelUsage{},
+		Period:  period,
+		Entries: filtered,
+		Summary: Summary{ByProject: map[string]float64{}},
+		ByModel: map[string]ModelUsage{},
 		ByProject: map[string]ProjectUsage{},
 	}
 
