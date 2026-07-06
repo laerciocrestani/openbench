@@ -131,11 +131,8 @@ func main() {
 			if info.Commit != "" {
 				sess.MetaRow("Commit", info.Commit)
 			}
-			if info.Tag != "" {
-				sess.MetaRow("Last tag", info.Tag)
-			}
-			if info.CommitsSince > 0 {
-				sess.MetaRow("Since tag", fmt.Sprintf("%d commit(s)", info.CommitsSince))
+			if info.Commits > 0 {
+				sess.MetaRow("Commits", fmt.Sprintf("%d", info.Commits))
 			}
 			if info.Dirty {
 				sess.MetaRow("Tree", "dirty")

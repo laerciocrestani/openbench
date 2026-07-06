@@ -7,37 +7,33 @@ import (
 	"strings"
 )
 
-// DefaultBase é a versão inicial quando ainda não há tags no repositório.
+// DefaultBase é a versão do primeiro commit (v0.1.0).
 const DefaultBase = "0.1.0"
 
 type Info struct {
-	Version      string
-	Commit       string
-	Tag          string
-	CommitsSince int
-	Dirty        bool
-	ExactTag     bool
+	Version string
+	Commit  string
+	Commits int
+	Dirty   bool
 }
 
 func (i Info) Display() string {
-	if i.ShowCommit() {
+	if i.Commit != "" {
 		return i.Version + " · " + i.Commit
 	}
 	return i.Version
 }
 
-func (i Info) ShowCommit() bool {
-	return i.CommitsSince > 0 || i.Dirty
-}
-
 func (i Info) LDFlags() string {
 	flags := fmt.Sprintf("-X github.com/laerciocrestani/gitia/internal/ui.buildVersion=%s", i.Version)
-	if i.ShowCommit() && i.Commit != "" {
+	if i.Commit != "" {
 		flags += fmt.Sprintf(" -X github.com/laerciocrestani/gitia/internal/ui.buildCommit=%s", i.Commit)
 	}
 	return flags
 }
 
+// Compute calcula a versão a partir do número de commits (sem tags git).
+// Primeiro commit = v0.1.0; cada commit adicional incrementa o patch.
 func Compute(repoDir string) (Info, error) {
 	commit, err := gitOutput(repoDir, "rev-parse", "--short", "HEAD")
 	if err != nil {
@@ -46,57 +42,30 @@ func Compute(repoDir string) (Info, error) {
 
 	dirty := gitDirty(repoDir)
 
-	tag, err := gitOutput(repoDir, "describe", "--tags", "--abbrev=0")
-	if err != nil {
-		return versionWithoutTag(repoDir, commit, dirty)
-	}
-
-	exact, _ := gitOutput(repoDir, "describe", "--tags", "--exact-match")
-	commitsSince, err := gitOutput(repoDir, "rev-list", "--count", tag+"..HEAD")
-	if err != nil {
-		return Info{}, err
-	}
-	count, _ := strconv.Atoi(strings.TrimSpace(commitsSince))
-
-	ver, err := bumpPatch(tag, count)
-	if err != nil {
-		return Info{}, err
-	}
-
-	return Info{
-		Version:      ver,
-		Commit:       shortHash(commit),
-		Tag:          normalizeTag(tag),
-		CommitsSince: count,
-		Dirty:        dirty,
-		ExactTag:     strings.TrimSpace(exact) != "",
-	}, nil
-}
-
-func versionWithoutTag(repoDir, commit string, dirty bool) (Info, error) {
 	total, err := gitOutput(repoDir, "rev-list", "--count", "HEAD")
 	if err != nil {
 		return Info{}, err
 	}
 	count, _ := strconv.Atoi(strings.TrimSpace(total))
+	if count < 1 {
+		count = 1
+	}
 
-	ver, err := bumpPatch("v"+DefaultBase, count)
+	ver, err := bumpPatch("v"+DefaultBase, count-1)
 	if err != nil {
 		return Info{}, err
 	}
 
 	return Info{
-		Version:      ver,
-		Commit:       shortHash(commit),
-		Tag:          "",
-		CommitsSince: count,
-		Dirty:        dirty,
-		ExactTag:     false,
+		Version: ver,
+		Commit:  shortHash(commit),
+		Commits: count,
+		Dirty:   dirty,
 	}, nil
 }
 
-func bumpPatch(tag string, extra int) (string, error) {
-	major, minor, patch, err := parseSemver(tag)
+func bumpPatch(base string, extra int) (string, error) {
+	major, minor, patch, err := parseSemver(base)
 	if err != nil {
 		return "", err
 	}
@@ -108,7 +77,7 @@ func parseSemver(tag string) (major, minor, patch int, err error) {
 	tag = strings.TrimPrefix(strings.TrimSpace(tag), "v")
 	parts := strings.Split(tag, ".")
 	if len(parts) < 3 {
-		return 0, 0, 0, fmt.Errorf("tag semver inválida: %q", tag)
+		return 0, 0, 0, fmt.Errorf("semver inválida: %q", tag)
 	}
 	major, err = strconv.Atoi(parts[0])
 	if err != nil {
@@ -123,17 +92,6 @@ func parseSemver(tag string) (major, minor, patch int, err error) {
 		return 0, 0, 0, err
 	}
 	return major, minor, patch, nil
-}
-
-func normalizeTag(tag string) string {
-	tag = strings.TrimSpace(tag)
-	if tag == "" {
-		return ""
-	}
-	if strings.HasPrefix(tag, "v") {
-		return tag
-	}
-	return "v" + tag
 }
 
 func shortHash(rev string) string {
