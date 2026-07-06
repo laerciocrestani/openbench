@@ -51,17 +51,21 @@ func RunOverview() error {
 		})
 	}
 
-	printSummary(sess, overview, openPR)
-	sess.Divider()
-	printOverview(sess, overview, openPR)
+	fmt.Println()
 	printGitiaConfig(sess)
+	printRecentCommits(sess, overview)
+	printBranches(sess, overview)
+	printChangedFiles(sess, overview)
+	printStash(sess, overview)
+
+	sess.Divider()
+	printRepoMeta(sess, overview, openPR)
 	sess.Divider()
 	printSuggestions(sess, overview, openPR)
 	return nil
 }
 
-func printSummary(sess *ui.Session, o *gitpkg.Overview, pr *prpkg.PRView) {
-	fmt.Println()
+func printRepoMeta(sess *ui.Session, o *gitpkg.Overview, pr *prpkg.PRView) {
 	sess.MetaRow("Repository", repoDisplayName(o))
 	if o.Detached {
 		sess.MetaRow("Branch", "detached HEAD")
@@ -81,73 +85,75 @@ func printSummary(sess *ui.Session, o *gitpkg.Overview, pr *prpkg.PRView) {
 	}
 }
 
-func printOverview(sess *ui.Session, o *gitpkg.Overview, pr *prpkg.PRView) {
-	if pr != nil {
-		sess.Section("Pull request")
-		sess.KV("Title", pr.Title)
-		sess.KV("URL", pr.URL)
+func printRecentCommits(sess *ui.Session, o *gitpkg.Overview) {
+	if len(o.RecentCommits) == 0 {
+		return
 	}
+	sess.Section("Recent commits")
+	for _, line := range o.RecentCommits {
+		sess.Bullet(line)
+	}
+}
 
+func printBranches(sess *ui.Session, o *gitpkg.Overview) {
+	if len(o.Branches) == 0 {
+		return
+	}
+	sess.Section("Branches")
+	limit := len(o.Branches)
+	if limit > 8 {
+		limit = 8
+	}
+	for _, b := range o.Branches[:limit] {
+		sess.BranchLine(b.Name, b.Current, b.Upstream, b.Ahead, b.Behind)
+	}
+	if len(o.Branches) > 8 {
+		sess.Detail(fmt.Sprintf("… +%d more", len(o.Branches)-8))
+	}
 	if o.CommitsAheadOfBase > 0 && !o.Detached && o.Branch != o.BaseBranch {
-		sess.Section("Branch delta")
-		sess.KV("vs "+o.BaseBranch, fmt.Sprintf("%d commit(s) ahead", o.CommitsAheadOfBase))
+		sess.Detail(fmt.Sprintf("%d commit(s) ahead of %s", o.CommitsAheadOfBase, o.BaseBranch))
 	}
+}
 
-	if len(o.FileChanges) > 0 {
-		sess.Section("Changed files")
-		limit := len(o.FileChanges)
-		if limit > 12 {
-			limit = 12
-		}
-		for _, f := range o.FileChanges[:limit] {
-			sess.FileChange(f.Path, f.Status, f.StatsLabel())
-		}
-		if len(o.FileChanges) > 12 {
-			sess.Detail(fmt.Sprintf("… +%d more file(s)", len(o.FileChanges)-12))
-		}
+func printChangedFiles(sess *ui.Session, o *gitpkg.Overview) {
+	if len(o.FileChanges) == 0 {
+		return
 	}
-
-	if len(o.Stashes) > 0 {
-		sess.Section("Stash")
-		sess.KV("Entries", fmt.Sprintf("%d saved", len(o.Stashes)))
-		limit := len(o.Stashes)
-		if limit > 5 {
-			limit = 5
-		}
-		for _, stash := range o.Stashes[:limit] {
-			label := stash.Ref
-			if stash.Branch != "" {
-				label += " on " + stash.Branch
-			}
-			if stash.Message != "" {
-				label += ": " + stash.Message
-			}
-			sess.Bullet(label)
-		}
-		if len(o.Stashes) > 5 {
-			sess.Detail(fmt.Sprintf("… +%d more stash(es)", len(o.Stashes)-5))
-		}
+	sess.Section("Changed files")
+	limit := len(o.FileChanges)
+	if limit > 12 {
+		limit = 12
 	}
-
-	if len(o.Branches) > 0 {
-		sess.Section("Branches")
-		limit := len(o.Branches)
-		if limit > 8 {
-			limit = 8
-		}
-		for _, b := range o.Branches[:limit] {
-			sess.BranchLine(b.Name, b.Current, b.Upstream, b.Ahead, b.Behind)
-		}
-		if len(o.Branches) > 8 {
-			sess.Detail(fmt.Sprintf("… +%d more", len(o.Branches)-8))
-		}
+	for _, f := range o.FileChanges[:limit] {
+		sess.FileChange(f.Path, f.Status, f.StatsLabel())
 	}
+	if len(o.FileChanges) > 12 {
+		sess.Detail(fmt.Sprintf("… +%d more file(s)", len(o.FileChanges)-12))
+	}
+}
 
-	if len(o.RecentCommits) > 0 {
-		sess.Section("Recent commits")
-		for _, line := range o.RecentCommits {
-			sess.Bullet(line)
+func printStash(sess *ui.Session, o *gitpkg.Overview) {
+	if len(o.Stashes) == 0 {
+		return
+	}
+	sess.Section("Stash")
+	sess.KV("Entries", fmt.Sprintf("%d saved", len(o.Stashes)))
+	limit := len(o.Stashes)
+	if limit > 5 {
+		limit = 5
+	}
+	for _, stash := range o.Stashes[:limit] {
+		label := stash.Ref
+		if stash.Branch != "" {
+			label += " on " + stash.Branch
 		}
+		if stash.Message != "" {
+			label += ": " + stash.Message
+		}
+		sess.Bullet(label)
+	}
+	if len(o.Stashes) > 5 {
+		sess.Detail(fmt.Sprintf("… +%d more stash(es)", len(o.Stashes)-5))
 	}
 }
 
