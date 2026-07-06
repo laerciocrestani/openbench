@@ -167,6 +167,9 @@ func printGitiaConfig(sess *ui.Session) {
 	sess.KV("Provider", string(cfg.Provider))
 	sess.KV("Model", cfg.Model)
 	sess.KV("API key", config.MaskAPIKey(cfg.APIKey))
+	if cfg.ClearScreen {
+		sess.KV("Terminal", "limpa antes de cada comando")
+	}
 }
 
 func printSuggestions(sess *ui.Session, o *gitpkg.Overview, pr *prpkg.PRView) {

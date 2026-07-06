@@ -32,6 +32,7 @@ type Config struct {
 	MaxDiffBytes     int      `yaml:"max_diff_bytes"`
 	InputPricePer1M  float64  `yaml:"input_price_per_1m,omitempty"`
 	OutputPricePer1M float64  `yaml:"output_price_per_1m,omitempty"`
+	ClearScreen      bool     `yaml:"clear_screen,omitempty"`
 }
 
 func Default() Config {
@@ -97,6 +98,60 @@ func Load() (*Config, error) {
 	}
 
 	return &cfg, nil
+}
+
+// LoadExisting lê a config salva sem exigir api_key (para o wizard e preferências).
+func LoadExisting() (*Config, string, error) {
+	cfg := Default()
+
+	localPath := LocalConfigPath()
+	if _, err := os.Stat(localPath); err == nil {
+		if err := loadFile(localPath, &cfg); err != nil {
+			return nil, "", fmt.Errorf("carregar %s: %w", localPath, err)
+		}
+		cfg.normalize()
+		return &cfg, localPath, nil
+	}
+
+	path, err := ConfigPath()
+	if err != nil {
+		return nil, "", err
+	}
+	if _, err := os.Stat(path); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return &cfg, path, nil
+		}
+		return nil, "", err
+	}
+	if err := loadFile(path, &cfg); err != nil {
+		return nil, "", fmt.Errorf("carregar %s: %w", path, err)
+	}
+	cfg.normalize()
+	return &cfg, path, nil
+}
+
+// ClearScreenEnabled indica se o terminal deve ser limpo antes de cada comando.
+func ClearScreenEnabled() bool {
+	if os.Getenv("GITIA_NO_CLEAR") != "" {
+		return false
+	}
+	cfg, _, err := LoadExisting()
+	if err != nil {
+		return false
+	}
+	return cfg.ClearScreen
+}
+
+func (c *Config) normalize() {
+	if c.Language == "" {
+		c.Language = "pt-BR"
+	}
+	if c.BaseBranch == "" {
+		c.BaseBranch = "main"
+	}
+	if c.MaxDiffBytes <= 0 {
+		c.MaxDiffBytes = 120000
+	}
 }
 
 func loadFile(path string, cfg *Config) error {

@@ -38,6 +38,11 @@ func main() {
 
 	root.PersistentFlags().BoolVar(&dryRun, "dry-run", false, "simula sem executar git/gh")
 	root.PersistentFlags().BoolVar(&verbose, "verbose", false, "exibe detalhes da sugestão da IA")
+	root.PersistentPreRun = func(cmd *cobra.Command, args []string) {
+		if config.ClearScreenEnabled() {
+			ui.ClearScreen()
+		}
+	}
 
 	commitCmd := &cobra.Command{
 		Use:   "commit",
