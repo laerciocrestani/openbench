@@ -1,5 +1,5 @@
 # Binaries
-/gitia
+/gitai
 /bin/
 *.exe
 *.exe~
@@ -24,7 +24,7 @@ go.work.sum
 *~
 
 # Local config
-.gitia.yaml
+.gitai.yaml
 .env
 .env.*
 

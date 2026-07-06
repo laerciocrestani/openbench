@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/laerciocrestani/gitia/internal/config"
+	"github.com/laerciocrestani/gitai/internal/config"
 )
 
 func TestGeminiDefaultPrices(t *testing.T) {

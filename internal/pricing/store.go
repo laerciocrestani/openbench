@@ -29,7 +29,7 @@ func StorePath() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(home, ".config", "gitia", "pricing.yaml"), nil
+	return filepath.Join(home, ".config", "gitai", "pricing.yaml"), nil
 }
 
 func Load() (*Store, error) {

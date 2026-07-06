@@ -6,12 +6,12 @@ import (
 	"os"
 	"strings"
 
-	"github.com/laerciocrestani/gitia/internal/ai"
-	"github.com/laerciocrestani/gitia/internal/config"
-	"github.com/laerciocrestani/gitia/internal/formatter"
-	gitpkg "github.com/laerciocrestani/gitia/internal/git"
-	prpkg "github.com/laerciocrestani/gitia/internal/pr"
-	"github.com/laerciocrestani/gitia/internal/ui"
+	"github.com/laerciocrestani/gitai/internal/ai"
+	"github.com/laerciocrestani/gitai/internal/config"
+	"github.com/laerciocrestani/gitai/internal/formatter"
+	gitpkg "github.com/laerciocrestani/gitai/internal/git"
+	prpkg "github.com/laerciocrestani/gitai/internal/pr"
+	"github.com/laerciocrestani/gitai/internal/ui"
 )
 
 type Options struct {

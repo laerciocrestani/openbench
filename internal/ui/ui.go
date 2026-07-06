@@ -28,7 +28,7 @@ func New(command string, dryRun bool) *Session {
 }
 
 func colorsEnabled() bool {
-	if os.Getenv("NO_COLOR") != "" || os.Getenv("GITIA_NO_UI") != "" {
+	if os.Getenv("NO_COLOR") != "" || os.Getenv("GITAI_NO_UI") != "" {
 		return false
 	}
 	if os.Getenv("CI") != "" {
@@ -42,10 +42,10 @@ func colorsEnabled() bool {
 }
 
 func (s *Session) Header() {
-	title := s.paint("Gitia", bold+cyan)
+	title := s.paint("GitAi", bold+cyan)
 	ver := s.paint(Version(), dim)
-	chip := s.paint("[", dim) + " " + ver + " " + s.paint("]", dim)
-	fmt.Fprintf(s.out, "🤖 %s   %s\n", title, chip)
+	sep := s.paint("|", dim)
+	fmt.Fprintf(s.out, "🤖 %s %s %s\n", title, sep, ver)
 }
 
 func (s *Session) Divider() {

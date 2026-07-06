@@ -3,10 +3,10 @@ package app
 import (
 	"time"
 
-	"github.com/laerciocrestani/gitia/internal/ai"
-	"github.com/laerciocrestani/gitia/internal/config"
-	gitpkg "github.com/laerciocrestani/gitia/internal/git"
-	"github.com/laerciocrestani/gitia/internal/usage"
+	"github.com/laerciocrestani/gitai/internal/ai"
+	"github.com/laerciocrestani/gitai/internal/config"
+	gitpkg "github.com/laerciocrestani/gitai/internal/git"
+	"github.com/laerciocrestani/gitai/internal/usage"
 )
 
 func recordAIUsage(command string, cfg *config.Config, summary ai.UsageSummary) {

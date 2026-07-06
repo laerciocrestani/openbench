@@ -8,7 +8,7 @@ import (
 	"os/exec"
 	"strings"
 
-	"github.com/laerciocrestani/gitia/internal/ai"
+	"github.com/laerciocrestani/gitai/internal/ai"
 )
 
 type PRView struct {

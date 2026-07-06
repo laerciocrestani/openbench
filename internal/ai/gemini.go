@@ -9,7 +9,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/laerciocrestani/gitia/internal/config"
+	"github.com/laerciocrestani/gitai/internal/config"
 )
 
 type geminiClient struct {

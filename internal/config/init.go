@@ -6,7 +6,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/laerciocrestani/gitia/internal/ui"
+	"github.com/laerciocrestani/gitai/internal/ui"
 )
 
 func InitInteractive() error {
@@ -86,7 +86,7 @@ func InitInteractive() error {
 	cfg.CoAuthor = coAuthor
 
 	fmt.Fprintln(os.Stderr)
-	sess.Info("Limpar o terminal antes de cada comando deixa só a saída do Gitia visível,")
+	sess.Info("Limpar o terminal antes de cada comando deixa só a saída do GitAi visível,")
 	sess.Info("sem misturar com histórico anterior no console.")
 	clear, err := promptYesNo(sess, reader, "Ativar limpeza do terminal?", cfg.ClearScreen)
 	if err != nil {

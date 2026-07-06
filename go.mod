@@ -1,4 +1,4 @@
-module github.com/laerciocrestani/gitia
+module github.com/laerciocrestani/gitai
 
 go 1.22
 

@@ -65,7 +65,7 @@ func TestBuildReportWithCost(t *testing.T) {
 		{
 			Timestamp:    now.Add(-time.Hour),
 			Command:      "commit",
-			Project:      "gitia",
+			Project:      "gitai",
 			Model:        "gemini-2.5-flash-lite",
 			InputTokens:  100,
 			OutputTokens: 50,
@@ -99,7 +99,7 @@ func TestBuildReportWithCost(t *testing.T) {
 	if !report.Summary.HasCost {
 		t.Fatal("expected cost summary")
 	}
-	if report.Summary.ByProject["gitia"] != cost {
-		t.Fatalf("by project: %f", report.Summary.ByProject["gitia"])
+	if report.Summary.ByProject["gitai"] != cost {
+		t.Fatalf("by project: %f", report.Summary.ByProject["gitai"])
 	}
 }

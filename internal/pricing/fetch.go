@@ -56,7 +56,7 @@ func downloadPricingPage() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	req.Header.Set("User-Agent", "gitia-pricing/1.0")
+	req.Header.Set("User-Agent", "gitai-pricing/1.0")
 
 	client := &http.Client{Timeout: 30 * time.Second}
 	resp, err := client.Do(req)

@@ -5,17 +5,17 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/laerciocrestani/gitia/internal/version"
+	"github.com/laerciocrestani/gitai/internal/version"
 )
 
-const defaultRepoURL = "https://github.com/laerciocrestani/gitia.git"
+const defaultRepoURL = "https://github.com/laerciocrestani/gitai.git"
 
 func sourceRootFile() (string, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(home, ".config", "gitia", "source"), nil
+	return filepath.Join(home, ".config", "gitai", "source"), nil
 }
 
 func readSavedSourceRoot() string {
@@ -47,7 +47,7 @@ func isValidRepoRoot(dir string) bool {
 	if err != nil || !strings.Contains(string(data), moduleID) {
 		return false
 	}
-	_, err = os.Stat(filepath.Join(dir, "cmd", "gitia", "main.go"))
+	_, err = os.Stat(filepath.Join(dir, "cmd", "gitai", "main.go"))
 	return err == nil
 }
 

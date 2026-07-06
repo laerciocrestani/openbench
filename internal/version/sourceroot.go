@@ -6,27 +6,27 @@ import (
 	"strings"
 )
 
-const moduleID = "github.com/laerciocrestani/gitia"
+const moduleID = "github.com/laerciocrestani/gitai"
 
-// SavedRepoRoot retorna o caminho do clone salvo em ~/.config/gitia/source.
+// SavedRepoRoot retorna o caminho do clone salvo em ~/.config/gitai/source.
 func SavedRepoRoot() string {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return ""
 	}
-	path := filepath.Join(home, ".config", "gitia", "source")
+	path := filepath.Join(home, ".config", "gitai", "source")
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return ""
 	}
 	root := strings.TrimSpace(string(data))
-	if isGitiaRepo(root) {
+	if isGitAiRepo(root) {
 		return root
 	}
 	return ""
 }
 
-func isGitiaRepo(dir string) bool {
+func isGitAiRepo(dir string) bool {
 	dir = strings.TrimSpace(dir)
 	if dir == "" {
 		return false
@@ -36,6 +36,6 @@ func isGitiaRepo(dir string) bool {
 	if err != nil || !strings.Contains(string(data), moduleID) {
 		return false
 	}
-	_, err = os.Stat(filepath.Join(dir, "cmd", "gitia", "main.go"))
+	_, err = os.Stat(filepath.Join(dir, "cmd", "gitai", "main.go"))
 	return err == nil
 }

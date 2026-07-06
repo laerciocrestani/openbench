@@ -6,10 +6,10 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/laerciocrestani/gitia/internal/config"
-	gitpkg "github.com/laerciocrestani/gitia/internal/git"
-	prpkg "github.com/laerciocrestani/gitia/internal/pr"
-	"github.com/laerciocrestani/gitia/internal/ui"
+	"github.com/laerciocrestani/gitai/internal/config"
+	gitpkg "github.com/laerciocrestani/gitai/internal/git"
+	prpkg "github.com/laerciocrestani/gitai/internal/pr"
+	"github.com/laerciocrestani/gitai/internal/ui"
 )
 
 func RunOverview() error {
@@ -51,7 +51,7 @@ func RunOverview() error {
 		})
 	}
 
-	printGitiaConfig(sess)
+	printGitAiConfig(sess)
 	printRecentCommits(sess, overview)
 	printBranches(sess, overview)
 	printChangedFiles(sess, overview)
@@ -157,35 +157,38 @@ func printStash(sess *ui.Session, o *gitpkg.Overview) {
 	}
 }
 
-func printGitiaConfig(sess *ui.Session) {
-	sess.SectionFirst("Gitia config")
+func printGitAiConfig(sess *ui.Session) {
+	sess.SectionFirst("GitAi config")
 	cfg, err := config.Load()
 	if err != nil {
-		sess.KV("Status", "not configured — run: gitia config")
+		sess.Detail("not configured — run: gitai config")
 		return
 	}
-	sess.KV("Provider", string(cfg.Provider))
-	sess.KV("Model", cfg.Model)
-	sess.KV("API key", config.MaskAPIKey(cfg.APIKey))
-	if cfg.ClearScreen {
-		sess.KV("Terminal", "limpa antes de cada comando")
+	parts := []string{
+		fmt.Sprintf("Provider: %s", cfg.Provider),
+		fmt.Sprintf("Model: %s", cfg.Model),
+		fmt.Sprintf("API key: %s", config.MaskAPIKey(cfg.APIKey)),
 	}
+	if cfg.ClearScreen {
+		parts = append(parts, "Terminal: limpa antes de cada comando")
+	}
+	sess.Detail(strings.Join(parts, " · "))
 }
 
 func printSuggestions(sess *ui.Session, o *gitpkg.Overview, pr *prpkg.PRView) {
 	var tips []string
 
 	if _, err := config.Load(); err != nil {
-		tips = append(tips, "gitia config")
+		tips = append(tips, "gitai config")
 	}
 	if o.IsDirty() {
-		tips = append(tips, "gitia commit")
+		tips = append(tips, "gitai commit")
 	}
 	if o.Ahead > 0 || (o.IsDirty() && o.Upstream != "") {
-		tips = append(tips, "gitia push")
+		tips = append(tips, "gitai push")
 	}
 	if pr == nil && o.CommitsAheadOfBase > 0 && !o.IsDirty() {
-		tips = append(tips, "gitia pr")
+		tips = append(tips, "gitai pr")
 	}
 	if pr != nil {
 		tips = append(tips, "gh pr view --web")
@@ -194,7 +197,7 @@ func printSuggestions(sess *ui.Session, o *gitpkg.Overview, pr *prpkg.PRView) {
 		tips = append(tips, "git stash pop")
 	}
 	if o.Behind > 0 {
-		tips = append(tips, "gitia sync")
+		tips = append(tips, "gitai sync")
 	}
 	if len(tips) == 0 && !o.IsDirty() {
 		tips = append(tips, "working tree clean")
@@ -202,7 +205,7 @@ func printSuggestions(sess *ui.Session, o *gitpkg.Overview, pr *prpkg.PRView) {
 
 	sess.Section("Next steps")
 	for _, tip := range tips {
-		if strings.Contains(tip, " ") && !strings.HasPrefix(tip, "gitia") && !strings.HasPrefix(tip, "git ") && !strings.HasPrefix(tip, "gh ") {
+		if strings.Contains(tip, " ") && !strings.HasPrefix(tip, "gitai") && !strings.HasPrefix(tip, "git ") && !strings.HasPrefix(tip, "gh ") {
 			sess.Bullet(tip)
 		} else {
 			sess.CommandHint(tip)

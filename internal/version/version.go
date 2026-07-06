@@ -25,9 +25,9 @@ func (i Info) Display() string {
 }
 
 func (i Info) LDFlags() string {
-	flags := fmt.Sprintf("-X github.com/laerciocrestani/gitia/internal/ui.buildVersion=%s", i.Version)
+	flags := fmt.Sprintf("-X github.com/laerciocrestani/gitai/internal/ui.buildVersion=%s", i.Version)
 	if i.Commit != "" {
-		flags += fmt.Sprintf(" -X github.com/laerciocrestani/gitia/internal/ui.buildCommit=%s", i.Commit)
+		flags += fmt.Sprintf(" -X github.com/laerciocrestani/gitai/internal/ui.buildCommit=%s", i.Commit)
 	}
 	return flags
 }

@@ -3,8 +3,8 @@ package ai
 import (
 	"fmt"
 
-	"github.com/laerciocrestani/gitia/internal/config"
-	"github.com/laerciocrestani/gitia/internal/ui"
+	"github.com/laerciocrestani/gitai/internal/config"
+	"github.com/laerciocrestani/gitai/internal/ui"
 )
 
 type UsageRecord struct {

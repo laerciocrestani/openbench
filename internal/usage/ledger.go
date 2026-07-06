@@ -31,7 +31,7 @@ func LedgerPath() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(home, ".config", "gitia", "usage", "ledger.csv"), nil
+	return filepath.Join(home, ".config", "gitai", "usage", "ledger.csv"), nil
 }
 
 func Log(entry Entry) error {

@@ -9,7 +9,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/laerciocrestani/gitia/internal/config"
+	"github.com/laerciocrestani/gitai/internal/config"
 )
 
 type openAIClient struct {
@@ -111,8 +111,8 @@ func (c *openAIClient) chatOnce(ctx context.Context, prompt, label string) (stri
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+c.cfg.APIKey)
 	if c.cfg.Provider == config.ProviderOpenRouter {
-		req.Header.Set("HTTP-Referer", "https://github.com/laerciocrestani/gitia")
-		req.Header.Set("X-Title", "gitia")
+		req.Header.Set("HTTP-Referer", "https://github.com/laerciocrestani/gitai")
+		req.Header.Set("X-Title", "gitai")
 	}
 
 	resp, err := c.httpClient.Do(req)

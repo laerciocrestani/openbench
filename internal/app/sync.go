@@ -3,9 +3,9 @@ package app
 import (
 	"fmt"
 
-	"github.com/laerciocrestani/gitia/internal/config"
-	gitpkg "github.com/laerciocrestani/gitia/internal/git"
-	"github.com/laerciocrestani/gitia/internal/ui"
+	"github.com/laerciocrestani/gitai/internal/config"
+	gitpkg "github.com/laerciocrestani/gitai/internal/git"
+	"github.com/laerciocrestani/gitai/internal/ui"
 )
 
 type SyncOptions struct {

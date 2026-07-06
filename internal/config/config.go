@@ -11,7 +11,7 @@ import (
 )
 
 const (
-	EnvAPIKey = "GITIA_API_KEY"
+	EnvAPIKey = "GITAI_API_KEY"
 )
 
 type Provider string
@@ -46,7 +46,7 @@ func Default() Config {
 }
 
 func ConfigPath() (string, error) {
-	if env := os.Getenv("GITIA_CONFIG"); env != "" {
+	if env := os.Getenv("GITAI_CONFIG"); env != "" {
 		return env, nil
 	}
 
@@ -54,7 +54,7 @@ func ConfigPath() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(home, ".config", "gitia", "config.yaml"), nil
+	return filepath.Join(home, ".config", "gitai", "config.yaml"), nil
 }
 
 func LocalConfigPath() string {
@@ -62,7 +62,7 @@ func LocalConfigPath() string {
 	if err != nil {
 		return ""
 	}
-	return filepath.Join(wd, ".gitia.yaml")
+	return filepath.Join(wd, ".gitai.yaml")
 }
 
 func Load() (*Config, error) {
@@ -80,7 +80,7 @@ func Load() (*Config, error) {
 		}
 		if _, err := os.Stat(path); err != nil {
 			if errors.Is(err, os.ErrNotExist) {
-				return nil, fmt.Errorf("config não encontrada. Execute: gitia config init")
+				return nil, fmt.Errorf("config não encontrada. Execute: gitai config init")
 			}
 			return nil, err
 		}
@@ -132,7 +132,7 @@ func LoadExisting() (*Config, string, error) {
 
 // ClearScreenEnabled indica se o terminal deve ser limpo antes de cada comando.
 func ClearScreenEnabled() bool {
-	if os.Getenv("GITIA_NO_CLEAR") != "" {
+	if os.Getenv("GITAI_NO_CLEAR") != "" {
 		return false
 	}
 	cfg, _, err := LoadExisting()
