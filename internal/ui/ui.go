@@ -121,6 +121,11 @@ func (s *Session) Section(title string) {
 	fmt.Fprintf(s.out, "\n%s\n", s.paint(title, bold+cyan))
 }
 
+// Footer adiciona uma linha em branco antes do prompt do shell.
+func (s *Session) Footer() {
+	fmt.Fprintln(s.out)
+}
+
 func (s *Session) KV(key, value string) {
 	fmt.Fprintf(s.out, "  %s %s\n", s.paint(key+":", dim), value)
 }

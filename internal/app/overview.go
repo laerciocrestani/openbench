@@ -62,6 +62,7 @@ func RunOverview() error {
 	printRepoMeta(sess, overview, openPR)
 	sess.Divider()
 	printSuggestions(sess, overview, openPR)
+	sess.Footer()
 	return nil
 }
 

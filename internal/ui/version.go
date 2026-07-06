@@ -3,7 +3,6 @@ package ui
 import (
 	"os"
 	"path/filepath"
-	"runtime/debug"
 	"strings"
 	"sync"
 
@@ -23,29 +22,27 @@ var (
 )
 
 func Version() string {
+	if info, ok := resolveRuntime(); ok {
+		return info.Display()
+	}
 	if v := strings.TrimSpace(buildVersion); v != "" {
 		if c := strings.TrimSpace(buildCommit); c != "" {
 			return v + " · " + shortHash(c)
 		}
 		return v
 	}
-
-	info, ok := resolveRuntime()
-	if ok {
-		return info.Display()
-	}
 	return "v" + version.DefaultBase
 }
 
 func VersionInfo() version.Info {
+	if info, ok := resolveRuntime(); ok {
+		return info
+	}
 	if v := strings.TrimSpace(buildVersion); v != "" {
 		return version.Info{
 			Version: v,
 			Commit:  shortHash(buildCommit),
 		}
-	}
-	if info, ok := resolveRuntime(); ok {
-		return info
 	}
 	return version.Info{Version: "v" + version.DefaultBase}
 }
@@ -60,26 +57,29 @@ func SetBuildCommit(c string) {
 
 func resolveRuntime() (version.Info, bool) {
 	runtimeOnce.Do(func() {
-		if root := findGitiaRoot(); root != "" {
+		for _, root := range versionRoots() {
 			if info, err := version.Compute(root); err == nil {
 				runtimeInfo = info
 				runtimeOK = true
+				return
 			}
 		}
 	})
 	return runtimeInfo, runtimeOK
 }
 
-func findGitiaRoot() string {
-	if info, ok := debug.ReadBuildInfo(); ok {
-		for _, dep := range info.Deps {
-			if dep.Path == "github.com/laerciocrestani/gitia" && dep.Sum != "" {
-				// módulo em cache — tenta cwd
-				break
-			}
-		}
+func versionRoots() []string {
+	var roots []string
+	if saved := version.SavedRepoRoot(); saved != "" {
+		roots = append(roots, saved)
 	}
+	if cwd := findGitiaRootFromCwd(); cwd != "" {
+		roots = append(roots, cwd)
+	}
+	return roots
+}
 
+func findGitiaRootFromCwd() string {
 	dir, err := os.Getwd()
 	if err != nil {
 		return ""

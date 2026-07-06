@@ -90,6 +90,10 @@ func Update() error {
 
 	_ = saveSourceRoot(root)
 
+	if err := ensureFullClone(sess, root); err != nil {
+		return err
+	}
+
 	before, err := gitShortHash(root)
 	if err != nil {
 		return err
@@ -135,36 +139,70 @@ func Update() error {
 	}
 
 	if before == after {
-		sess.Info(fmt.Sprintf("Already on latest version (%s)", after))
+		sess.Info(fmt.Sprintf("Already on latest commit (%s)", after))
 	} else {
 		sess.Detail(fmt.Sprintf("%s → %s", before, after))
 		if line, err := gitOutput(root, "log", "-1", "--oneline"); err == nil {
 			sess.Detail(line)
 		}
 	}
-	sess.Detail(bin)
+	showInstalledVersion(sess, root, bin)
 	sess.Success("Update complete 🚀")
 	return nil
 }
 
 func updateFromRemote(sess *ui.Session) error {
-	tmp, err := os.MkdirTemp("", "gitia-update-*")
-	if err != nil {
-		return err
+	root := readSavedSourceRoot()
+	if root == "" {
+		root = defaultSourceCloneDir()
 	}
-	defer os.RemoveAll(tmp)
 
-	if err := sess.Step("Cloning repository", func() error {
-		cmd := exec.Command("git", "clone", "--depth", "1", defaultRepoURL, tmp)
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
-		return cmd.Run()
-	}); err != nil {
-		return fmt.Errorf("clone falhou: %w", err)
+	if !isValidRepoRoot(root) {
+		if err := sess.Step("Cloning repository", func() error {
+			if err := os.MkdirAll(filepath.Dir(root), 0o755); err != nil {
+				return err
+			}
+			_ = os.RemoveAll(root)
+			cmd := exec.Command("git", "clone", defaultRepoURL, root)
+			cmd.Stdout = os.Stdout
+			cmd.Stderr = os.Stderr
+			if err := cmd.Run(); err != nil {
+				return fmt.Errorf("clone falhou: %w", err)
+			}
+			return nil
+		}); err != nil {
+			return err
+		}
+		_ = saveSourceRoot(root)
+	} else {
+		_ = saveSourceRoot(root)
+		if err := ensureFullClone(sess, root); err != nil {
+			return err
+		}
+		branch, err := gitOutput(root, "rev-parse", "--abbrev-ref", "HEAD")
+		if err != nil {
+			return err
+		}
+		if err := sess.Step("Fetching updates", func() error {
+			if err := gitRun(root, "fetch", "origin", branch); err != nil {
+				_ = gitRun(root, "fetch", "origin")
+			}
+			return nil
+		}); err != nil {
+			return err
+		}
+		if err := sess.Step("Pulling changes", func() error {
+			if err := gitRun(root, "pull", "--ff-only", "origin", branch); err != nil {
+				return gitRun(root, "pull", "--ff-only")
+			}
+			return nil
+		}); err != nil {
+			return err
+		}
 	}
 
 	if err := sess.Step("Rebuilding binary", func() error {
-		return goInstall(tmp)
+		return goInstall(root)
 	}); err != nil {
 		return err
 	}
@@ -174,15 +212,33 @@ func updateFromRemote(sess *ui.Session) error {
 		return fmt.Errorf("reinstalação falhou")
 	}
 
-	if hash, err := gitShortHash(tmp); err == nil {
-		sess.Detail("commit: " + hash)
-		if line, err := gitOutput(tmp, "log", "-1", "--oneline"); err == nil {
-			sess.Detail(line)
-		}
-	}
-	sess.Detail(bin)
+	showInstalledVersion(sess, root, bin)
 	sess.Success("Update complete 🚀")
 	return nil
+}
+
+func defaultSourceCloneDir() string {
+	home, _ := os.UserHomeDir()
+	return filepath.Join(home, ".config", "gitia", "repository")
+}
+
+func ensureFullClone(sess *ui.Session, root string) error {
+	if _, err := os.Stat(filepath.Join(root, ".git", "shallow")); err != nil {
+		return nil
+	}
+	return sess.Step("Fetching full history", func() error {
+		if err := gitRun(root, "fetch", "--unshallow", "origin"); err != nil {
+			return gitRun(root, "fetch", "--unshallow")
+		}
+		return nil
+	})
+}
+
+func showInstalledVersion(sess *ui.Session, root, bin string) {
+	if ver, err := version.Compute(root); err == nil {
+		sess.Detail(fmt.Sprintf("Installed: %s", ver.Display()))
+	}
+	sess.Detail(bin)
 }
 
 func FindRepoRoot() (string, error) {

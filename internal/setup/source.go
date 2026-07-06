@@ -4,6 +4,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/laerciocrestani/gitia/internal/version"
 )
 
 const defaultRepoURL = "https://github.com/laerciocrestani/gitia.git"
@@ -17,19 +19,7 @@ func sourceRootFile() (string, error) {
 }
 
 func readSavedSourceRoot() string {
-	path, err := sourceRootFile()
-	if err != nil {
-		return ""
-	}
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return ""
-	}
-	root := strings.TrimSpace(string(data))
-	if isValidRepoRoot(root) {
-		return root
-	}
-	return ""
+	return version.SavedRepoRoot()
 }
 
 func saveSourceRoot(root string) error {
