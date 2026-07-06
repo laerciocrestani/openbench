@@ -2,6 +2,7 @@ package ai
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/laerciocrestani/gitai/internal/config"
 	"github.com/laerciocrestani/gitai/internal/ui"
@@ -9,6 +10,7 @@ import (
 
 type UsageRecord struct {
 	Label            string
+	Model            string
 	PromptTokens     int
 	CompletionTokens int
 	TotalTokens      int
@@ -38,11 +40,11 @@ func (s UsageSummary) Totals() (prompt, completion, total int, costUSD float64, 
 }
 
 func (s UsageSummary) Print() {
-	s.PrintWith(nil)
+	s.PrintWith(nil, nil)
 }
 
-func (s UsageSummary) PrintWith(sess *ui.Session) {
-	lines := s.FormatLines()
+func (s UsageSummary) PrintWith(sess *ui.Session, cfg *config.Config) {
+	lines := s.FormatLines(cfg)
 	if len(lines) == 0 {
 		return
 	}
@@ -50,36 +52,58 @@ func (s UsageSummary) PrintWith(sess *ui.Session) {
 		sess.UsageBlock(lines)
 		return
 	}
-	fmt.Println("--- Uso de IA ---")
+	fmt.Println("Uso de IA")
 	for _, line := range lines {
-		fmt.Println(line)
+		fmt.Println("  • " + line)
 	}
 }
 
-func (s UsageSummary) FormatLines() []string {
+func (s UsageSummary) FormatLines(cfg *config.Config) []string {
 	if len(s.Records) == 0 {
 		return nil
 	}
 
-	lines := make([]string, 0, len(s.Records)+1)
-	for _, r := range s.Records {
-		line := fmt.Sprintf("%s: %d prompt + %d completion = %d tokens",
-			r.Label, r.PromptTokens, r.CompletionTokens, r.TotalTokens)
-		if r.CostUSD != nil {
-			line += " | " + formatCost(*r.CostUSD, r.CostSource)
-		}
-		lines = append(lines, line)
+	model := strings.TrimSpace(s.Records[len(s.Records)-1].Model)
+	if model == "" && cfg != nil {
+		model = cfg.Model
 	}
 
+	provider := providerDisplayName(cfg, s.Records[len(s.Records)-1].CostSource)
 	p, c, t, cost, hasCost := s.Totals()
-	total := fmt.Sprintf("Total: %d prompt + %d completion = %d tokens", p, c, t)
-	if hasCost {
-		total += fmt.Sprintf(" | custo total: $%.6f USD", cost)
-	} else {
-		total += " | custo: não informado"
+
+	lines := []string{
+		fmt.Sprintf("🤖 Modelo: %s (%s)", model, provider),
+		fmt.Sprintf("🔢 %d prompt + %d completion = %d tokens", p, c, t),
 	}
-	lines = append(lines, total)
+	if hasCost {
+		lines = append(lines, fmt.Sprintf("💰 custo total: $%.6f USD", cost))
+	} else {
+		lines = append(lines, "💰 custo: não informado")
+	}
 	return lines
+}
+
+func providerDisplayName(cfg *config.Config, costSource string) string {
+	if cfg != nil {
+		switch cfg.Provider {
+		case config.ProviderGemini:
+			return "Gemini"
+		case config.ProviderOpenAI:
+			return "OpenAI"
+		case config.ProviderOpenRouter:
+			return "OpenRouter"
+		}
+	}
+	switch costSource {
+	case "gemini":
+		return "Gemini"
+	case "openrouter":
+		return "OpenRouter"
+	case "estimated":
+		return "estimativa"
+	default:
+		return "IA"
+	}
 }
 
 func formatCost(cost float64, source string) string {
@@ -102,6 +126,7 @@ func buildUsageRecord(label string, prompt, completion, total int, apiCost *floa
 
 	record := UsageRecord{
 		Label:            label,
+		Model:            model,
 		PromptTokens:     prompt,
 		CompletionTokens: completion,
 		TotalTokens:      total,

@@ -122,8 +122,10 @@ func FormatLatestUsage(summary UsageSummary) string {
 		return ""
 	}
 	r := summary.Records[len(summary.Records)-1]
-	line := fmt.Sprintf("Uso: %d input + %d output = %d tokens",
-		r.PromptTokens, r.CompletionTokens, r.TotalTokens)
+	line := fmt.Sprintf("Uso: %d input + %d output = %d tokens", r.PromptTokens, r.CompletionTokens, r.TotalTokens)
+	if r.Model != "" {
+		line += " · " + r.Model
+	}
 	if r.CostUSD != nil {
 		line += " · " + formatCost(*r.CostUSD, r.CostSource)
 	}

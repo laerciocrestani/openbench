@@ -116,11 +116,10 @@ func (s *Session) UsageBlock(lines []string) {
 		return
 	}
 	fmt.Fprintln(s.out)
-	s.Section("Uso de IA")
+	fmt.Fprintf(s.out, "%s\n", s.paint("Uso de IA", bold+cyan))
 	for _, line := range lines {
 		s.Bullet(line)
 	}
-	fmt.Fprintln(s.out)
 }
 
 func (s *Session) Section(title string) {

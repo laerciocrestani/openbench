@@ -52,13 +52,13 @@ func RunCommit(ctx context.Context, opts Options) (*Result, error) {
 		if cfg != nil {
 			recordAIUsage("commit", cfg, provider.UsageStats())
 		}
-		provider.UsageStats().PrintWith(sess)
+		provider.UsageStats().PrintWith(sess, cfg)
 	}
 
 	if result != nil && result.Message != "" && !opts.DryRun {
 		sess.Detail(formatter.TitleLine(result.Message))
 	}
-	sess.Success("Ready to ship 🚀")
+	sess.Success("Ready! 🚀")
 	return result, nil
 }
 
@@ -122,9 +122,9 @@ func RunPush(ctx context.Context, opts Options) (*Result, error) {
 		if cfg != nil {
 			recordAIUsage("push", cfg, provider.UsageStats())
 		}
-		provider.UsageStats().PrintWith(sess)
+		provider.UsageStats().PrintWith(sess, cfg)
 	}
-	sess.Success("Ready to ship 🚀")
+	sess.Success("Ready! 🚀")
 	return result, nil
 }
 
@@ -261,8 +261,8 @@ func RunPR(ctx context.Context, opts Options) (*Result, error) {
 		result.PRPreview = preview
 		sess.Detail(preview)
 		recordAIUsage("pr", cfg, provider.UsageStats())
-		provider.UsageStats().PrintWith(sess)
-		sess.Success("Ready to ship 🚀")
+		provider.UsageStats().PrintWith(sess, cfg)
+		sess.Success("Ready! 🚀")
 		return result, nil
 	}
 
@@ -277,8 +277,8 @@ func RunPR(ctx context.Context, opts Options) (*Result, error) {
 	result.PRURL = url
 	sess.Detail(url)
 	recordAIUsage("pr", cfg, provider.UsageStats())
-	provider.UsageStats().PrintWith(sess)
-	sess.Success("Ready to ship 🚀")
+	provider.UsageStats().PrintWith(sess, cfg)
+	sess.Success("Ready! 🚀")
 	return result, nil
 }
 
