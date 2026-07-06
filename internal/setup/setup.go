@@ -33,7 +33,11 @@ func Install() error {
 	if err := sess.Step("Locating repository", func() error {
 		var err error
 		root, err = FindRepoRoot()
-		return err
+		if err != nil {
+			return err
+		}
+		_ = saveSourceRoot(root)
+		return nil
 	}); err != nil {
 		return err
 	}
@@ -78,17 +82,13 @@ func Update() error {
 		return err
 	}
 
-	var root string
-	if err := sess.Step("Locating repository", func() error {
-		var err error
-		root, err = FindRepoRoot()
-		if err != nil {
-			return fmt.Errorf("rode update dentro do clone do repositório gitia")
-		}
-		return nil
-	}); err != nil {
-		return err
+	root, err := FindRepoRoot()
+	if err != nil {
+		sess.Info("Clone local não encontrado — buscando última versão no GitHub")
+		return updateFromRemote(sess)
 	}
+
+	_ = saveSourceRoot(root)
 
 	before, err := gitShortHash(root)
 	if err != nil {
@@ -147,29 +147,66 @@ func Update() error {
 	return nil
 }
 
-func FindRepoRoot() (string, error) {
-	dir, err := os.Getwd()
+func updateFromRemote(sess *ui.Session) error {
+	tmp, err := os.MkdirTemp("", "gitia-update-*")
 	if err != nil {
-		return "", err
+		return err
+	}
+	defer os.RemoveAll(tmp)
+
+	if err := sess.Step("Cloning repository", func() error {
+		cmd := exec.Command("git", "clone", "--depth", "1", defaultRepoURL, tmp)
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		return cmd.Run()
+	}); err != nil {
+		return fmt.Errorf("clone falhou: %w", err)
 	}
 
-	for {
-		modPath := filepath.Join(dir, "go.mod")
-		data, err := os.ReadFile(modPath)
-		if err == nil && strings.Contains(string(data), moduleID) {
-			if _, err := os.Stat(filepath.Join(dir, "cmd", "gitia", "main.go")); err == nil {
-				return dir, nil
-			}
-		}
-
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			break
-		}
-		dir = parent
+	if err := sess.Step("Rebuilding binary", func() error {
+		return goInstall(tmp)
+	}); err != nil {
+		return err
 	}
 
-	return "", fmt.Errorf("repositório gitia não encontrado — rode dentro do clone ou use: go run ./cmd/gitia install")
+	bin, err := GitiaBin()
+	if err != nil {
+		return fmt.Errorf("reinstalação falhou")
+	}
+
+	if hash, err := gitShortHash(tmp); err == nil {
+		sess.Detail("commit: " + hash)
+		if line, err := gitOutput(tmp, "log", "-1", "--oneline"); err == nil {
+			sess.Detail(line)
+		}
+	}
+	sess.Detail(bin)
+	sess.Success("Update complete 🚀")
+	return nil
+}
+
+func FindRepoRoot() (string, error) {
+	if cwd, err := os.Getwd(); err == nil {
+		if root := findRepoFromDir(cwd); root != "" {
+			return root, nil
+		}
+	}
+
+	if env := strings.TrimSpace(os.Getenv("GITIA_ROOT")); env != "" {
+		if isValidRepoRoot(env) {
+			return filepath.Clean(env), nil
+		}
+	}
+
+	if root := readSavedSourceRoot(); root != "" {
+		return root, nil
+	}
+
+	if root := findRepoFromExecutable(); root != "" {
+		return root, nil
+	}
+
+	return "", fmt.Errorf("repositório gitia não encontrado")
 }
 
 func GoBinDir() string {
