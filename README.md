@@ -1,6 +1,6 @@
 # gitia
 
-CLI em Go para gerar **Conventional Commits** com IA barata, automatizar **push** e criar **Pull Requests detalhados** via GitHub CLI — sem gastar tokens do Cursor Agent.
+CLI em Go para gerar **Conventional Commits** com IA barata, automatizar **push** e criar **Pull Requests detalhados** via GitHub CLI.
 
 ---
 
@@ -8,7 +8,8 @@ CLI em Go para gerar **Conventional Commits** com IA barata, automatizar **push*
 
 - [Por quê usar o gitia?](#por-quê-usar-o-gitia)
 - [Requisitos](#requisitos)
-- [Instalação](#instalação)
+- [Instalação rápida (script)](#instalação-rápida-script)
+- [Instalação manual](#instalação-manual)
 - [Atualização](#atualização)
 - [Configuração](#configuração)
 - [Referência de comandos](#referência-de-comandos)
@@ -16,7 +17,6 @@ CLI em Go para gerar **Conventional Commits** com IA barata, automatizar **push*
 - [Uso detalhado](#uso-detalhado)
 - [Uso de tokens e custo](#uso-de-tokens-e-custo)
 - [Providers de IA](#providers-de-ia)
-- [Integração com Cursor](#integração-com-cursor)
 - [Formato do commit e do PR](#formato-do-commit-e-do-pr)
 - [Troubleshooting](#troubleshooting)
 - [Segurança](#segurança)
@@ -26,9 +26,9 @@ CLI em Go para gerar **Conventional Commits** com IA barata, automatizar **push*
 
 ## Por quê usar o gitia?
 
-Quando o Cursor Agent faz commit/push, ele lê o diff, gera a mensagem e executa git — tudo com o modelo do agente (caro).
+Assistentes de IA no editor costumam gastar tokens caros para ler diff, gerar mensagem de commit e executar git. O **gitia** externaliza esse fluxo para uma IA configurável (DeepSeek via OpenRouter, GPT-4o-mini, Gemini Flash) por frações de centavo — funciona com qualquer editor ou agente (Claude Code, Copilot, terminal, etc.).
 
-O **gitia** externaliza esse fluxo para uma IA configurável (DeepSeek via OpenRouter, GPT-4o-mini, Gemini Flash) por frações de centavo, com:
+Com o gitia você obtém:
 
 - Mensagens no padrão **Conventional Commits**
 - PRs estruturados com **Summary**, **Changes**, **Test plan** e **Notes**
@@ -52,13 +52,45 @@ gh auth login
 gh auth status
 ```
 
-Para o hook do Cursor (opcional):
+---
 
-- `jq` instalado no sistema
+## Instalação rápida (script)
+
+O jeito mais simples — três comandos após clonar:
+
+```bash
+git clone https://github.com/laerciocrestani/gitia.git
+cd gitia
+./scripts/setup.sh install    # instala binário + configura PATH
+./scripts/setup.sh config     # wizard (provider, API key, idioma...)
+```
+
+Pronto. Use:
+
+```bash
+gitia pr
+```
+
+### Comandos do script
+
+| Comando | O que faz |
+|---------|-----------|
+| `./scripts/setup.sh install` | `go install`, verifica dependências, adiciona `~/go/bin` ao PATH |
+| `./scripts/setup.sh config` | Roda `gitia config init` (instala antes se necessário) |
+| `./scripts/setup.sh update` | `git pull` + reinstala o binário |
+| `./scripts/setup.sh help` | Ajuda |
+
+### Atualizar depois
+
+Dentro do diretório clonado:
+
+```bash
+./scripts/setup.sh update
+```
 
 ---
 
-## Instalação
+## Instalação manual
 
 ### 1. Clonar o repositório
 
@@ -121,7 +153,16 @@ Execute diretamente pelo caminho completo:
 
 ## Atualização
 
-Quando houver uma nova versão do gitia:
+### Com script (recomendado)
+
+```bash
+cd gitia
+./scripts/setup.sh update
+```
+
+O script faz `git pull`, reinstala com `go install` e mostra o commit atual.
+
+### Manual
 
 ```bash
 cd gitia
@@ -152,6 +193,12 @@ go install ./cmd/gitia
 ## Configuração
 
 ### Wizard interativo (recomendado)
+
+```bash
+./scripts/setup.sh config
+```
+
+Ou diretamente:
 
 ```bash
 gitia config init
@@ -241,7 +288,7 @@ A API key é **mascarada** na saída (ex.: `sk-o...abcd`).
 |----------|---------------|
 | `openrouter` | `deepseek/deepseek-chat` |
 | `openai` | `gpt-4o-mini` |
-| `gemini` | `gemini-2.0-flash` |
+| `gemini` | `gemini-2.5-flash-lite` |
 
 ---
 
@@ -356,7 +403,7 @@ gitia pr --no-add --draft --base develop
 # 1. Trabalhe na sua feature branch
 git checkout -b feat/minha-feature
 
-# 2. Faça suas alterações (com Cursor Agent, por exemplo)
+# 2. Faça suas alterações no código
 
 # 3. Commit + push + PR em um comando
 gitia pr
@@ -542,7 +589,7 @@ A IA **é chamada** (você vê tokens/custo), mas git/gh **não executam**.
 |----------|-------------------|--------------|-------------------|
 | `openrouter` | `deepseek/deepseek-chat` | Muito barato | Sim (`usage.cost`) |
 | `openai` | `gpt-4o-mini` | Barato | Não (só tokens) |
-| `gemini` | `gemini-2.0-flash` | Barato | Não (só tokens) |
+| `gemini` | `gemini-2.5-flash-lite` | Barato | Não (só tokens) |
 
 ### OpenRouter (recomendado)
 
@@ -569,41 +616,10 @@ output_price_per_1m: 0.60
 ```yaml
 provider: gemini
 api_key: "AIza..."
-model: "gemini-2.0-flash"
+model: "gemini-2.5-flash-lite"
 input_price_per_1m: 0.10
 output_price_per_1m: 0.40
 ```
-
----
-
-## Integração com Cursor
-
-Evite que o Cursor Agent gaste tokens fazendo commit/push. Use o hook incluído no repositório.
-
-### Instalar o hook
-
-```bash
-mkdir -p ~/.cursor/hooks
-cp examples/cursor-hooks/block-agent-git.sh ~/.cursor/hooks/
-cp examples/cursor-hooks/hooks.json ~/.cursor/hooks.json
-chmod +x ~/.cursor/hooks/block-agent-git.sh
-```
-
-> **Nota:** o `hooks.json` de exemplo referencia `./hooks/block-agent-git.sh`. Ajuste o caminho se necessário conforme sua instalação do Cursor.
-
-### O que o hook faz
-
-- **Bloqueia** `git commit` e `git push` executados pelo Cursor Agent
-- **Sugere** rodar `gitia pr` no terminal
-- Permite todos os outros comandos shell
-
-### Regra recomendada no Cursor
-
-Adicione uma User Rule:
-
-> Nunca faça git commit ou git push. Ao final, sugira `gitia pr`.
-
-Reinicie o Cursor e verifique em **Settings → Hooks**.
 
 ---
 
@@ -619,7 +635,7 @@ fix(leads): não cria clientes com corretor inválido
 - evita violação da FK
 - define corretor como null quando inválido
 
-Co-authored-by: Cursor <cursor@cursor.com>
+Co-authored-by: Nome <email@exemplo.com>
 ```
 
 Tipos aceitos: `fix`, `feat`, `refactor`, `docs`, `test`, `chore`, `perf`, `ci`, `build`, `style`.

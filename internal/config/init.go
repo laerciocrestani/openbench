@@ -85,7 +85,7 @@ func defaultModelFor(p Provider) string {
 	case ProviderOpenAI:
 		return "gpt-4o-mini"
 	case ProviderGemini:
-		return "gemini-2.0-flash"
+		return "gemini-2.5-flash-lite"
 	default:
 		return "deepseek/deepseek-chat"
 	}
