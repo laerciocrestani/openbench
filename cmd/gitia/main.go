@@ -6,6 +6,8 @@ import (
 
 	"github.com/laerciocrestani/gitia/internal/app"
 	"github.com/laerciocrestani/gitia/internal/config"
+	gitpkg "github.com/laerciocrestani/gitia/internal/git"
+	"github.com/laerciocrestani/gitia/internal/setup"
 	"github.com/spf13/cobra"
 )
 
@@ -50,9 +52,45 @@ func main() {
 	prCmd.Flags().BoolVar(&draft, "draft", false, "cria PR como draft")
 	prCmd.Flags().StringVar(&base, "base", "", "branch base (default: config base_branch)")
 
+	statusCmd := &cobra.Command{
+		Use:   "status",
+		Short: "Alias para git status",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			repo, err := gitpkg.New()
+			if err != nil {
+				return err
+			}
+			if err := repo.IsRepo(); err != nil {
+				return fmt.Errorf("diretório atual não é um repositório git")
+			}
+			return repo.Status(args...)
+		},
+	}
+
+	installCmd := &cobra.Command{
+		Use:    "install",
+		Hidden: true,
+		Short:  "Instala o binário e configura PATH (bootstrap via go run)",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return setup.Install()
+		},
+	}
+
+	updateCmd := &cobra.Command{
+		Use:   "update",
+		Short: "Atualiza o repositório e reinstala o binário",
+		Long:  "Executa git pull e go install dentro do clone do repositório gitia.",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return setup.Update()
+		},
+	}
+
 	configCmd := &cobra.Command{
 		Use:   "config",
-		Short: "Gerencia configuração",
+		Short: "Configura provider, API key e preferências",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return config.InitInteractive()
+		},
 	}
 
 	configInit := &cobra.Command{
@@ -77,7 +115,7 @@ func main() {
 	}
 
 	configCmd.AddCommand(configInit, configShow)
-	root.AddCommand(commitCmd, pushCmd, prCmd, configCmd)
+	root.AddCommand(installCmd, updateCmd, statusCmd, commitCmd, pushCmd, prCmd, configCmd)
 
 	if err := root.Execute(); err != nil {
 		os.Exit(1)

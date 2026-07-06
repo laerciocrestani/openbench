@@ -8,7 +8,7 @@ CLI em Go para gerar **Conventional Commits** com IA barata, automatizar **push*
 
 - [Por quê usar o gitia?](#por-quê-usar-o-gitia)
 - [Requisitos](#requisitos)
-- [Instalação rápida (script)](#instalação-rápida-script)
+- [Instalação rápida](#instalação-rápida)
 - [Instalação manual](#instalação-manual)
 - [Atualização](#atualização)
 - [Configuração](#configuração)
@@ -54,39 +54,43 @@ gh auth status
 
 ---
 
-## Instalação rápida (script)
+## Instalação rápida
 
 O jeito mais simples — três comandos após clonar:
 
 ```bash
 git clone https://github.com/laerciocrestani/gitia.git
 cd gitia
-./scripts/setup.sh install    # instala binário + configura PATH
-./scripts/setup.sh config     # wizard (provider, API key, idioma...)
+go run ./cmd/gitia install    # única forma de instalar (primeira vez)
+gitia config                  # wizard (provider, API key, idioma...)
 ```
 
 Pronto. Use:
 
 ```bash
+gitia status
 gitia pr
 ```
 
-### Comandos do script
+### Comandos de setup
 
 | Comando | O que faz |
 |---------|-----------|
-| `./scripts/setup.sh install` | `go install`, verifica dependências, adiciona `~/go/bin` ao PATH |
-| `./scripts/setup.sh config` | Roda `gitia config init` (instala antes se necessário) |
-| `./scripts/setup.sh update` | `git pull` + reinstala o binário |
-| `./scripts/setup.sh help` | Ajuda |
+| `go run ./cmd/gitia install` | `go install`, verifica dependências, adiciona `~/go/bin` ao PATH |
+| `gitia config` | Wizard de configuração (equivale a `gitia config init`) |
+| `gitia config show` | Exibe config ativa (API key mascarada) |
+| `gitia update` | `git pull` + reinstala o binário |
+| `gitia status` | Alias para `git status` |
 
 ### Atualizar depois
 
 Dentro do diretório clonado:
 
 ```bash
-./scripts/setup.sh update
+gitia update
 ```
+
+O script `./scripts/setup.sh` ainda funciona como wrapper de compatibilidade.
 
 ---
 
@@ -153,38 +157,16 @@ Execute diretamente pelo caminho completo:
 
 ## Atualização
 
-### Com script (recomendado)
-
 ```bash
 cd gitia
-./scripts/setup.sh update
+gitia update
 ```
 
-O script faz `git pull`, reinstala com `go install` e mostra o commit atual.
-
-### Manual
+Ou manualmente:
 
 ```bash
 cd gitia
 git pull origin main
-go install ./cmd/gitia
-```
-
-Confirme a versão instalada:
-
-```bash
-gitia --help
-which gitia
-```
-
-> O gitia não possui comando `version` dedicado. Use `git log -1` no diretório clonado para ver o commit instalado por último.
-
-### Atualização a partir de fork ou branch customizada
-
-```bash
-cd gitia
-git fetch origin
-git checkout sua-branch
 go install ./cmd/gitia
 ```
 
@@ -195,14 +177,10 @@ go install ./cmd/gitia
 ### Wizard interativo (recomendado)
 
 ```bash
-./scripts/setup.sh config
+gitia config
 ```
 
-Ou diretamente:
-
-```bash
-gitia config init
-```
+Equivalente a `gitia config init`.
 
 O wizard pergunta, nesta ordem:
 
@@ -296,13 +274,17 @@ A API key é **mascarada** na saída (ex.: `sk-o...abcd`).
 
 ```
 gitia
+├── update          git pull + reinstala o binário
+├── status          Alias para git status
 ├── commit          Gera commit com IA a partir do diff local
 ├── push            commit + push para origin
 ├── pr              commit (se necessário) + push + PR detalhado via gh
-└── config
-    ├── init        Wizard interativo de configuração
+└── config          Wizard de configuração (ou subcomandos init/show)
+    ├── init        Wizard interativo (alias de gitia config)
     └── show        Exibe config ativa (key mascarada)
 ```
+
+> Instalação (uma vez, a partir do clone): `go run ./cmd/gitia install`
 
 ### Visão geral
 
@@ -311,8 +293,11 @@ gitia
 | `gitia commit` | Commit com mensagem gerada | 1× (commit) | `add`, `commit` | não |
 | `gitia push` | Commit + push | 1× (commit) | `add`, `commit`, `push` | não |
 | `gitia pr` | Commit + push + PR | 1–2× (commit + PR) | `add`, `commit`, `push` | `pr create` |
-| `gitia config init` | Cria config.yaml | não | não | não |
+| `gitia status` | Exibe status do repositório | não | `status` | não |
+| `gitia config` | Cria/atualiza config.yaml | não | não | não |
+| `gitia config init` | Igual a `gitia config` | não | não | não |
 | `gitia config show` | Mostra config | não | não | não |
+| `gitia update` | Atualiza repo + reinstala | não | não | não |
 
 ---
 

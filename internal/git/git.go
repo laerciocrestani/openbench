@@ -123,3 +123,12 @@ func (r *Repo) IsRepo() error {
 	_, err := r.run("rev-parse", "--git-dir")
 	return err
 }
+
+func (r *Repo) Status(args ...string) error {
+	cmd := exec.Command("git", append([]string{"status"}, args...)...)
+	cmd.Dir = r.dir
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	cmd.Stdin = os.Stdin
+	return cmd.Run()
+}
