@@ -16,6 +16,7 @@ CLI em Go para gerar **Conventional Commits** com IA barata, automatizar **push*
 - [Instalação manual](#instalação-manual)
 - [Atualização](#atualização)
 - [Configuração](#configuração)
+- [Versionamento](#versionamento)
 - [Referência de comandos](#referência-de-comandos)
 - [Flags globais e por comando](#flags-globais-e-por-comando)
 - [Uso detalhado](#uso-detalhado)
@@ -36,7 +37,8 @@ Com o gitia você obtém:
 
 - Mensagens no padrão **Conventional Commits**
 - PRs estruturados com **Summary**, **Changes**, **Test plan** e **Notes**
-- Resumo de **tokens e custo** ao final de cada execução
+- Resumo de **tokens e custo** (prévia antes da IA + total após execução)
+- **Relatório de gastos** (`gitia report`) com histórico em CSV
 - Integração nativa com **`gh pr create`**
 
 ---
@@ -83,16 +85,21 @@ gitia pr
 | `go run ./cmd/gitia install` | `go install`, verifica dependências, adiciona `~/go/bin` ao PATH |
 | `gitia config` | Wizard de configuração (equivale a `gitia config init`) |
 | `gitia config show` | Exibe config ativa (API key mascarada) |
-| `gitia update` | `git pull` + reinstala o binário |
+| `gitia update` | Atualiza e reinstala o binário (funciona de qualquer diretório) |
+| `gitia version` | Versão automática + commit + número de commits |
+| `gitia report` | Relatório de uso e custos de IA (últimas 24h por padrão) |
+| `gitia pricing update` | Busca preços oficiais do Gemini e salva localmente |
 | `gitia status` | Alias para `git status` |
 
 ### Atualizar depois
 
-Dentro do diretório clonado:
+De qualquer diretório:
 
 ```bash
 gitia update
 ```
+
+O gitia usa o clone salvo em `~/.config/gitia/source`, a variável `GITIA_ROOT` ou, se não encontrar clone local, baixa a última versão do GitHub automaticamente.
 
 O script `./scripts/setup.sh` ainda funciona como wrapper de compatibilidade.
 
@@ -162,11 +169,17 @@ Execute diretamente pelo caminho completo:
 ## Atualização
 
 ```bash
-cd gitia
 gitia update
 ```
 
-Ou manualmente:
+Opcional — apontar para o seu clone local:
+
+```bash
+export GITIA_ROOT=~/projects/gitia
+gitia update
+```
+
+Ou manualmente, dentro do clone:
 
 ```bash
 cd gitia
@@ -191,11 +204,14 @@ O wizard pergunta, nesta ordem:
 | Campo | Opções / default | Descrição |
 |-------|------------------|-----------|
 | Provider | `openrouter`, `openai`, `gemini` | Serviço de IA |
-| API Key | — | Chave do provider escolhido |
-| Model | depende do provider | Modelo de linguagem |
+| API Key | — | Chave do provider (Enter mantém a atual) |
+| Model | depende do provider | Modelo de linguagem (Enter mantém) |
 | Idioma | default: `pt-BR` | Idioma das mensagens geradas |
 | Branch base | default: `main` | Branch usada como base do PR |
 | Co-author | opcional | Trailer adicionado ao commit |
+| Limpar terminal | `s` / `n` | Limpa o console antes de cada comando gitia |
+
+Se já existir configuração, **Enter em qualquer campo mantém o valor atual** (ex.: `[gemini]`).
 
 Salva em `~/.config/gitia/config.yaml` com permissão `0600`.
 
@@ -211,8 +227,9 @@ language: "pt-BR"
 base_branch: "main"
 co_author: ""
 max_diff_bytes: 120000
+clear_screen: false       # true = limpa o terminal antes de cada comando
 
-# opcional — estimativa de custo quando a API não informa (openai/gemini)
+# opcional — sobrescreve preços padrão do Gemini
 # input_price_per_1m: 0.14
 # output_price_per_1m: 0.28
 ```
@@ -233,6 +250,10 @@ Crie `.gitia.yaml` na raiz do projeto. **Tem prioridade** sobre o config global.
 |----------|-----------|
 | `GITIA_API_KEY` | Sobrescreve `api_key` do YAML (recomendado em CI) |
 | `GITIA_CONFIG` | Caminho alternativo para o arquivo de config |
+| `GITIA_ROOT` | Caminho do clone gitia (usado por `gitia update`) |
+| `GITIA_NO_CLEAR` | Desativa limpeza do terminal (`clear_screen` ignorado) |
+| `GITIA_NO_UI` | Desativa cores, spinner e limpeza do terminal |
+| `NO_COLOR` | Desativa cores ANSI |
 
 Exemplo:
 
@@ -261,6 +282,7 @@ A API key é **mascarada** na saída (ex.: `sk-o...abcd`).
 | `base_branch` | string | não | `main` | Branch base padrão para `gitia pr` |
 | `co_author` | string | não | vazio | Trailer no commit (ex.: `Co-authored-by: Nome <email@exemplo.com>`) |
 | `max_diff_bytes` | int | não | `120000` | Tamanho máximo do diff enviado à IA |
+| `clear_screen` | bool | não | `false` | Limpa o terminal antes de cada comando |
 | `input_price_per_1m` | float | não | — | USD por 1M tokens de input (estimativa de custo) |
 | `output_price_per_1m` | float | não | — | USD por 1M tokens de output (estimativa de custo) |
 
@@ -274,32 +296,53 @@ A API key é **mascarada** na saída (ex.: `sk-o...abcd`).
 
 ---
 
+## Versionamento
+
+A versão é **automática**, calculada pelo número de commits no repositório (sem tags git):
+
+- 1º commit → `v0.1.0`
+- cada commit adicional incrementa o patch → ex.: 14 commits = `v0.1.13`
+
+```bash
+gitia version
+```
+
+Exibe versão, commit, total de commits e se a árvore está dirty.
+
+O `go install` injeta versão e commit via `-ldflags` no build.
+
+---
+
 ## Referência de comandos
 
-Rodar **`gitia` sem subcomando** exibe um **overview** do repositório (comando padrão):
+Rodar **`gitia` sem subcomando** exibe um **overview** do repositório (comando padrão), nesta ordem:
 
-- path, remote e branch atual
-- sync com upstream (↑ ahead / ↓ behind)
-- **PR aberto** na branch (via `gh`)
-- working tree (staged, modified, untracked)
-- **arquivos alterados** com status e `+/-` linhas
-- **stash** pendente(s)
-- branches locais com tracking
-- últimos 5 commits
-- config do gitia (provider, model)
-- sugestões do próximo passo (`gitia commit`, `gitia pr`, `git stash pop`, etc.)
+1. **Gitia config** — provider, model, API key
+2. **Recent commits** — últimos 5 commits
+3. **Branches** — branches locais com tracking
+4. **Changed files** — status e `+/-` linhas
+5. **Repository / Branch / Status / Sync** — meta do repo
+6. **Next steps** — sugestões (`gitia commit`, `gitia pr`, etc.)
+
+Também exibe PR aberto (via `gh`), stash e delta em relação à base quando aplicável.
 
 ```
 gitia                 Overview do repositório (default)
 ├── sync              fetch + pull da branch base (--prune para limpar branches)
-├── update            git pull + reinstala o binário
-├── status            Alias para git status
-├── commit            Gera commit com IA a partir do diff local
-├── push              commit + push para origin
+├── update            atualiza e reinstala o binário
+├── version           versão automática + commit
+├── report            relatório de uso e custos de IA
+├── status            alias para git status
+├── commit            gera commit com IA a partir do diff local
+├── push              commit (se houver diff) + push para origin
 ├── pr                commit (se necessário) + push + PR detalhado via gh
-└── config            Wizard de configuração (ou subcomandos init/show)
-    ├── init          Wizard interativo (alias de gitia config)
-    └── show          Exibe config ativa (key mascarada)
+├── pricing           preços Gemini (update / show / report)
+│   ├── update        busca preços oficiais na web
+│   ├── show          exibe preços salvos
+│   └── report        alias de gitia report --all
+└── config            wizard de configuração (ou subcomandos init/show)
+    ├── init          wizard interativo (alias de gitia config)
+    └── show          exibe config ativa (key mascarada)
 ```
 
 > Instalação (uma vez, a partir do clone): `go run ./cmd/gitia install`
@@ -312,14 +355,17 @@ gitia                 Overview do repositório (default)
 | `gitia sync` | Sincroniza branch base com origin | não | `fetch`, `pull` | não |
 | `gitia sync --prune` | Sync + remove branches mergeadas (local e GitHub) | não | `fetch`, `pull`, `branch -d`, `push --delete` | não |
 | `gitia sync --prune-remote` | Sync + remove branches mergeadas só no GitHub | não | `fetch`, `pull`, `push --delete` | não |
+| `gitia version` | Exibe versão, commit e commits | não | leitura | não |
+| `gitia report` | Relatório de uso/custo de IA | não | leitura | não |
+| `gitia pricing update` | Atualiza tabela de preços Gemini | não | não | não |
 | `gitia commit` | Commit com mensagem gerada | 1× (commit) | `add`, `commit` | não |
-| `gitia push` | Commit + push | 1× (commit) | `add`, `commit`, `push` | não |
+| `gitia push` | Commit (se houver diff) + push | 0–1× | `add`, `commit`, `push` | não |
 | `gitia pr` | Commit + push + PR | 1–2× (commit + PR) | `add`, `commit`, `push` | `pr create` |
 | `gitia status` | Exibe status do repositório | não | `status` | não |
 | `gitia config` | Cria/atualiza config.yaml | não | não | não |
 | `gitia config init` | Igual a `gitia config` | não | não | não |
 | `gitia config show` | Mostra config | não | não | não |
-| `gitia update` | Atualiza repo + reinstala | não | não | não |
+| `gitia update` | Atualiza e reinstala binário | não | não | não |
 
 ---
 
@@ -400,6 +446,25 @@ git add .
 gitia pr --no-add --draft --base develop
 ```
 
+### Flags do `gitia report`
+
+| Flag | Descrição |
+|------|-----------|
+| `--hour` | Última hora |
+| `--hours N` | Últimas N horas |
+| `--days N` | Últimos N dias |
+| `--month` | Mês atual (calendário) |
+| `--all` | Todo o histórico |
+
+Padrão (sem flags): **últimas 24 horas**.
+
+```bash
+gitia report
+gitia report --hour
+gitia report --days 7
+gitia report --all
+```
+
 ---
 
 ## Uso detalhado
@@ -464,9 +529,9 @@ gitia commit --dry-run --verbose
 
 ### `gitia push`
 
-**Quando usar:** commit + enviar branch para origin, sem abrir PR.
+**Quando usar:** enviar branch para origin. Se houver alterações pendentes, commita antes; senão faz push dos commits existentes.
 
-**Fluxo:** igual ao `commit`, depois `git push -u origin HEAD`.
+**Fluxo:** `git add .` (se não `--no-add`) → commit com IA (só se houver diff) → `git push -u origin HEAD`.
 
 ```bash
 gitia push
@@ -552,41 +617,62 @@ gitia config show
 
 ## Uso de tokens e custo
 
-Ao final de **`commit`**, **`push`** e **`pr`**, o gitia exibe:
+### Prévia (antes da IA)
+
+Antes do passo `Thinking`, o gitia exibe uma estimativa:
 
 ```
---- Uso de IA ---
-commit: 8420 prompt + 186 completion = 8606 tokens | $0.000412 USD (OpenRouter)
-pr: 24100 prompt + 512 completion = 24612 tokens | $0.001203 USD (OpenRouter)
-Total: 32520 prompt + 698 completion = 33218 tokens | custo total: $0.001615 USD
+Estimativa: ~1750 tokens · $0.000275 USD (Gemini) (input ~1500 + output ~250)
 ```
+
+### Após execução
+
+Ao final de **`commit`**, **`push`** e **`pr`**:
+
+```
+Uso de IA
+• commit: 8420 prompt + 186 completion = 8606 tokens | $0.000412 USD (Gemini)
+• Total: 8606 prompt + 186 completion = 8792 tokens | custo total: $0.000412 USD
+```
+
+Cada chamada é registrada em `~/.config/gitia/usage/ledger.csv` para o `gitia report`.
 
 ### Como o custo é calculado
 
 | Provider | Tokens | Custo |
 |----------|--------|-------|
-| **OpenRouter** | `usage.prompt_tokens`, `completion_tokens`, `total_tokens` | Real via `usage.cost` (USD) |
-| **OpenAI** | `usage.*` da API | Estimativa se `input_price_per_1m` / `output_price_per_1m` configurados |
-| **Gemini** | `usageMetadata.*` | Estimativa se preços configurados |
+| **OpenRouter** | `usage.*` | Real via `usage.cost` (USD) |
+| **OpenAI** | `usage.*` | Estimativa (preços padrão ou config) |
+| **Gemini** | `usageMetadata.*` | Estimativa com preços padrão ou `gitia pricing update` |
 
-### Estimativa manual (OpenAI / Gemini)
+### Preços do Gemini
 
-Adicione ao config:
-
-```yaml
-input_price_per_1m: 0.15    # USD por 1M tokens de input
-output_price_per_1m: 0.60    # USD por 1M tokens de output
+```bash
+gitia pricing update   # busca preços oficiais e salva em ~/.config/gitia/pricing.yaml
+gitia pricing show     # exibe tabela salva
 ```
 
-Consulte a página de pricing do provider para valores atuais.
+Modelos com preços padrão embutidos (ex.: `gemini-2.5-flash-lite` → $0.10 / $0.40 por 1M tokens).
+
+### Estimativa manual (override)
+
+Adicione ao config para sobrescrever qualquer provider:
+
+```yaml
+input_price_per_1m: 0.15
+output_price_per_1m: 0.60
+```
 
 ### Retries
 
-Se a IA retornar JSON inválido, o gitia tenta novamente (até 2 tentativas). **Cada tentativa consome tokens** e aparece no resumo (ex.: `commit (retry 1)`).
+| Tipo | Comportamento |
+|------|---------------|
+| **API indisponível** (503, 429, etc.) | Até **3 tentativas**, **3s** entre cada |
+| **JSON inválido da IA** | Até 2 tentativas de parse (consome tokens extras) |
 
 ### `--dry-run`
 
-A IA **é chamada** (você vê tokens/custo), mas git/gh **não executam**.
+A IA **é chamada** (você vê tokens/custo e registro no ledger), mas git/gh **não executam**.
 
 ---
 
@@ -624,9 +710,9 @@ output_price_per_1m: 0.60
 provider: gemini
 api_key: "AIza..."
 model: "gemini-2.5-flash-lite"
-input_price_per_1m: 0.10
-output_price_per_1m: 0.40
 ```
+
+Preços padrão embutidos ($0.10 input / $0.40 output por 1M tokens). Atualize com `gitia pricing update`.
 
 ---
 
@@ -717,8 +803,13 @@ max_diff_bytes: 200000
 
 ### Custo não aparece
 
-- Use **OpenRouter** para custo real automático, ou
-- Configure `input_price_per_1m` e `output_price_per_1m` para estimativa
+- Use **OpenRouter** para custo real automático
+- Rode `gitia pricing update` para Gemini
+- Ou configure `input_price_per_1m` e `output_price_per_1m` no YAML
+
+### `gitia report` vazio
+
+O ledger só é preenchido após rodar `commit`, `push` ou `pr` com IA. Verifique `~/.config/gitia/usage/ledger.csv`.
 
 ---
 
