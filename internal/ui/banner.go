@@ -6,14 +6,17 @@ import (
 	"strings"
 )
 
+// 3 linhas condensadas do título (topo / meio / base das letras).
 var bannerTitle = []string{
-	"   ██████╗ ██╗████████╗ █████╗ ██╗",
-	"  ██╔════╝ ██║╚══██╔══╝██╔══██╗██║",
+	"  ██████╗ ██╗████████╗ █████╗ ██╗",
 	"  ██║  ███╗██║   ██║   ███████║██║",
-	"  ██║   ██║██║   ██║   ██╔══██║██║",
-	"  ╚██████╔╝██║   ██║   ██║  ██║██║",
-	"   ╚═════╝ ╚═╝   ╚═╝   ╚═╝  ╚═╝╚═╝",
+	"  ╚═════╝ ╚═╝   ╚═╝   ╚═╝  ╚═╝╚═╝",
 }
+
+// Degradê ciano → teal → cinza (256 cores).
+var bannerFadePalette = []int{51, 45, 39, 37, 30, 238}
+
+const bannerMetaIndent = "  "
 
 // BannerContext holds optional status lines shown below the banner art.
 type BannerContext struct {
@@ -29,22 +32,21 @@ func writeBanner(out io.Writer, dryRun bool, ctx *BannerContext, paint func(stri
 		fmt.Fprintln(out, paint(line, bannerTitleStyle(i)))
 	}
 
-	fmt.Fprintln(out)
 	tagline := "AI-powered Git Workflow · " + Version()
 	if dryRun {
 		tagline += " · dry-run"
 	}
-	fmt.Fprintf(out, "      %s\n", paint(tagline, dim))
+	fmt.Fprintf(out, "%s%s\n", bannerMetaIndent, paint(tagline, dim))
 	fmt.Fprintln(out)
 
 	if ctx != nil {
 		if ctx.Repo != "" && ctx.Branch != "" {
 			status := fmt.Sprintf("%s · %s · %s", ctx.Repo, ctx.Branch, ctx.Sync)
-			fmt.Fprintf(out, "  %s\n", paint(status, dim))
+			fmt.Fprintf(out, "%s%s\n", bannerMetaIndent, paint(status, dim))
 		}
 		if ctx.Provider != "" && ctx.Model != "" {
 			line := fmt.Sprintf("Provider: %s · Model: %s", ctx.Provider, ctx.Model)
-			fmt.Fprintf(out, "  %s\n", paint(line, dim))
+			fmt.Fprintf(out, "%s%s\n", bannerMetaIndent, paint(line, dim))
 		}
 	}
 
@@ -65,14 +67,14 @@ func FormatBanner(dryRun bool, ctx *BannerContext, colorsEnabled bool) string {
 }
 
 func bannerTitleStyle(line int) string {
-	switch line {
-	case 0, 1, 2:
+	n := len(bannerTitle)
+	if n == 0 {
 		return bold + cyan
-	case 3:
-		return cyan
-	case 4:
-		return dim + cyan
-	default:
-		return dim
 	}
+	maxIdx := len(bannerFadePalette) - 1
+	idx := line * maxIdx / (n - 1)
+	if idx > maxIdx {
+		idx = maxIdx
+	}
+	return fmt.Sprintf("\033[38;5;%dm", bannerFadePalette[idx])
 }

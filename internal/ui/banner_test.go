@@ -17,6 +17,9 @@ func TestWriteBannerContainsTitleAndVersion(t *testing.T) {
 	if !strings.Contains(out, "AI-powered Git Workflow") {
 		t.Fatalf("banner missing tagline: %q", out)
 	}
+	if strings.Count(out, "\n") > 12 {
+		t.Fatalf("banner too tall: %d lines", strings.Count(out, "\n"))
+	}
 }
 
 func TestWriteBannerContext(t *testing.T) {
@@ -40,14 +43,15 @@ func TestWriteBannerContext(t *testing.T) {
 }
 
 func TestBannerTitleStyleFade(t *testing.T) {
-	if bannerTitleStyle(2) != bannerTitleStyle(0) {
-		t.Fatal("top lines should share the same style")
+	first := bannerTitleStyle(0)
+	last := bannerTitleStyle(len(bannerTitle) - 1)
+	if first == last {
+		t.Fatal("first and last title lines should use different fade colors")
 	}
-	if bannerTitleStyle(3) == bannerTitleStyle(0) {
-		t.Fatal("fade should start on line 4")
-	}
-	if bannerTitleStyle(5) == bannerTitleStyle(3) {
-		t.Fatal("last line should be the most faded")
+	for i := 0; i < len(bannerTitle); i++ {
+		if bannerTitleStyle(i) == "" {
+			t.Fatalf("line %d has empty style", i)
+		}
 	}
 }
 
