@@ -58,13 +58,48 @@ func TestBannerTitleStyleFade(t *testing.T) {
 	if first == last {
 		t.Fatal("first and last title lines should use different fade colors")
 	}
-	if !strings.Contains(last, ";0;0m") {
-		t.Fatalf("last line should fade to transparent (0,0), got %q", last)
+	if !strings.Contains(first, ";0;255;0m") {
+		t.Fatalf("first line should be full green, got %q", first)
+	}
+	if !strings.Contains(last, ";0;25;0m") {
+		t.Fatalf("last line should fade to 10%% green, got %q", last)
 	}
 	for i := 0; i < total; i++ {
 		if bannerTitleStyle(i) == "" {
 			t.Fatalf("line %d has empty style", i)
 		}
+	}
+}
+
+func TestBannerGraphLastDotAccent(t *testing.T) {
+	var buf bytes.Buffer
+	writeBanner(&buf, false, nil, func(text, code string) string {
+		if code == bold+magenta {
+			return "PINK:" + text
+		}
+		return text
+	})
+	if !strings.Contains(buf.String(), "PINK:●") {
+		t.Fatalf("last graph dot should use accent color: %q", buf.String())
+	}
+}
+
+func TestWriteBannerMismatchedHeights(t *testing.T) {
+	origTitle := bannerTitle
+	origGraph := bannerGraph
+	t.Cleanup(func() {
+		bannerTitle = origTitle
+		bannerGraph = origGraph
+	})
+
+	bannerTitle = []string{"a", "b", "c", "d"}
+	bannerGraph = []string{"1", "2", "3"}
+
+	var buf bytes.Buffer
+	writeBanner(&buf, false, nil, func(text, _ string) string { return text })
+
+	if !strings.Contains(buf.String(), "a") || !strings.Contains(buf.String(), "3") {
+		t.Fatalf("expected banner with partial art: %q", buf.String())
 	}
 }
 

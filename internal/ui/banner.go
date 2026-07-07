@@ -39,14 +39,13 @@ func writeBanner(out io.Writer, dryRun bool, ctx *BannerContext, paint func(stri
 
 	titleWidth := maxLineWidth(bannerTitle)
 	gap := strings.Repeat(" ", bannerArtGap)
-	height := len(bannerTitle)
+	height := bannerArtHeight()
 
 	for i := 0; i < height; i++ {
 		style := bannerLineStyle(i, height)
-		left := bannerTitle[i]
-		right := bannerGraph[i]
+		left, right := bannerArtLine(i)
 		pad := strings.Repeat(" ", titleWidth-lineWidth(left))
-		fmt.Fprintln(out, paint(left, style)+pad+gap+paint(right, style))
+		fmt.Fprintln(out, paint(left, style)+pad+gap+renderGraphLine(i, height, right, paint, style))
 	}
 
 	tagline := "AI-powered Git Workflow · " + Version()
@@ -68,6 +67,35 @@ func writeBanner(out io.Writer, dryRun bool, ctx *BannerContext, paint func(stri
 	}
 
 	fmt.Fprintln(out)
+}
+
+func renderGraphLine(lineIndex, total int, line string, paint func(string, string) string, style string) string {
+	if lineIndex != total-1 || line == "" {
+		return paint(line, style)
+	}
+	idx := strings.LastIndex(line, "●")
+	if idx < 0 {
+		return paint(line, style)
+	}
+	return paint(line[:idx], style) + paint(line[idx:], bold+magenta)
+}
+
+func bannerArtHeight() int {
+	height := len(bannerTitle)
+	if len(bannerGraph) > height {
+		height = len(bannerGraph)
+	}
+	return height
+}
+
+func bannerArtLine(i int) (left, right string) {
+	if i < len(bannerTitle) {
+		left = bannerTitle[i]
+	}
+	if i < len(bannerGraph) {
+		right = bannerGraph[i]
+	}
+	return left, right
 }
 
 func maxLineWidth(lines []string) int {
@@ -99,15 +127,15 @@ func FormatBanner(dryRun bool, ctx *BannerContext, colorsEnabled bool) string {
 
 func bannerLineStyle(line, total int) string {
 	if total <= 1 {
-		return "\033[38;2;0;255;255m"
+		return "\033[38;2;0;255;0m"
 	}
 	if line >= total {
 		line = total - 1
 	}
 	t := float64(line) / float64(total-1)
-	g := int(255 * (1 - t))
-	b := int(255 * (1 - t))
-	return fmt.Sprintf("\033[38;2;0;%d;%dm", g, b)
+	intensity := 1.0 - 0.9*t
+	g := int(255 * intensity)
+	return fmt.Sprintf("\033[38;2;0;%d;0m", g)
 }
 
 func bannerTitleStyle(line int) string {
