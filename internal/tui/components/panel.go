@@ -4,8 +4,15 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/lucasb-eyer/go-colorful"
 	"github.com/mattn/go-runewidth"
 	"github.com/laerciocrestani/gitai/internal/tui/theme"
+	"github.com/laerciocrestani/gitai/internal/uiprefs"
+)
+
+const (
+	panelDecorSolidEnd = 10
+	panelDecorFadeEnd  = 30
 )
 
 // RenderPanel renders a titled panel with optional body content.
@@ -14,13 +21,8 @@ func RenderPanel(title, body string, width int) string {
 		width = 78
 	}
 	inner := width - 4
-	titleLine := "╭ " + title
-	dashLen := inner - runewidth.StringWidth(title) - 1
-	if dashLen < 1 {
-		dashLen = 1
-	}
-	titleLine += " " + strings.Repeat("─", dashLen) + "╮"
 
+	titleLine := buildPanelTitleLine(title, width)
 	var lines []string
 	lines = append(lines, theme.S.PanelTitle.Render(titleLine))
 
@@ -31,8 +33,58 @@ func RenderPanel(title, body string, width int) string {
 			lines = append(lines, theme.S.Panel.Render(boxContent(line, inner)))
 		}
 	}
-	lines = append(lines, theme.S.Panel.Render(boxBottom(inner)))
+	lines = append(lines, theme.S.Panel.Render(boxBottom(width)))
 	return strings.Join(lines, "\n") + "\n"
+}
+
+func buildPanelTitleLine(title string, width int) string {
+	var b strings.Builder
+	b.WriteString("╭ ")
+	b.WriteString(title)
+	b.WriteString(" ")
+
+	pos := runewidth.StringWidth(b.String())
+	for pos < width-1 {
+		if pos >= panelDecorFadeEnd {
+			break
+		}
+		if pos >= panelDecorSolidEnd {
+			progress := float64(pos-panelDecorSolidEnd) / float64(panelDecorFadeEnd-panelDecorSolidEnd)
+			b.WriteString(gradientDash(progress))
+		} else {
+			b.WriteString(solidDash())
+		}
+		pos++
+	}
+
+	line := b.String()
+	for runewidth.StringWidth(line) < width-1 {
+		line += " "
+	}
+	return line + "╮"
+}
+
+func solidDash() string {
+	if uiprefs.ColorsEnabled() {
+		return theme.S.PanelTitle.Render("─")
+	}
+	return "─"
+}
+
+func gradientDash(progress float64) string {
+	if progress < 0 {
+		progress = 0
+	}
+	if progress > 1 {
+		progress = 1
+	}
+	if !uiprefs.ColorsEnabled() {
+		return "─"
+	}
+	start := colorful.Color{R: 0.34, G: 0.84, B: 0.88}
+	end := colorful.Color{R: 0.18, G: 0.18, B: 0.20}
+	c := start.BlendLuv(end, progress)
+	return lipgloss.NewStyle().Foreground(lipgloss.Color(c.Hex())).Render("─")
 }
 
 func boxEmpty(inner int) string {
@@ -40,7 +92,7 @@ func boxEmpty(inner int) string {
 	if padding < 0 {
 		padding = 0
 	}
-	return "│" + strings.Repeat(" ", padding) + "│"
+	return "│ " + strings.Repeat(" ", padding) + " │"
 }
 
 func boxContent(content string, inner int) string {
@@ -53,11 +105,11 @@ func boxContent(content string, inner int) string {
 	if pad < 0 {
 		pad = 0
 	}
-	return "│" + content + strings.Repeat(" ", pad) + "│"
+	return "│ " + content + strings.Repeat(" ", pad) + " │"
 }
 
-func boxBottom(inner int) string {
-	return "╰" + strings.Repeat("─", inner) + "╯"
+func boxBottom(width int) string {
+	return "╰" + strings.Repeat("─", width-2) + "╯"
 }
 
 func truncate(s string, max int) string {
@@ -69,7 +121,7 @@ func RenderDivider(width int) string {
 	if width < 4 {
 		width = 78
 	}
-	return theme.S.Hint.Render("├" + strings.Repeat("─", width-2) + "┤") + "\n"
+	return theme.S.Hint.Render("├"+strings.Repeat("─", width-2)+"┤") + "\n"
 }
 
 // PadLine pads content to the given display width.

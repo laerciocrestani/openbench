@@ -77,7 +77,15 @@ func FormatDashboardHeader(ctx *HeaderContext, width int, dryRun bool, colorsEna
 				commitNote = paint("● "+commitNote, green)
 			}
 		}
-		lines = append(lines, boxRow(headerMetaRow("Commit", ctx.HeadHash, commitNote, inner, paint), width))
+		hashVal := ctx.HeadHash
+		if hashVal == "" {
+			hashVal = "—"
+		}
+		commitValue := hashVal
+		if ctx.HeadHash != "" {
+			commitValue += "  " + paint("⧉", dim)
+		}
+		lines = append(lines, boxRow(headerMetaRow("Commit", commitValue, commitNote, inner, paint), width))
 	} else {
 		fallback := "AI Git Workflow · " + Version()
 		if dryRun {

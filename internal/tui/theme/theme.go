@@ -77,7 +77,7 @@ func Init() {
 		Untracked: lipgloss.NewStyle().Foreground(lipgloss.Color("214")),
 		Yellow:    lipgloss.NewStyle().Foreground(lipgloss.Color("214")),
 		Warn:      lipgloss.NewStyle().Foreground(lipgloss.Color("214")),
-		Panel:     lipgloss.NewStyle().Padding(0, 1),
+		Panel:     lipgloss.NewStyle(),
 		PanelTitle: lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("86")),
 		Success:   lipgloss.NewStyle().Foreground(lipgloss.Color("42")),
 		Info:      lipgloss.NewStyle().Foreground(lipgloss.Color("39")),

@@ -33,6 +33,7 @@ func helpContent() string {
 		"Preferências em config.yaml",
 		"  interactive_ui          TUI ao rodar gitai (padrão: sim)",
 		"  ui_color                Cores na CLI e TUI (padrão: sim)",
+		"  ui_font_size            Densidade da TUI: small, normal, large",
 		"  ui_auto_refresh_seconds Polling fallback em segundos (padrão: 5, 0=off)",
 		"  ui_watch_files          Observar filesystem (padrão: sim)",
 		"",

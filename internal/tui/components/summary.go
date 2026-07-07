@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/laerciocrestani/gitai/internal/app"
+	"github.com/laerciocrestani/gitai/internal/tui/theme"
 )
 
 // RenderSummary renders the repository change summary panel.
@@ -14,7 +15,9 @@ func RenderSummary(summary app.ChangeSummary, width int) string {
 		return ""
 	}
 
-	stats := fmt.Sprintf("+%d      -%d", summary.Insertions, summary.Deletions)
+	plus := theme.S.Success.Render(fmt.Sprintf("+%d", summary.Insertions))
+	minus := theme.S.Error.Render(fmt.Sprintf("-%d", summary.Deletions))
+	stats := plus + "      " + minus
 	line1 := PadLine(
 		fmt.Sprintf("Files Changed: %d", summary.FileCount),
 		stats,

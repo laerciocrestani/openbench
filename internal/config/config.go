@@ -36,6 +36,7 @@ type Config struct {
 	ClearScreen      bool     `yaml:"clear_screen,omitempty"`
 	InteractiveUI        bool `yaml:"interactive_ui,omitempty"`
 	UIColor              bool `yaml:"ui_color,omitempty"`
+	UIFontSize           string `yaml:"ui_font_size,omitempty"`
 	UIAutoRefreshSeconds int  `yaml:"ui_auto_refresh_seconds,omitempty"`
 	UIWatchFiles         bool `yaml:"ui_watch_files,omitempty"`
 }
@@ -49,6 +50,7 @@ func Default() Config {
 		MaxDiffBytes:  120000,
 		InteractiveUI:        true,
 		UIColor:              true,
+		UIFontSize:           "normal",
 		UIAutoRefreshSeconds: 5,
 		UIWatchFiles:         true,
 	}
@@ -160,6 +162,9 @@ func (c *Config) normalize() {
 	}
 	if c.MaxDiffBytes <= 0 {
 		c.MaxDiffBytes = 120000
+	}
+	if c.UIFontSize == "" {
+		c.UIFontSize = "normal"
 	}
 }
 

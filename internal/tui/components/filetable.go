@@ -2,6 +2,7 @@ package components
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
@@ -15,10 +16,12 @@ func RenderFileTable(changes []gitpkg.FileChange, width, maxRows int) string {
 		return ""
 	}
 
+	sorted := sortFileChanges(changes)
+
 	if maxRows <= 0 {
 		maxRows = 12
 	}
-	limit := len(changes)
+	limit := len(sorted)
 	if limit > maxRows {
 		limit = maxRows
 	}
@@ -37,23 +40,45 @@ func RenderFileTable(changes []gitpkg.FileChange, width, maxRows int) string {
 	var rows []string
 	rows = append(rows, theme.S.Hint.Render(header))
 
-	for _, f := range changes[:limit] {
+	for _, f := range sorted[:limit] {
 		tag := statusTag(f.Status)
 		path := truncate(f.Path, pathWidth)
-		plus := fmt.Sprintf("%d", f.Insertions)
-		minus := fmt.Sprintf("%d", f.Deletions)
-		row := fmt.Sprintf("%-4s %-*s %6s %6s", tag, pathWidth, path, plus, minus)
+		plus := padNumber(theme.S.Success.Render(fmt.Sprintf("%d", f.Insertions)), 6)
+		minus := padNumber(theme.S.Error.Render(fmt.Sprintf("%d", f.Deletions)), 6)
+		row := fmt.Sprintf("%-4s %-*s %s %s", tag, pathWidth, path, plus, minus)
 		rows = append(rows, fileRowStyle(f.Status).Render(row))
 	}
 
-	footer := fmt.Sprintf("Total: %d files", len(changes))
-	if len(changes) > limit {
+	footer := fmt.Sprintf("Total: %d files", len(sorted))
+	if len(sorted) > limit {
 		footer += fmt.Sprintf(" (showing %d)", limit)
 	}
 	rows = append(rows, theme.S.Hint.Render(footer))
 
 	body := strings.Join(rows, "\n")
 	return RenderPanel("Changed Files", body, width)
+}
+
+func sortFileChanges(changes []gitpkg.FileChange) []gitpkg.FileChange {
+	sorted := make([]gitpkg.FileChange, len(changes))
+	copy(sorted, changes)
+	sort.Slice(sorted, func(i, j int) bool {
+		ti := sorted[i].Insertions + sorted[i].Deletions
+		tj := sorted[j].Insertions + sorted[j].Deletions
+		if ti != tj {
+			return ti > tj
+		}
+		return sorted[i].Path < sorted[j].Path
+	})
+	return sorted
+}
+
+func padNumber(colored string, width int) string {
+	w := lipgloss.Width(colored)
+	if w >= width {
+		return colored
+	}
+	return strings.Repeat(" ", width-w) + colored
 }
 
 func fileRowStyle(status string) lipgloss.Style {

@@ -7,14 +7,21 @@ import (
 	"github.com/laerciocrestani/gitai/internal/tui/theme"
 )
 
+const maxRecentCommits = 3
+
 // RenderCommits renders recent commits in a panel.
 func RenderCommits(commits []string, width int) string {
 	if len(commits) == 0 {
 		return ""
 	}
 
+	limit := len(commits)
+	if limit > maxRecentCommits {
+		limit = maxRecentCommits
+	}
+
 	var lines []string
-	for _, c := range commits {
+	for _, c := range commits[:limit] {
 		lines = append(lines, theme.S.Hint.Render(c))
 	}
 	return RenderPanel("Recent Commits", strings.Join(lines, "\n"), width)

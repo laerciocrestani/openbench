@@ -15,6 +15,7 @@ const (
 	dashKeyDiff
 	dashKeySync
 	dashKeyOpenPR
+	dashKeyCopyHash
 	dashKeyReport
 	dashKeyHelp
 )
@@ -56,6 +57,10 @@ func parseDashboardKey(msg tea.KeyMsg, snap *app.WorkspaceSnapshot) (dashKey, bo
 	case "o":
 		if snap != nil && snap.OpenPR != nil {
 			return dashKeyOpenPR, true
+		}
+	case "y":
+		if snap != nil && snap.Overview != nil && snap.Overview.HeadHash != "" {
+			return dashKeyCopyHash, true
 		}
 	}
 	return dashKeyNone, false

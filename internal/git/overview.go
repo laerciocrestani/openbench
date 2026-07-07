@@ -101,7 +101,7 @@ func (r *Repo) Overview(baseBranch string) (*Overview, error) {
 	}
 	o.Branches = branches
 
-	log, err := r.run("log", "-5", "--oneline", "--decorate")
+	log, err := r.run("log", "-3", "--oneline", "--decorate")
 	if err == nil && log != "" {
 		o.RecentCommits = strings.Split(log, "\n")
 	}

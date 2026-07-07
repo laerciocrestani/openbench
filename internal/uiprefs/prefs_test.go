@@ -135,3 +135,48 @@ func TestWatchFilesEnabled_configOff(t *testing.T) {
 		t.Fatal("expected file watcher disabled from config")
 	}
 }
+
+func TestFontSize_default(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	path := filepath.Join(dir, "config.yaml")
+	if err := os.WriteFile(path, []byte("provider: openrouter\napi_key: test-key\nmodel: m\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("GITAI_CONFIG", path)
+
+	if got := FontSize(); got != FontNormal {
+		t.Fatalf("expected normal font size, got %q", got)
+	}
+}
+
+func TestFontSize_configLarge(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	path := filepath.Join(dir, "config.yaml")
+	yaml := "provider: openrouter\napi_key: test-key\nmodel: m\nui_font_size: large\n"
+	if err := os.WriteFile(path, []byte(yaml), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("GITAI_CONFIG", path)
+
+	if got := FontSize(); got != FontLarge {
+		t.Fatalf("expected large font size, got %q", got)
+	}
+}
+
+func TestMinTerminalSize_scalesWithFont(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	path := filepath.Join(dir, "config.yaml")
+	yaml := "provider: openrouter\napi_key: test-key\nmodel: m\nui_font_size: small\n"
+	if err := os.WriteFile(path, []byte(yaml), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("GITAI_CONFIG", path)
+
+	w, h := MinTerminalSize()
+	if w != 70 || h != 20 {
+		t.Fatalf("expected 70x20 for small font, got %dx%d", w, h)
+	}
+}

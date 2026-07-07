@@ -6,6 +6,7 @@ import (
 
 	"github.com/laerciocrestani/gitai/internal/app"
 	"github.com/laerciocrestani/gitai/internal/tui/components"
+	"github.com/laerciocrestani/gitai/internal/uiprefs"
 )
 
 // DashboardOptions configures dashboard rendering.
@@ -38,12 +39,10 @@ func RenderDashboard(snap *app.WorkspaceSnapshot, opts DashboardOptions) string 
 		b.WriteString(components.RenderSummary(summary, width))
 	}
 
-	maxFiles := fileLimit(opts.Height)
+	maxFiles := uiprefs.FileRowLimit(opts.Height)
 	if len(o.FileChanges) > 0 {
 		b.WriteString(components.RenderFileTable(o.FileChanges, width, maxFiles))
 	}
-
-	b.WriteString(components.RenderAIPanel(snap, width))
 
 	if len(o.RecentCommits) > 0 {
 		b.WriteString(components.RenderCommits(o.RecentCommits, width))
@@ -52,6 +51,8 @@ func RenderDashboard(snap *app.WorkspaceSnapshot, opts DashboardOptions) string 
 	if len(o.Stashes) > 0 {
 		b.WriteString(components.RenderStash(o.Stashes, width))
 	}
+
+	b.WriteString(components.RenderAIPanel(snap, width))
 
 	action := app.BuildTUINextAction(snap)
 	b.WriteString(components.RenderNextAction(action, width))
@@ -66,20 +67,6 @@ func RenderDashboard(snap *app.WorkspaceSnapshot, opts DashboardOptions) string 
 // RenderLoadingDashboard shows a loading panel while fetching snapshot data.
 func RenderLoadingDashboard(message string, tick, width int) string {
 	return components.RenderLoading(message, tick, width)
-}
-
-func fileLimit(height int) int {
-	if height <= 0 {
-		return 12
-	}
-	limit := height/3 - 2
-	if limit < 6 {
-		return 6
-	}
-	if limit > 20 {
-		return 20
-	}
-	return limit
 }
 
 // RenderFooterBar renders the bottom shortcut bar for the dashboard.

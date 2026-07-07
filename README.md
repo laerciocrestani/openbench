@@ -232,6 +232,7 @@ max_diff_bytes: 120000
 clear_screen: false       # true = limpa o terminal antes de cada comando
 interactive_ui: true      # true = gitai abre TUI no terminal (padrão)
 ui_color: true            # cores na CLI e TUI (padrão)
+ui_font_size: normal      # densidade da TUI: small, normal, large
 
 # opcional — sobrescreve preços padrão do Gemini
 # input_price_per_1m: 0.14
@@ -289,6 +290,7 @@ A API key é **mascarada** na saída (ex.: `sk-o...abcd`).
 | `clear_screen` | bool | não | `false` | Limpa o terminal antes de cada comando |
 | `interactive_ui` | bool | não | `true` | Abre TUI ao rodar `gitai` sem subcomando |
 | `ui_color` | bool | não | `true` | Cores ANSI na CLI e na TUI |
+| `ui_font_size` | string | não | `normal` | Densidade da TUI: `small`, `normal`, `large` |
 | `input_price_per_1m` | float | não | — | USD por 1M tokens de input (estimativa de custo) |
 | `output_price_per_1m` | float | não | — | USD por 1M tokens de output (estimativa de custo) |
 

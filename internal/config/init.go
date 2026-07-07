@@ -201,6 +201,18 @@ func InitInteractive() error {
 	}
 	cfg.UIColor = colorChoice == "Sim"
 
+	fontDefault := fontSizeLabel(cfg.UIFontSize)
+	fontChoice, err := wiz.Select(reader, ui.SelectConfig{
+		Label:      "Tamanho da fonte na interface",
+		Options:    []string{"Pequeno", "Normal", "Grande"},
+		Default:    fontDefault,
+		AllowOther: false,
+	})
+	if err != nil {
+		return err
+	}
+	cfg.UIFontSize = fontSizeValue(fontChoice)
+
 	if strings.TrimSpace(cfg.APIKey) == "" && strings.TrimSpace(os.Getenv(EnvAPIKey)) == "" {
 		return fmt.Errorf("chave API obrigatória — defina no wizard ou na variável %s", EnvAPIKey)
 	}
@@ -241,7 +253,29 @@ func hasSavedConfig(cfg *Config) bool {
 		return false
 	}
 	_, err = os.Stat(localPath)
-	return err != nil
+	return err == nil
+}
+
+func fontSizeLabel(size string) string {
+	switch strings.ToLower(strings.TrimSpace(size)) {
+	case "small", "pequeno":
+		return "Pequeno"
+	case "large", "grande":
+		return "Grande"
+	default:
+		return "Normal"
+	}
+}
+
+func fontSizeValue(label string) string {
+	switch label {
+	case "Pequeno":
+		return "small"
+	case "Grande":
+		return "large"
+	default:
+		return "normal"
+	}
 }
 
 func defaultModelFor(p Provider) string {

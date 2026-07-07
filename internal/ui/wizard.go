@@ -296,15 +296,15 @@ func (w *Wizard) buildFrame(active *selectState, inputLabel, inputHint string) s
 		b.WriteString(w.sess.paint("  ↑↓ navegar · Enter confirmar", dim))
 		b.WriteString("\n")
 		for i, opt := range active.options {
-			marker := " "
-			style := dim
 			if i == active.cursor {
-				marker = "●"
-				style = green
+				b.WriteString("  ")
+				b.WriteString(w.sess.paint("▸ ", green))
+				b.WriteString(w.sess.paint(opt, bold+cyan))
+				b.WriteString("\n")
+			} else {
+				b.WriteString(w.sess.paint("    "+opt, dim))
+				b.WriteString("\n")
 			}
-			line := fmt.Sprintf("  (%s) %s", marker, opt)
-			b.WriteString(w.sess.paint(line, style))
-			b.WriteString("\n")
 		}
 	}
 

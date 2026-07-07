@@ -28,3 +28,17 @@ func TestWizardBuildFrameKeepsEntries(t *testing.T) {
 		t.Fatalf("frame missing entries: %q", frame)
 	}
 }
+
+func TestWizardBuildFrameHighlightsSelection(t *testing.T) {
+	sess := New("config", false)
+	sess.enabled = true
+	w := NewWizard(sess, "Configuração", "intro")
+	frame := w.buildFrame(&selectState{
+		label:   "Tamanho da fonte na interface",
+		options: []string{"Pequeno", "Normal", "Grande"},
+		cursor:  1,
+	}, "", "")
+	if !strings.Contains(frame, "▸") || !strings.Contains(frame, "Normal") {
+		t.Fatalf("frame missing highlighted selection: %q", frame)
+	}
+}

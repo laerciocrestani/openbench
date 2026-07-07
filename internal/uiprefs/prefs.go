@@ -11,13 +11,18 @@ import (
 
 const (
 	defaultAutoRefreshSeconds = 5
+
+	FontSmall  = "small"
+	FontNormal = "normal"
+	FontLarge  = "large"
 )
 
 type filePrefs struct {
-	InteractiveUI        *bool `yaml:"interactive_ui"`
-	UIColor              *bool `yaml:"ui_color"`
-	UIAutoRefreshSeconds *int  `yaml:"ui_auto_refresh_seconds"`
-	UIWatchFiles         *bool `yaml:"ui_watch_files"`
+	InteractiveUI        *bool  `yaml:"interactive_ui"`
+	UIColor              *bool  `yaml:"ui_color"`
+	UIFontSize           string `yaml:"ui_font_size"`
+	UIAutoRefreshSeconds *int   `yaml:"ui_auto_refresh_seconds"`
+	UIWatchFiles         *bool  `yaml:"ui_watch_files"`
 }
 
 // InteractiveUIEnabled indica se `gitai` sem subcomando deve abrir a TUI.
@@ -69,6 +74,62 @@ func ColorsEnabled() bool {
 	return *prefs.UIColor
 }
 
+// FontSize retorna o tamanho de fonte/densidade da interface: small, normal ou large.
+func FontSize() string {
+	prefs := loadPrefs()
+	size := normalizeFontSize(prefs.UIFontSize)
+	if size == "" {
+		return FontNormal
+	}
+	return size
+}
+
+// MinTerminalSize retorna largura e altura mínimas recomendadas para a TUI.
+func MinTerminalSize() (width, height int) {
+	switch FontSize() {
+	case FontSmall:
+		return 70, 20
+	case FontLarge:
+		return 100, 30
+	default:
+		return 80, 24
+	}
+}
+
+// FileRowLimit ajusta quantas linhas de arquivos exibir conforme altura e fonte.
+func FileRowLimit(height int) int {
+	if height <= 0 {
+		height = 24
+	}
+	limit := height/3 - 2
+	switch FontSize() {
+	case FontSmall:
+		limit += 2
+	case FontLarge:
+		limit -= 2
+	}
+	if limit < 6 {
+		return 6
+	}
+	if limit > 20 {
+		return 20
+	}
+	return limit
+}
+
+func normalizeFontSize(raw string) string {
+	switch raw {
+	case FontSmall, "pequeno", "Pequeno":
+		return FontSmall
+	case FontLarge, "grande", "Grande":
+		return FontLarge
+	case FontNormal, "Normal", "":
+		return FontNormal
+	default:
+		return FontNormal
+	}
+}
+
 func loadPrefs() filePrefs {
 	var merged filePrefs
 	for _, path := range configPaths() {
@@ -81,6 +142,9 @@ func loadPrefs() filePrefs {
 		}
 		if p.UIColor != nil {
 			merged.UIColor = p.UIColor
+		}
+		if p.UIFontSize != "" {
+			merged.UIFontSize = p.UIFontSize
 		}
 		if p.UIAutoRefreshSeconds != nil {
 			merged.UIAutoRefreshSeconds = p.UIAutoRefreshSeconds

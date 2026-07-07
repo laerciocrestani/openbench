@@ -35,7 +35,7 @@ func TestFormatDashboardHeaderContext(t *testing.T) {
 	}
 	out := FormatDashboardHeader(ctx, 100, false, false)
 
-	for _, want := range []string{"gitai", "main", "22843f3", "gemini", "gemini-2.5-flash-lite", "Ready"} {
+	for _, want := range []string{"gitai", "main", "22843f3", "gemini", "gemini-2.5-flash-lite", "Ready", "⧉"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("header missing %q: %q", want, out)
 		}

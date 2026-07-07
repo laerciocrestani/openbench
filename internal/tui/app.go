@@ -281,6 +281,16 @@ func (m appModel) updateDashboard(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.action = newActionState(ActionOpenPR)
 			m.status = "Abrindo PR"
 			return m, m.action.directCmd()
+		case dashKeyCopyHash:
+			if m.snapshot != nil && m.snapshot.Overview != nil {
+				hash := m.snapshot.Overview.HeadHash
+				if err := ui.CopyToClipboard(hash); err != nil {
+					m.status = "Erro ao copiar hash"
+				} else {
+					m.status = "Hash copiado: " + hash
+				}
+			}
+			return m, nil
 		case dashKeyReport:
 			m.screen = ScreenReport
 			m.status = "Uso de IA"
@@ -399,9 +409,10 @@ func (m appModel) View() string {
 	var b strings.Builder
 
 	if terminalTooSmall(m.width, m.height) {
+		minW, minH := terminalMinSize()
 		b.WriteString(styleWarn.Render(fmt.Sprintf(
 			"  Terminal pequeno (%dx%d) — recomendado %dx%d+\n",
-			m.width, m.height, minWidth, minHeight,
+			m.width, m.height, minW, minH,
 		)))
 	}
 
