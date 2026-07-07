@@ -45,10 +45,11 @@ func colorsEnabled() bool {
 }
 
 func (s *Session) Header() {
-	title := s.paint("GitAi", bold+cyan)
-	ver := s.paint(Version(), dim)
-	sep := s.paint("|", dim)
-	fmt.Fprintf(s.out, "🤖 %s %s %s\n\n", title, sep, ver)
+	writeBanner(s.out, s.dryRun, nil, s.paint)
+}
+
+func (s *Session) HeaderWithContext(ctx BannerContext) {
+	writeBanner(s.out, s.dryRun, &ctx, s.paint)
 }
 
 func (s *Session) Divider() {

@@ -388,10 +388,13 @@ func (m appModel) View() string {
 		)))
 	}
 
-	title := styleTitle.Render("🤖 GitAi")
-	ver := styleHeader.Render(ui.Version())
-	b.WriteString(lipgloss.JoinHorizontal(lipgloss.Top, title, " ", styleHeader.Render("|"), " ", ver))
+	logo := styleTitle.Render("●──────────────●")
+	title := styleTitle.Render("GITAI")
+	tagline := styleHeader.Render("AI-powered Git Workflow · " + ui.Version())
+	b.WriteString(lipgloss.JoinHorizontal(lipgloss.Top, logo, "    ", title))
 	b.WriteString("\n")
+	b.WriteString("  " + tagline)
+	b.WriteString("\n\n")
 
 	help := dashboardHelpLine()
 

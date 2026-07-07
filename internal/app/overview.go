@@ -12,7 +12,6 @@ import (
 
 func RunOverview() error {
 	sess := ui.New("overview", false)
-	sess.Header()
 
 	var snap *WorkspaceSnapshot
 	if err := sess.StepQuiet(func() error {
@@ -23,7 +22,7 @@ func RunOverview() error {
 		return err
 	}
 
-	printGitAiConfig(sess, snap)
+	sess.HeaderWithContext(bannerContext(snap))
 	printRecentCommits(sess, snap.Overview)
 	printBranches(sess, snap.Overview)
 	printChangedFiles(sess, snap.Overview)
@@ -61,7 +60,7 @@ func printRecentCommits(sess *ui.Session, o *gitpkg.Overview) {
 	if len(o.RecentCommits) == 0 {
 		return
 	}
-	sess.Section("Recent commits")
+	sess.SectionFirst("Recent commits")
 	for _, line := range o.RecentCommits {
 		sess.Bullet(line)
 	}
@@ -129,21 +128,43 @@ func printStash(sess *ui.Session, o *gitpkg.Overview) {
 	}
 }
 
-func printGitAiConfig(sess *ui.Session, snap *WorkspaceSnapshot) {
-	sess.SectionFirst("GitAi config")
-	if snap.ConfigErr != nil {
-		sess.Detail("not configured — run: gitai config")
-		return
+func bannerContext(snap *WorkspaceSnapshot) ui.BannerContext {
+	ctx := ui.BannerContext{}
+	if snap.Overview != nil {
+		o := snap.Overview
+		ctx.Repo = repoDisplayName(o)
+		if o.Detached {
+			ctx.Branch = "detached HEAD"
+		} else {
+			ctx.Branch = o.Branch
+		}
+		ctx.Sync = bannerSyncLabel(o)
 	}
-	cfg := snap.Config
-	parts := []string{
-		fmt.Sprintf("Provider: %s", cfg.Provider),
-		fmt.Sprintf("Model: %s", cfg.Model),
+	if snap.ConfigErr == nil && snap.Config != nil {
+		ctx.Provider = string(snap.Config.Provider)
+		ctx.Model = snap.Config.Model
 	}
-	if fb := strings.TrimSpace(cfg.FallbackModel); fb != "" {
-		parts = append(parts, fmt.Sprintf("Fallback: %s", fb))
+	return ctx
+}
+
+func bannerSyncLabel(o *gitpkg.Overview) string {
+	if o.IsDirty() {
+		n := o.Staged + o.Modified + o.Untracked
+		if n == 1 {
+			return "1 change"
+		}
+		return fmt.Sprintf("%d changes", n)
 	}
-	sess.Detail(strings.Join(parts, " · "))
+	switch {
+	case o.Ahead > 0 && o.Behind > 0:
+		return fmt.Sprintf("↑%d ↓%d", o.Ahead, o.Behind)
+	case o.Ahead > 0:
+		return fmt.Sprintf("↑%d ahead", o.Ahead)
+	case o.Behind > 0:
+		return fmt.Sprintf("↓%d behind", o.Behind)
+	default:
+		return "in sync"
+	}
 }
 
 func printSuggestions(sess *ui.Session, snap *WorkspaceSnapshot) {

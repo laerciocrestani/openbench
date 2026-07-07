@@ -262,10 +262,7 @@ func (w *Wizard) redrawWithInput(label, hint, prompt string) {
 func (w *Wizard) buildFrame(active *selectState, inputLabel, inputHint string) string {
 	var b strings.Builder
 
-	title := w.sess.paint("GitAi", bold+cyan)
-	ver := w.sess.paint(Version(), dim)
-	sep := w.sess.paint("|", dim)
-	b.WriteString(fmt.Sprintf("🤖 %s %s %s\n\n", title, sep, ver))
+	writeBanner(&b, w.sess.dryRun, nil, w.sess.paint)
 
 	b.WriteString(w.sess.paint(w.title, bold+cyan))
 	b.WriteString("\n")
