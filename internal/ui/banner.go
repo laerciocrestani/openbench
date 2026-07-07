@@ -5,16 +5,6 @@ import (
 	"io"
 )
 
-var bannerLogo = []string{
-	"●──────────────●",
-	"       ╱ ╲            ╱",
-	"      ●   ●──────────●",
-	"       ╲ ╱            │",
-	"        ●────────────●",
-	"                    ╲",
-	"                     ●",
-}
-
 var bannerTitle = []string{
 	"   ██████╗ ██╗████████╗ █████╗ ██╗",
 	"  ██╔════╝ ██║╚══██╔══╝██╔══██╗██║",
@@ -34,13 +24,8 @@ type BannerContext struct {
 }
 
 func writeBanner(out io.Writer, dryRun bool, ctx *BannerContext, paint func(string, string) string) {
-	for _, line := range bannerLogo {
-		fmt.Fprintln(out, paint(line, cyan))
-	}
-
-	fmt.Fprintln(out)
-	for _, line := range bannerTitle {
-		fmt.Fprintln(out, paint(line, bold+cyan))
+	for i, line := range bannerTitle {
+		fmt.Fprintln(out, paint(line, bannerTitleStyle(i)))
 	}
 
 	fmt.Fprintln(out)
@@ -63,4 +48,17 @@ func writeBanner(out io.Writer, dryRun bool, ctx *BannerContext, paint func(stri
 	}
 
 	fmt.Fprintln(out)
+}
+
+func bannerTitleStyle(line int) string {
+	switch line {
+	case 0, 1, 2:
+		return bold + cyan
+	case 3:
+		return cyan
+	case 4:
+		return dim + cyan
+	default:
+		return dim
+	}
 }

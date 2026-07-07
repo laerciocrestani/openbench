@@ -17,9 +17,6 @@ func TestWriteBannerContainsTitleAndVersion(t *testing.T) {
 	if !strings.Contains(out, "AI-powered Git Workflow") {
 		t.Fatalf("banner missing tagline: %q", out)
 	}
-	if !strings.Contains(out, "●──────────────●") {
-		t.Fatalf("banner missing logo: %q", out)
-	}
 }
 
 func TestWriteBannerContext(t *testing.T) {
@@ -39,6 +36,18 @@ func TestWriteBannerContext(t *testing.T) {
 	}
 	if !strings.Contains(out, "Provider: gemini · Model: gemini-2.5-flash-lite") {
 		t.Fatalf("banner missing provider line: %q", out)
+	}
+}
+
+func TestBannerTitleStyleFade(t *testing.T) {
+	if bannerTitleStyle(2) != bannerTitleStyle(0) {
+		t.Fatal("top lines should share the same style")
+	}
+	if bannerTitleStyle(3) == bannerTitleStyle(0) {
+		t.Fatal("fade should start on line 4")
+	}
+	if bannerTitleStyle(5) == bannerTitleStyle(3) {
+		t.Fatal("last line should be the most faded")
 	}
 }
 
