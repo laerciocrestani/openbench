@@ -24,18 +24,18 @@ func RenderBranchesPanel(cursor, total int, base, body string, width int) string
 }
 
 // RenderBranchDetail renders contextual information for the selected branch.
-func RenderBranchDetail(detail *gitpkg.BranchDetail, branchName, base string, width int) string {
+func RenderBranchDetail(detail *gitpkg.BranchDetail, branchName, base string, width, tick int) string {
 	title := "Context"
 	if branchName != "" {
 		title += " · " + branchName
 	}
 
 	if detail == nil {
-		msg := "  Carregando…"
+		msg := "Carregando"
 		if branchName != "" {
-			msg = "  Carregando contexto de " + branchName + "…"
+			msg = "Carregando contexto de " + branchName
 		}
-		return RenderPanel(title, theme.S.Hint.Render(msg), width)
+		return RenderPanel(title, RenderSpinnerLine(msg, tick), width)
 	}
 
 	var lines []string

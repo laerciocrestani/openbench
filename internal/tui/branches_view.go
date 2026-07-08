@@ -106,6 +106,8 @@ func (m *branchesModel) Load(snap *app.WorkspaceSnapshot) tea.Cmd {
 	return loadBranchDetailCmd(m.snap, m.selectedBranch())
 }
 
+const newBranchPickerRows = 10
+
 func (m *branchesModel) SetSize(width, height int) {
 	listRows := height/3 - 2
 	if listRows < 6 {
@@ -118,18 +120,26 @@ func (m *branchesModel) SetSize(width, height int) {
 		listRows = 4
 	}
 
+	pickerRows := newBranchPickerRows
+	if height > 0 && pickerRows > height-10 {
+		pickerRows = height - 10
+	}
+	if pickerRows < 4 {
+		pickerRows = 4
+	}
+
 	if !m.ready {
 		m.listViewport = viewport.New(width, listRows)
-		m.fromViewport = viewport.New(width, listRows)
-		m.templateViewport = viewport.New(width, listRows)
+		m.fromViewport = viewport.New(width, pickerRows)
+		m.templateViewport = viewport.New(width, pickerRows)
 		m.ready = true
 	} else {
 		m.listViewport.Width = width
 		m.listViewport.Height = listRows
 		m.fromViewport.Width = width
-		m.fromViewport.Height = listRows
+		m.fromViewport.Height = pickerRows
 		m.templateViewport.Width = width
-		m.templateViewport.Height = listRows
+		m.templateViewport.Height = pickerRows
 	}
 	m.refreshListContent()
 	if m.mode == branchesModeNew {
@@ -272,7 +282,7 @@ func (m branchesModel) Update(msg tea.Msg) (branchesModel, tea.Cmd) {
 	return m, cmd
 }
 
-func (m branchesModel) View(width int) string {
+func (m branchesModel) View(width, tick int) string {
 	if m.mode == branchesModeNew {
 		return m.viewNewBranch(width)
 	}
@@ -298,9 +308,9 @@ func (m branchesModel) View(width int) string {
 
 	selected := m.selectedBranch()
 	if m.detailLoading || m.detailFor != selected {
-		b.WriteString(components.RenderBranchDetail(nil, selected, m.base, width))
+		b.WriteString(components.RenderBranchDetail(nil, selected, m.base, width, tick))
 	} else {
-		b.WriteString(components.RenderBranchDetail(m.detail, selected, m.base, width))
+		b.WriteString(components.RenderBranchDetail(m.detail, selected, m.base, width, tick))
 	}
 
 	return b.String()

@@ -6,6 +6,7 @@ import (
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/laerciocrestani/gitai/internal/app"
+	"github.com/laerciocrestani/gitai/internal/tui/components"
 )
 
 type reportPeriod int
@@ -95,7 +96,7 @@ func (m reportModel) Update(msg tea.Msg) (reportModel, tea.Cmd) {
 	return m, cmd
 }
 
-func (m reportModel) View() string {
+func (m reportModel) View(tick int) string {
 	if m.err != nil {
 		return styleError.Render("  ✗ " + m.err.Error())
 	}
@@ -106,7 +107,7 @@ func (m reportModel) View() string {
 	b.WriteString(styleHint.Render("  " + periodLabel(m.period)))
 	b.WriteString("\n\n")
 	if !m.ready {
-		b.WriteString(styleHint.Render("  Carregando…"))
+		b.WriteString(components.RenderSpinnerLine("Carregando", tick))
 		return b.String()
 	}
 	b.WriteString(m.viewport.View())

@@ -19,11 +19,28 @@ func TestAlertLogsFiltersWarnings(t *testing.T) {
 	}
 }
 
+func TestSpinnerFrameAnimates(t *testing.T) {
+	t.Parallel()
+	a := components.SpinnerFrame(0)
+	b := components.SpinnerFrame(1)
+	if a == b {
+		t.Fatalf("spinner should change between ticks: %q %q", a, b)
+	}
+}
+
 func TestRenderLoadingShowsSpinner(t *testing.T) {
 	alerts := []string{
 		"✖ Modelo sobrecarregado — tentando novamente em 3s (1/3)...",
 	}
-	out := components.RenderLoading("Pulling main", alerts, 3, 100)
+	out := components.RenderSpinnerLine("Thinking", 3)
+	if !strings.Contains(out, "Thinking") {
+		t.Fatalf("missing status: %q", out)
+	}
+	if !strings.Contains(out, components.SpinnerFrame(3)) {
+		t.Fatalf("missing spinner frame: %q", out)
+	}
+
+	out = components.RenderLoading("Pulling main", alerts, 5, 100)
 	if !strings.Contains(out, "Pulling main") {
 		t.Fatalf("missing status: %q", out)
 	}
@@ -33,7 +50,7 @@ func TestRenderLoadingShowsSpinner(t *testing.T) {
 	if strings.Contains(out, "█") {
 		t.Fatalf("should not show progress bar: %q", out)
 	}
-	for _, want := range []string{"⠸", "Working"} {
+	for _, want := range []string{components.SpinnerFrame(5), "Working"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("missing %q in:\n%s", want, out)
 		}

@@ -81,7 +81,23 @@ func (m appModel) Init() tea.Cmd {
 }
 
 func tickCmd() tea.Cmd {
-	return tea.Tick(120*time.Millisecond, func(time.Time) tea.Msg { return tickMsg{} })
+	return tea.Tick(80*time.Millisecond, func(time.Time) tea.Msg { return tickMsg{} })
+}
+
+func (m appModel) shouldAnimateSpinner() bool {
+	if m.loading {
+		return true
+	}
+	if m.action != nil && (m.action.phase == PhaseRunning || m.action.phase == PhaseConfirming) {
+		return true
+	}
+	if m.screen == ScreenReport && !m.report.ready {
+		return true
+	}
+	if m.screen == ScreenBranches && m.branches.detailLoading {
+		return true
+	}
+	return false
 }
 
 func loadSnapshotCmd(prog *ActionProgress) tea.Cmd {
@@ -139,12 +155,11 @@ func loadDiffCmd(snap *app.WorkspaceSnapshot) tea.Cmd {
 func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tickMsg:
-		m.loadTick++
 		cmds := []tea.Cmd{tickCmd()}
-		if m.loading || (m.action != nil && (m.action.phase == PhaseRunning || m.action.phase == PhaseConfirming)) {
-			return m, tea.Batch(cmds...)
+		if m.shouldAnimateSpinner() {
+			m.loadTick++
 		}
-		return m, nil
+		return m, tea.Batch(cmds...)
 
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
@@ -750,7 +765,7 @@ func (m appModel) View() string {
 		b.WriteString(m.logs.View(m.width))
 		help = logsHelpLine()
 	case ScreenBranches:
-		b.WriteString(m.branches.View(m.width))
+		b.WriteString(m.branches.View(m.width, m.loadTick))
 		if m.branches.mode == branchesModeNew {
 			help = newBranchHelpLine(m.branches.newStep)
 		} else {
@@ -763,7 +778,7 @@ func (m appModel) View() string {
 		b.WriteString(m.sync.View(m.width))
 		help = syncHelpLine(m.sync.screen, m.sync.dirty)
 	case ScreenReport:
-		b.WriteString(m.report.View())
+		b.WriteString(m.report.View(m.loadTick))
 		help = reportHelpLine()
 	case ScreenHelp:
 		b.WriteString("\n")

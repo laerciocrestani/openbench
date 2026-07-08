@@ -22,12 +22,17 @@ func (t NewBranchTemplate) Label() string {
 	return t.Icon + " " + t.Prefix
 }
 
-// ListLabel shows icon + example branch name in the picker list.
+// ListLabel shows icon, usage and example separated by middle dots.
 func (t NewBranchTemplate) ListLabel() string {
+	return t.DetailLabel()
+}
+
+// DetailLabel formats icon + example · usage · example for list and reference rows.
+func (t NewBranchTemplate) DetailLabel() string {
 	if t.Other {
-		return t.Icon + " Outro"
+		return t.Icon + " Outro · " + t.Usage + " · " + t.Example
 	}
-	return t.Icon + " " + t.Example
+	return t.Icon + " " + t.Example + " · " + t.Usage + " · " + t.Example
 }
 
 func (t NewBranchTemplate) PrefixColumn() string {

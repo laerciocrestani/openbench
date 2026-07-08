@@ -7,6 +7,7 @@ import (
 	"github.com/laerciocrestani/gitai/internal/app"
 	"github.com/laerciocrestani/gitai/internal/config"
 	gitpkg "github.com/laerciocrestani/gitai/internal/git"
+	"github.com/laerciocrestani/gitai/internal/tui/components"
 	"github.com/laerciocrestani/gitai/internal/tui/views"
 )
 
@@ -44,7 +45,7 @@ func TestRenderLoadingDashboard(t *testing.T) {
 	if strings.Contains(out, "%") {
 		t.Fatalf("loading should not show percent: %q", out)
 	}
-	if !strings.Contains(out, "⠹") {
+	if !strings.Contains(out, components.SpinnerFrame(2)) {
 		t.Fatalf("loading missing spinner frame: %q", out)
 	}
 }

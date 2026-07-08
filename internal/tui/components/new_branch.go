@@ -69,26 +69,16 @@ func RenderNewBranchTemplatePanel(cursor, selectable int, body string, width int
 }
 
 func renderFullTemplateTable(items []NewBranchTemplateItem, selected NewBranchTemplate, inner int) []string {
-	const (
-		prefixW = 16
-		usageW  = 30
-	)
-
-	header := fmt.Sprintf("%-*s %-*s %s", prefixW, "Prefixo", usageW, "Uso", "Exemplo")
-	lines := []string{theme.S.Hint.Render("  "+header)}
+	_ = inner
+	header := theme.S.Hint.Render("  Exemplo · Uso · Exemplo")
+	lines := []string{header}
 
 	for _, item := range items {
 		if item.Separator {
 			continue
 		}
 		t := item.Template
-		prefix := truncatePlain(t.PrefixColumn(), prefixW)
-		usage := truncatePlain(t.Usage, usageW)
-		example := t.Example
-		if t.Other {
-			example = "(livre)"
-		}
-		row := fmt.Sprintf("%-*s %-*s %s", prefixW, prefix, usageW, usage, example)
+		row := truncatePlain(t.DetailLabel(), inner-2)
 		if templatesMatch(t, selected) {
 			lines = append(lines, theme.S.Current.Render("> "+row))
 		} else {

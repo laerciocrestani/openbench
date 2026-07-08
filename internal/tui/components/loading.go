@@ -8,21 +8,36 @@ import (
 
 var loadingFrames = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
 
-// RenderLoading renders an animated thinking spinner with the current status message.
-func RenderLoading(message string, alerts []string, tick, width int) string {
-	if width < 20 {
-		width = 78
+// SpinnerFrame returns the braille frame for a tick counter.
+func SpinnerFrame(tick int) string {
+	if len(loadingFrames) == 0 {
+		return "⠋"
 	}
+	if tick < 0 {
+		tick = 0
+	}
+	return loadingFrames[tick%len(loadingFrames)]
+}
+
+// RenderSpinnerLine renders an animated spinner with a status message.
+func RenderSpinnerLine(message string, tick int) string {
 	if strings.TrimSpace(message) == "" {
 		message = "Working…"
 	}
 	if !strings.HasSuffix(message, "…") && !strings.HasSuffix(message, "...") {
 		message += "…"
 	}
+	return theme.S.Info.Render("  "+SpinnerFrame(tick)) + " " + theme.S.Hint.Render(message)
+}
 
-	frame := loadingFrames[tick%len(loadingFrames)]
+// RenderLoading renders an animated thinking spinner with the current status message.
+func RenderLoading(message string, alerts []string, tick, width int) string {
+	if width < 20 {
+		width = 78
+	}
+
 	var lines []string
-	lines = append(lines, theme.S.Info.Render("  "+frame)+" "+theme.S.Hint.Render(message))
+	lines = append(lines, RenderSpinnerLine(message, tick))
 	for _, alert := range alerts {
 		lines = append(lines, styleAlertLine(alert))
 	}

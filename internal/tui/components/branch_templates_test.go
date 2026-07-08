@@ -63,13 +63,15 @@ func TestNewBranchTemplateNameSeed(t *testing.T) {
 
 func TestNewBranchTemplateListLabel(t *testing.T) {
 	t.Parallel()
-	feature := components.NewBranchTemplate{
-		Prefix:  "feature/",
-		Icon:    "✨",
-		Example: "feature/user-profile",
+	ci := components.NewBranchTemplate{
+		Prefix:  "ci/",
+		Icon:    "⚙️",
+		Usage:   "CI/CD",
+		Example: "ci/github-actions",
 	}
-	if got := feature.ListLabel(); got != "✨ feature/user-profile" {
-		t.Fatalf("ListLabel() = %q", got)
+	want := "⚙️ ci/github-actions · CI/CD · ci/github-actions"
+	if got := ci.ListLabel(); got != want {
+		t.Fatalf("ListLabel() = %q, want %q", got, want)
 	}
 }
 
@@ -79,8 +81,10 @@ func TestRenderNewBranchTemplatePanel(t *testing.T) {
 	body := components.RenderNewBranchTemplateBody(0, items, selected, 70)
 	out := components.RenderNewBranchTemplatePanel(0, components.SelectableTemplateCount(items), body, 80)
 	for _, want := range []string{
-		"Prefixo", "Uso", "Exemplo", "New Branch · Template",
-		"✨ feature/user-profile", "🐛 fix/login-error", "✏️ Outro",
+		"Exemplo · Uso · Exemplo", "New Branch · Template",
+		"⚙️ ci/github-actions · CI/CD · ci/github-actions",
+		"✨ feature/user-profile · Nova funcionalidade · feature/user-profile",
+		"✏️ Outro",
 	} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("missing %q in:\n%s", want, out)

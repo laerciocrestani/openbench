@@ -20,7 +20,7 @@ func TestRenderBranchesPanelShowsPosition(t *testing.T) {
 }
 
 func TestRenderBranchDetailContextTitle(t *testing.T) {
-	out := components.RenderBranchDetail(nil, "feature/x", "main", 60)
+	out := components.RenderBranchDetail(nil, "feature/x", "main", 60, 2)
 	if !strings.Contains(out, "Context · feature/x") {
 		t.Fatalf("missing context title: %q", out)
 	}
