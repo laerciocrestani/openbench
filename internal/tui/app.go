@@ -34,6 +34,7 @@ type appModel struct {
 	height         int
 	loading        bool
 	loadTick       int
+	loadProg       *ActionProgress
 	err            error
 	status         string
 	diff           diffModel
@@ -45,26 +46,32 @@ type appModel struct {
 
 func newApp(cfg refreshConfig) appModel {
 	return appModel{
-		screen:  ScreenDashboard,
-		loading: true,
-		status:  "Carregando repositório…",
-		diff:    newDiffModel(),
-		report:  newReportModel(),
-		refresh: cfg,
+		screen:   ScreenDashboard,
+		loading:  true,
+		status:   "Carregando repositório…",
+		loadProg: NewActionProgress(),
+		diff:     newDiffModel(),
+		report:   newReportModel(),
+		refresh:  cfg,
 	}
 }
 
 func (m appModel) Init() tea.Cmd {
-	return tea.Batch(loadSnapshot, tickCmd(), initRefreshCmds(m.refresh))
+	return tea.Batch(loadSnapshotCmd(m.loadProg), tickCmd(), initRefreshCmds(m.refresh))
 }
 
 func tickCmd() tea.Cmd {
 	return tea.Tick(120*time.Millisecond, func(time.Time) tea.Msg { return tickMsg{} })
 }
 
-func loadSnapshot() tea.Msg {
-	snap, err := app.LoadWorkspaceSnapshot()
-	return snapshotMsg{snap: snap, err: err}
+func loadSnapshotCmd(prog *ActionProgress) tea.Cmd {
+	return func() tea.Msg {
+		if prog != nil {
+			prog.Reset()
+		}
+		snap, err := app.LoadWorkspaceSnapshotWithProgress(prog)
+		return snapshotMsg{snap: snap, err: err}
+	}
 }
 
 func (m appModel) applySnapshot(msg snapshotMsg) (appModel, tea.Cmd) {
@@ -191,7 +198,7 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case keyRefresh:
 				m.loading = true
 				m.status = "Atualizando…"
-				return m, loadSnapshot
+				return m, loadSnapshotCmd(m.loadProg)
 			}
 		}
 
@@ -233,7 +240,7 @@ func (m appModel) updateDashboard(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			case keyRefresh:
 				m.loading = true
 				m.status = "Atualizando…"
-				return m, loadSnapshot
+				return m, loadSnapshotCmd(m.loadProg)
 			}
 		}
 		return m, nil
@@ -246,7 +253,7 @@ func (m appModel) updateDashboard(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case keyRefresh:
 			m.loading = true
 			m.status = "Atualizando…"
-			return m, loadSnapshot
+			return m, loadSnapshotCmd(m.loadProg)
 		}
 	}
 
@@ -379,7 +386,7 @@ func (m appModel) updateAction(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case PhaseDone, PhaseError:
 		switch msg.String() {
 		case "enter", "esc", "q":
-			return m.closeActionAndRefresh(), loadSnapshot
+			return m.closeActionAndRefresh(), loadSnapshotCmd(m.loadProg)
 		}
 	}
 
@@ -442,7 +449,7 @@ func (m appModel) View() string {
 				if status == "" {
 					status = "Generating…"
 				}
-				b.WriteString(components.RenderLoading(status, m.loadTick, m.width))
+				b.WriteString(components.RenderLoading(status, m.action.progress.Percent(), m.width))
 			} else {
 				b.WriteString(m.action.View(m.width))
 			}
@@ -456,7 +463,11 @@ func (m appModel) View() string {
 		}
 	default:
 		if m.loading {
-			b.WriteString(views.RenderLoadingDashboard(m.status, m.loadTick, m.width))
+			status, _ := m.loadProg.Snapshot()
+			if status == "" {
+				status = m.status
+			}
+			b.WriteString(views.RenderLoadingDashboard(status, m.loadProg.Percent(), m.width))
 		} else if m.err != nil {
 			b.WriteString("\n")
 			b.WriteString(styleError.Render("  ✖ " + m.err.Error()))

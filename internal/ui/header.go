@@ -39,6 +39,7 @@ func FormatDashboardHeader(ctx *HeaderContext, width int, dryRun bool, colorsEna
 	}
 
 	style := headerBoxStyle(colorsEnabled)
+	inner := ContentInner(width)
 	var lines []string
 	lines = append(lines, RenderBoxTop("GITAI", width, style))
 
@@ -48,12 +49,19 @@ func FormatDashboardHeader(ctx *HeaderContext, width int, dryRun bool, colorsEna
 		version += " · dry-run"
 	}
 	version = paint(version, dim)
-	lines = append(lines, RenderBoxLine(PadLine(tagline, version, ContentInner(width)), width))
+
+	var rightParts []string
+	if version != "" {
+		rightParts = append(rightParts, version)
+	}
+
+	type metaLine struct {
+		left  string
+		right string
+	}
+	var metaLines []metaLine
 
 	if ctx != nil {
-		lines = append(lines, RenderBoxLine(headerMetaRow("Repository", ctx.Repo, ctx.Status, ContentInner(width), paint), width))
-		lines = append(lines, RenderBoxLine(headerMetaRow("Branch", ctx.Branch, ctx.Sync, ContentInner(width), paint), width))
-
 		aiLabel := formatProviderModel(ctx.Provider, ctx.Model)
 		aiStatus := aiStatusLabel(ctx.AIReady)
 		if colorsEnabled {
@@ -63,7 +71,6 @@ func FormatDashboardHeader(ctx *HeaderContext, width int, dryRun bool, colorsEna
 				aiStatus = paint(aiStatus, yellow)
 			}
 		}
-		lines = append(lines, RenderBoxLine(headerMetaRow("AI", aiLabel, aiStatus, ContentInner(width), paint), width))
 
 		commitNote := ""
 		if ctx.OnBase {
@@ -80,8 +87,30 @@ func FormatDashboardHeader(ctx *HeaderContext, width int, dryRun bool, colorsEna
 		if ctx.HeadHash != "" {
 			commitValue += "  " + paint("⧉", dim)
 		}
-		lines = append(lines, RenderBoxLine(headerMetaRow("Commit", commitValue, commitNote, ContentInner(width), paint), width))
-	} else {
+
+		metaLines = []metaLine{
+			{headerMetaLeft("Repository", ctx.Repo, ctx.Status, inner, paint), ctx.Status},
+			{headerMetaLeft("Branch", ctx.Branch, ctx.Sync, inner, paint), ctx.Sync},
+			{headerMetaLeft("AI", aiLabel, aiStatus, inner, paint), aiStatus},
+			{headerMetaLeft("Commit", commitValue, commitNote, inner, paint), commitNote},
+		}
+		for _, m := range metaLines {
+			if m.right != "" {
+				rightParts = append(rightParts, m.right)
+			}
+		}
+	}
+
+	shade := RightShadeStyle(colorsEnabled && len(rightParts) > 1)
+	rightColW := MaxDisplayWidth(rightParts...)
+
+	lines = append(lines, RenderBoxLine(formatHeaderRow(tagline, version, inner, rightColW, shade), width))
+
+	for _, m := range metaLines {
+		lines = append(lines, RenderBoxLine(formatHeaderRow(m.left, m.right, inner, rightColW, shade), width))
+	}
+
+	if ctx == nil {
 		fallback := "AI Git Workflow · " + Version()
 		if dryRun {
 			fallback += " · dry-run"
@@ -90,7 +119,7 @@ func FormatDashboardHeader(ctx *HeaderContext, width int, dryRun bool, colorsEna
 	}
 
 	lines = append(lines, RenderBoxBottom(width, style))
-	return strings.Join(lines, "\n") + "\n"
+	return linesJoin(lines)
 }
 
 // FormatBanner renders the dashboard header (replaces the legacy ASCII banner).
@@ -114,6 +143,34 @@ func headerBoxStyle(colorsEnabled bool) BoxStyle {
 			return BottomGradientDash(p, colorsEnabled)
 		},
 	}
+}
+
+func formatHeaderRow(left, right string, inner, rightColW int, shade func(string) string) string {
+	if right == "" || shade == nil {
+		return PadLine(left, right, inner)
+	}
+	return PadLineShaded(left, right, inner, rightColW, shade)
+}
+
+func headerMetaLeft(label, value, right string, innerWidth int, paint func(string, string) string) string {
+	labelPart := paint(fmt.Sprintf("%-10s", label+":"), dim)
+	val := value
+	if val == "" {
+		val = "—"
+	}
+	if right == "" {
+		return labelPart + " " + val
+	}
+
+	rightW := DisplayWidth(right)
+	maxVal := innerWidth - DisplayWidth(labelPart) - 1 - rightW
+	if maxVal < 1 {
+		maxVal = 1
+	}
+	if DisplayWidth(val) > maxVal {
+		val = truncateRunewidth(val, maxVal)
+	}
+	return labelPart + " " + val
 }
 
 func formatProviderModel(provider, model string) string {
@@ -140,29 +197,17 @@ func aiStatusLabel(ready bool) string {
 	return "⚠ Setup"
 }
 
-func headerMetaRow(label, value, right string, innerWidth int, paint func(string, string) string) string {
-	labelPart := paint(fmt.Sprintf("%-10s", label+":"), dim)
-	val := value
-	if val == "" {
-		val = "—"
-	}
-	left := labelPart + " " + val
-	if right == "" {
-		return PadLine(left, "", innerWidth)
-	}
-
-	rightW := DisplayWidth(right)
-	maxVal := innerWidth - DisplayWidth(labelPart) - 1 - rightW
-	if maxVal < 1 {
-		maxVal = 1
-	}
-	if DisplayWidth(val) > maxVal {
-		val = truncateRunewidth(val, maxVal)
-		left = labelPart + " " + val
-	}
-	return PadLine(left, right, innerWidth)
-}
-
 func truncateRunewidth(s string, max int) string {
 	return ansi.Truncate(s, max, "…")
+}
+
+func linesJoin(lines []string) string {
+	out := ""
+	for i, line := range lines {
+		out += line
+		if i < len(lines)-1 {
+			out += "\n"
+		}
+	}
+	return out + "\n"
 }

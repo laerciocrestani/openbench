@@ -47,6 +47,11 @@ func PadLine(left, right string, inner int) string {
 	return ui.PadLine(left, right, inner)
 }
 
+// PadLineShaded aligns content and shades the right column when enabled.
+func PadLineShaded(left, right string, inner, rightColWidth int, shade func(string) string) string {
+	return ui.PadLineShaded(left, right, inner, rightColWidth, shade)
+}
+
 func truncate(s string, max int) string {
 	return ansi.Truncate(s, max, "…")
 }

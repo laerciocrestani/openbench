@@ -26,6 +26,7 @@ type Styles struct {
 	Info      lipgloss.Style
 	Disabled  lipgloss.Style
 	Magenta   lipgloss.Style
+	RightShade lipgloss.Style
 }
 
 var S Styles
@@ -59,6 +60,7 @@ func Init() {
 			Info:       plain,
 			Disabled:   plain,
 			Magenta:    bold,
+			RightShade: plain,
 		}
 		return
 	}
@@ -83,6 +85,7 @@ func Init() {
 		Info:      lipgloss.NewStyle().Foreground(lipgloss.Color("39")),
 		Disabled:  lipgloss.NewStyle().Foreground(lipgloss.Color("238")),
 		Magenta:   lipgloss.NewStyle().Foreground(lipgloss.Color("213")).Bold(true),
+		RightShade: lipgloss.NewStyle().Background(lipgloss.Color("236")),
 	}
 }
 

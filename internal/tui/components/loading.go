@@ -1,13 +1,14 @@
 package components
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/laerciocrestani/gitai/internal/tui/theme"
 )
 
-// RenderLoading renders a loading state with an animated progress bar.
-func RenderLoading(message string, tick int, width int) string {
+// RenderLoading renders a loading state with step-based progress.
+func RenderLoading(message string, percent, width int) string {
 	if width < 20 {
 		width = 78
 	}
@@ -19,12 +20,25 @@ func RenderLoading(message string, tick int, width int) string {
 		barWidth = 10
 	}
 
-	filled := tick % (barWidth + 1)
+	if percent < 0 {
+		percent = 0
+	}
+	if percent > 100 {
+		percent = 100
+	}
+
+	filled := percent * barWidth / 100
+	if percent > 0 && filled == 0 {
+		filled = 1
+	}
 	bar := strings.Repeat("█", filled) + strings.Repeat("░", barWidth-filled)
 
 	var lines []string
-	lines = append(lines, theme.S.Hint.Render(message))
+	if message != "" {
+		lines = append(lines, theme.S.Hint.Render(message))
+	}
 	lines = append(lines, theme.S.Info.Render(bar))
+	lines = append(lines, theme.S.Hint.Render(fmt.Sprintf("%d%%", percent)))
 
 	body := strings.Join(lines, "\n")
 	return RenderPanel("Loading", body, width)

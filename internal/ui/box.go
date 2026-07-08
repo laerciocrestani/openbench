@@ -10,8 +10,8 @@ import (
 )
 
 const (
-	BoxTopGradientRatio    = 0.70
-	BoxBottomGradientRatio = 0.40
+	BoxTopGradientRatio    = 0.60
+	BoxBottomGradientRatio = 1.0
 	boxLeftPrefix          = "│ "
 )
 
@@ -48,13 +48,52 @@ func DisplayWidth(s string) int {
 
 // PadLine aligns left and right text within an inner width.
 func PadLine(left, right string, inner int) string {
+	return PadLineShaded(left, right, inner, 0, nil)
+}
+
+// PadLineShaded aligns left/right text and optionally shades the right column.
+// rightColWidth fixes the shaded column width across multiple lines (0 = auto).
+func PadLineShaded(left, right string, inner, rightColWidth int, shade func(string) string) string {
 	leftW := DisplayWidth(left)
 	rightW := DisplayWidth(right)
-	gap := inner - leftW - rightW
+	if right == "" {
+		return left + strings.Repeat(" ", maxInt(1, inner-leftW))
+	}
+
+	colW := rightColWidth
+	if colW < rightW {
+		colW = rightW
+	}
+	gap := inner - leftW - colW
 	if gap < 1 {
 		gap = 1
 	}
-	return left + strings.Repeat(" ", gap) + right
+
+	rightBlock := right + strings.Repeat(" ", colW-rightW)
+	if shade != nil {
+		rightBlock = shade(rightBlock)
+	}
+	return left + strings.Repeat(" ", gap) + rightBlock
+}
+
+// RightShadeStyle returns a subtle background style for right-aligned columns.
+func RightShadeStyle(colorsEnabled bool) func(string) string {
+	if !colorsEnabled {
+		return nil
+	}
+	style := lipgloss.NewStyle().Background(lipgloss.Color("236"))
+	return func(s string) string { return style.Render(s) }
+}
+
+// MaxDisplayWidth returns the widest visible string length.
+func MaxDisplayWidth(parts ...string) int {
+	maxW := 0
+	for _, p := range parts {
+		if w := DisplayWidth(p); w > maxW {
+			maxW = w
+		}
+	}
+	return maxW
 }
 
 // PadDisplayWidth pads or truncates a line to an exact display width.

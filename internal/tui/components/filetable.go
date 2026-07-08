@@ -9,6 +9,7 @@ import (
 	gitpkg "github.com/laerciocrestani/gitai/internal/git"
 	"github.com/laerciocrestani/gitai/internal/tui/theme"
 	"github.com/laerciocrestani/gitai/internal/ui"
+	"github.com/laerciocrestani/gitai/internal/uiprefs"
 )
 
 const (
@@ -39,23 +40,22 @@ func RenderFileTable(changes []gitpkg.FileChange, width, maxRows int) string {
 		pathWidth = 20
 	}
 
-	headerRight := formatStatsBlock(
-		theme.S.Hint.Render(padPlain("+", statsColPlus)),
-		theme.S.Hint.Render(padPlain("-", statsColMinus)),
-	)
-	headerLeft := theme.S.Hint.Render(fmt.Sprintf("%-4s %s", "TYPE", padPlain("FILE", pathWidth)))
-	rows := []string{PadLine(headerLeft, headerRight, inner)}
+	shade := rightShadeStyle(limit > 1)
+	rows := []string{fileTableRow("TYPE", "FILE", "+", "-", pathWidth, statsWidth, inner, shade, true)}
 
 	for _, f := range sorted[:limit] {
-		tag := statusTag(f.Status)
-		path := truncate(f.Path, pathWidth)
-		right := formatStatsBlock(
-			theme.S.Success.Render(padPlain(fmt.Sprintf("+%d", f.Insertions), statsColPlus)),
-			theme.S.Error.Render(padPlain(fmt.Sprintf("-%d", f.Deletions), statsColMinus)),
-		)
-		left := fmt.Sprintf("%-4s %s", tag, padPlain(path, pathWidth))
-		row := PadLine(left, right, inner)
-		rows = append(rows, fileRowStyle(f.Status).Render(row))
+		rows = append(rows, fileTableRow(
+			statusTag(f.Status),
+			truncate(f.Path, pathWidth),
+			fmt.Sprintf("+%d", f.Insertions),
+			fmt.Sprintf("-%d", f.Deletions),
+			pathWidth,
+			statsWidth,
+			inner,
+			shade,
+			false,
+			f.Status,
+		))
 	}
 
 	footer := fmt.Sprintf("Total: %d files", len(sorted))
@@ -66,6 +66,41 @@ func RenderFileTable(changes []gitpkg.FileChange, width, maxRows int) string {
 
 	body := strings.Join(rows, "\n")
 	return RenderPanel("Changed Files", body, width)
+}
+
+func fileTableRow(tag, path, plus, minus string, pathWidth, statsWidth, inner int, shade func(string) string, header bool, status ...string) string {
+	var plusStyled, minusStyled string
+	if header {
+		plusStyled = theme.S.Hint.Render(padPlain("+", statsColPlus))
+		minusStyled = theme.S.Hint.Render(padPlain("-", statsColMinus))
+	} else {
+		plusStyled = theme.S.Success.Render(padPlain(plus, statsColPlus))
+		minusStyled = theme.S.Error.Render(padPlain(minus, statsColMinus))
+	}
+	right := formatStatsBlock(plusStyled, minusStyled)
+	left := fmt.Sprintf("%-4s %s", tag, padPlain(path, pathWidth))
+
+	var row string
+	if shade != nil {
+		row = PadLineShaded(left, right, inner, statsWidth, shade)
+	} else {
+		row = PadLine(left, right, inner)
+	}
+	if header {
+		return row
+	}
+	st := "modified"
+	if len(status) > 0 {
+		st = status[0]
+	}
+	return fileRowStyle(st).Render(row)
+}
+
+func rightShadeStyle(enabled bool) func(string) string {
+	if !enabled || !uiprefs.ColorsEnabled() {
+		return nil
+	}
+	return func(s string) string { return theme.S.RightShade.Render(s) }
 }
 
 func formatStatsBlock(plus, minus string) string {

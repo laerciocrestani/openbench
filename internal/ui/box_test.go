@@ -32,6 +32,17 @@ func TestPadLineRightAlign(t *testing.T) {
 	}
 }
 
+func TestPadLineShaded(t *testing.T) {
+	shade := ui.RightShadeStyle(true)
+	line := ui.PadLineShaded("left", "right", 40, 10, shade)
+	if !strings.HasSuffix(strings.TrimSpace(line), "right") {
+		t.Fatalf("right text not aligned: %q", line)
+	}
+	if shade != nil && !strings.Contains(line, "\x1b") {
+		t.Skip("terminal sem suporte ANSI neste ambiente")
+	}
+}
+
 func TestFormatDashboardHeaderMatchesBoxFormat(t *testing.T) {
 	ctx := &ui.HeaderContext{
 		Repo:     "gitai",

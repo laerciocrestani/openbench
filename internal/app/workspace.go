@@ -1,7 +1,6 @@
 package app
 
 import (
-	"fmt"
 	"os/exec"
 
 	"github.com/laerciocrestani/gitai/internal/config"
@@ -21,22 +20,51 @@ type WorkspaceSnapshot struct {
 
 // LoadWorkspaceSnapshot coleta overview, PR aberto, config e próximos passos.
 func LoadWorkspaceSnapshot() (*WorkspaceSnapshot, error) {
-	repo, err := gitpkg.New()
-	if err != nil {
-		return nil, err
+	return LoadWorkspaceSnapshotWithProgress(nil)
+}
+
+// LoadWorkspaceSnapshotWithProgress coleta o snapshot reportando etapas ao Progress.
+func LoadWorkspaceSnapshotWithProgress(prog Progress) (*WorkspaceSnapshot, error) {
+	var repo *gitpkg.Repo
+
+	step := func(label string, fn func() error) error {
+		if prog == nil {
+			return fn()
+		}
+		return prog.Step(label, fn)
 	}
-	if err := repo.IsRepo(); err != nil {
-		return nil, fmt.Errorf("diretório atual não é um repositório git")
+
+	if err := step("Opening repository", func() error {
+		r, err := gitpkg.New()
+		if err != nil {
+			return err
+		}
+		repo = r
+		return repo.IsRepo()
+	}); err != nil {
+		return nil, err
 	}
 
 	baseBranch := "main"
-	cfg, cfgErr := config.Load()
-	if cfgErr == nil {
-		baseBranch = cfg.BaseBranch
+	var cfg *config.Config
+	var cfgErr error
+
+	if err := step("Loading configuration", func() error {
+		cfg, cfgErr = config.Load()
+		if cfgErr == nil {
+			baseBranch = cfg.BaseBranch
+		}
+		return nil
+	}); err != nil {
+		return nil, err
 	}
 
-	overview, err := repo.Overview(baseBranch)
-	if err != nil {
+	var overview *gitpkg.Overview
+	if err := step("Reading workspace", func() error {
+		var err error
+		overview, err = repo.Overview(baseBranch)
+		return err
+	}); err != nil {
 		return nil, err
 	}
 
@@ -48,13 +76,23 @@ func LoadWorkspaceSnapshot() (*WorkspaceSnapshot, error) {
 	}
 
 	if snap.HasGH {
-		client, err := prpkg.New()
-		if err == nil {
+		if err := step("Checking pull request", func() error {
+			client, err := prpkg.New()
+			if err != nil {
+				return nil
+			}
 			snap.OpenPR, _ = client.ViewCurrent()
+			return nil
+		}); err != nil {
+			return nil, err
 		}
 	}
 
 	snap.NextSteps = buildNextSteps(overview, snap.OpenPR, cfgErr == nil)
+
+	if prog != nil {
+		prog.Success("Pronto")
+	}
 	return snap, nil
 }
 

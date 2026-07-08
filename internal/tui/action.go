@@ -66,6 +66,7 @@ func newActionState(kind ActionKind) *actionState {
 
 func (a *actionState) start() *actionState {
 	a.progress = NewActionProgress()
+	a.progress.Reset()
 	a.opts = app.Options{Progress: a.progress}
 	a.phase = PhaseRunning
 	a.preview = nil
