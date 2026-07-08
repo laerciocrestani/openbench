@@ -105,7 +105,14 @@ func isPRNotFound(err error) bool {
 		strings.Contains(msg, "no default remote")
 }
 
-func (c *Client) Create(suggestion *ai.PRSuggestion, base string, draft bool) (string, error) {
+func resolveBody(suggestion *ai.PRSuggestion, bodyOverride string) string {
+	if strings.TrimSpace(bodyOverride) != "" {
+		return bodyOverride
+	}
+	return FormatBody(suggestion)
+}
+
+func (c *Client) Create(suggestion *ai.PRSuggestion, base string, draft bool, bodyOverride string) (string, error) {
 	exists, url, err := c.Exists()
 	if err != nil {
 		return "", err
@@ -114,7 +121,7 @@ func (c *Client) Create(suggestion *ai.PRSuggestion, base string, draft bool) (s
 		return url, fmt.Errorf("PR já existe: %s", url)
 	}
 
-	body := FormatBody(suggestion)
+	body := resolveBody(suggestion, bodyOverride)
 
 	args := []string{
 		"pr", "create",
@@ -169,8 +176,8 @@ func baseForGH(base string) string {
 	return strings.TrimPrefix(base, "origin/")
 }
 
-func (c *Client) PreviewCreate(suggestion *ai.PRSuggestion, base string, draft bool) string {
-	body := FormatBody(suggestion)
+func (c *Client) PreviewCreate(suggestion *ai.PRSuggestion, base string, draft bool, bodyOverride string) string {
+	body := resolveBody(suggestion, bodyOverride)
 	draftFlag := ""
 	if draft {
 		draftFlag = " --draft"

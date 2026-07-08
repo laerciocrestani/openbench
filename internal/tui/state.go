@@ -6,6 +6,7 @@ type Screen int
 const (
 	ScreenDashboard Screen = iota
 	ScreenDiff
+	ScreenLogs
 	ScreenAction
 	ScreenReport
 	ScreenHelp

@@ -5,9 +5,10 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/charmbracelet/bubbles/textarea"
+	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/laerciocrestani/gitai/internal/app"
-	"github.com/laerciocrestani/gitai/internal/config"
 	prpkg "github.com/laerciocrestani/gitai/internal/pr"
 )
 
@@ -32,14 +33,20 @@ const (
 )
 
 type actionState struct {
-	kind     ActionKind
-	phase    ActionPhase
-	progress *ActionProgress
-	preview  *app.Result
-	result   *app.Result
-	err      error
-	draft    bool
-	opts     app.Options
+	kind         ActionKind
+	phase        ActionPhase
+	progress     *ActionProgress
+	preview      *app.Result
+	result       *app.Result
+	err          error
+	draft        bool
+	opts         app.Options
+	editing      bool
+	editFocus    editFocus
+	editorsReady bool
+	commitArea   textarea.Model
+	prTitle      textinput.Model
+	prBody       textarea.Model
 }
 
 type actionPreviewMsg struct {
@@ -72,6 +79,8 @@ func (a *actionState) start() *actionState {
 	a.preview = nil
 	a.result = nil
 	a.err = nil
+	a.editing = false
+	a.editorsReady = false
 	return a
 }
 
@@ -168,17 +177,7 @@ func (a *actionState) handleSimple(msg actionSimpleMsg) {
 
 func (a *actionState) toggleDraft() {
 	a.draft = !a.draft
-	if a.preview == nil || a.preview.PRSuggestion == nil {
-		return
-	}
-	base := "main"
-	if cfg, err := config.Load(); err == nil && cfg.BaseBranch != "" {
-		base = cfg.BaseBranch
-	}
-	client, err := prpkg.New()
-	if err == nil {
-		a.preview.PRPreview = client.PreviewCreate(a.preview.PRSuggestion, base, a.draft)
-	}
+	a.refreshPRPreview()
 }
 
 func (a *actionState) title() string {
@@ -198,7 +197,7 @@ func (a *actionState) title() string {
 	}
 }
 
-func (a *actionState) View(width int) string {
+func (a *actionState) View(width, height int) string {
 	if a == nil {
 		return ""
 	}
@@ -225,7 +224,11 @@ func (a *actionState) View(width int) string {
 		}
 
 	case PhaseConfirm:
-		b.WriteString(renderPreview(a))
+		if a.editing {
+			b.WriteString(a.renderEditView())
+		} else {
+			b.WriteString(renderPreview(a))
+		}
 		b.WriteString("\n")
 		b.WriteString(actionConfirmHelp(a))
 
@@ -268,23 +271,25 @@ func renderPreview(a *actionState) string {
 		b.WriteString(wrapPreview(a.preview.Message, 76))
 
 	case ActionPR:
+		b.WriteString(styleHint.Render("Preview do PR:\n\n"))
 		if a.preview.PRSuggestion != nil {
 			s := a.preview.PRSuggestion
 			b.WriteString(styleTitle.Render(s.Title))
 			b.WriteString("\n\n")
 			if a.draft {
 				b.WriteString(styleYellow.Render("  [draft]"))
-				b.WriteString("\n")
-			}
-			b.WriteString(styleHint.Render("Summary:"))
-			b.WriteString("\n")
-			for _, line := range s.Summary {
-				b.WriteString("  • " + line + "\n")
+				b.WriteString("\n\n")
 			}
 		}
+		body := prBodyForPreview(a.preview)
+		if body != "" {
+			b.WriteString(wrapPreview(body, 76))
+		}
 		if a.preview.PRPreview != "" {
+			b.WriteString("\n\n")
+			b.WriteString(styleHint.Render("Comando:"))
 			b.WriteString("\n")
-			b.WriteString(styleHint.Render(truncate(a.preview.PRPreview, 200)))
+			b.WriteString(styleHint.Render("  " + a.preview.PRPreview))
 		}
 	}
 
@@ -292,7 +297,16 @@ func renderPreview(a *actionState) string {
 }
 
 func actionConfirmHelp(a *actionState) string {
+	if a.editing {
+		parts := styleKey.Render("esc") + " ou " + styleKey.Render("e") + " voltar ao preview"
+		if a.kind == ActionPR {
+			parts += "  " + styleKey.Render("tab") + " título/corpo"
+		}
+		return styleHint.Render("  ") + parts
+	}
+
 	parts := styleKey.Render("Enter") + " confirmar  " +
+		styleKey.Render("e") + " editar  " +
 		styleKey.Render("esc") + " cancelar"
 	if a.kind == ActionPR {
 		parts += "  " + styleKey.Render("d") + " draft"

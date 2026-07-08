@@ -93,6 +93,14 @@ func (r *Repo) LogOnBranch(base string) (string, error) {
 	return r.run("log", fmt.Sprintf("%s..HEAD", base), "--oneline", "--no-decorate")
 }
 
+// RecentLog returns recent commits as oneline output.
+func (r *Repo) RecentLog(limit int) (string, error) {
+	if limit <= 0 {
+		limit = 30
+	}
+	return r.run("log", fmt.Sprintf("-%d", limit), "--oneline", "--decorate", "--graph")
+}
+
 func (r *Repo) IsSameAsBase(base string) (bool, error) {
 	count, err := r.run("rev-list", "--count", fmt.Sprintf("%s..HEAD", base))
 	if err != nil {

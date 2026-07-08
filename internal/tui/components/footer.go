@@ -20,7 +20,7 @@ type FooterItem struct {
 func RenderFooter(items []FooterItem, width int) string {
 	var parts []string
 	for _, item := range items {
-		key := "[" + strings.ToUpper(item.Key) + "]"
+		key := "[" + item.Key + "]"
 		label := item.Label
 		if item.Enabled {
 			parts = append(parts, theme.S.Key.Render(key)+theme.S.Hint.Render(" "+label))

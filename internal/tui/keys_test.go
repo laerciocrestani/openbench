@@ -88,6 +88,31 @@ func TestParseDashboardKey_commit_cleanTree(t *testing.T) {
 	}
 }
 
+func TestParseDashboardKey_lowercaseActions(t *testing.T) {
+	snap := &app.WorkspaceSnapshot{
+		Overview: &gitpkg.Overview{
+			Ahead:         1,
+			HeadHash:      "abc",
+			RecentCommits: []string{"x"},
+		},
+	}
+	cases := []struct {
+		key  string
+		want dashKey
+	}{
+		{"p", dashKeyPush},
+		{"d", dashKeyDiff},
+		{"y", dashKeyCopyHash},
+		{"l", dashKeyLogs},
+	}
+	for _, tc := range cases {
+		k, ok := parseDashboardKey(keyRunes(tc.key), snap)
+		if !ok || k != tc.want {
+			t.Fatalf("key %q: got %v ok=%v want %v", tc.key, k, ok, tc.want)
+		}
+	}
+}
+
 func TestShouldLaunch_respectsGITAI_NO_UI(t *testing.T) {
 	t.Setenv("GITAI_NO_UI", "1")
 	t.Setenv("CI", "")

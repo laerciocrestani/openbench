@@ -27,6 +27,11 @@ type diffLoadedMsg struct {
 
 type tickMsg struct{}
 
+type logsLoadedMsg struct {
+	content string
+	err     error
+}
+
 type appModel struct {
 	screen         Screen
 	snapshot       *app.WorkspaceSnapshot
@@ -38,6 +43,7 @@ type appModel struct {
 	err            error
 	status         string
 	diff           diffModel
+	logs           logsModel
 	report         reportModel
 	action         *actionState
 	refresh        refreshConfig
@@ -51,8 +57,16 @@ func newApp(cfg refreshConfig) appModel {
 		status:   "Carregando repositório…",
 		loadProg: NewActionProgress(),
 		diff:     newDiffModel(),
+		logs:     newLogsModel(),
 		report:   newReportModel(),
 		refresh:  cfg,
+	}
+}
+
+func loadLogsCmdFromSnap(snap *app.WorkspaceSnapshot) tea.Cmd {
+	return func() tea.Msg {
+		log, err := app.LoadLog(snap)
+		return logsLoadedMsg{content: log, err: err}
 	}
 }
 
@@ -132,8 +146,14 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.screen == ScreenDiff {
 			m.diff.SetSize(m.width, m.height)
 		}
+		if m.screen == ScreenLogs {
+			m.logs.SetSize(m.width, m.height)
+		}
 		if m.screen == ScreenReport {
 			m.report.SetSize(m.width, m.height)
+		}
+		if m.action != nil {
+			m.action.resizeEditors(m.width, m.height)
 		}
 		return m, nil
 
@@ -159,6 +179,16 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.diff.SetSize(m.width, m.height)
 		if msg.err != nil {
 			m.status = msg.err.Error()
+		}
+		return m, nil
+
+	case logsLoadedMsg:
+		m.logs.Load(msg.content, msg.err)
+		m.logs.SetSize(m.width, m.height)
+		if msg.err != nil {
+			m.status = msg.err.Error()
+		} else {
+			m.status = "Logs"
 		}
 		return m, nil
 
@@ -207,8 +237,10 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updateDashboard(msg)
 		case ScreenDiff:
 			return m.updateDiff(msg)
+		case ScreenLogs:
+			return m.updateLogs(msg)
 		case ScreenAction:
-			return m.updateAction(msg)
+			return m.updateActionMsg(msg)
 		case ScreenReport:
 			return m.updateReport(msg)
 		case ScreenHelp:
@@ -222,9 +254,21 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, cmd
 	}
 
+	if m.screen == ScreenLogs {
+		var cmd tea.Cmd
+		m.logs, cmd = m.logs.Update(msg)
+		return m, cmd
+	}
+
 	if m.screen == ScreenReport {
 		var cmd tea.Cmd
 		m.report, cmd = m.report.Update(msg)
+		return m, cmd
+	}
+
+	if m.screen == ScreenAction && m.action != nil && m.action.phase == PhaseConfirm && m.action.editing {
+		var cmd tea.Cmd
+		m.action, cmd = m.action.updateEditors(msg)
 		return m, cmd
 	}
 
@@ -263,6 +307,10 @@ func (m appModel) updateDashboard(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.screen = ScreenDiff
 			m.status = "Diff"
 			return m, loadDiffCmd(m.snapshot)
+		case dashKeyLogs:
+			m.screen = ScreenLogs
+			m.status = "Logs"
+			return m, loadLogsCmdFromSnap(m.snapshot)
 		case dashKeyCommit:
 			m.screen = ScreenAction
 			m.action = newActionState(ActionCommit)
@@ -324,6 +372,18 @@ func (m appModel) updateDiff(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
+func (m appModel) updateLogs(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc":
+		m.screen = ScreenDashboard
+		m.status = "Pronto"
+		return m, nil
+	}
+	var cmd tea.Cmd
+	m.logs, cmd = m.logs.Update(msg)
+	return m, cmd
+}
+
 func (m appModel) updateReport(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "esc":
@@ -360,20 +420,48 @@ func (m appModel) updateHelp(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m appModel) updateAction(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m appModel) updateActionMsg(msg tea.Msg) (appModel, tea.Cmd) {
 	if m.action == nil {
 		m.screen = ScreenDashboard
 		return m, nil
 	}
 
+	if m.action.phase == PhaseConfirm && m.action.editing {
+		if keyMsg, ok := msg.(tea.KeyMsg); ok {
+			switch keyMsg.String() {
+			case "esc", "e":
+				m.action.exitEdit()
+				return m, nil
+			case "tab":
+				if m.action.kind == ActionPR {
+					return m, m.action.cyclePRFocus()
+				}
+			}
+		}
+		var cmd tea.Cmd
+		m.action, cmd = m.action.updateEditors(msg)
+		return m, cmd
+	}
+
+	keyMsg, ok := msg.(tea.KeyMsg)
+	if !ok {
+		return m, nil
+	}
+
 	switch m.action.phase {
 	case PhaseConfirm:
-		switch msg.String() {
+		switch keyMsg.String() {
 		case "esc":
 			return m.closeAction(), nil
 		case "enter":
+			if m.action.editorsReady {
+				m.action.syncPreviewFromEditors()
+			}
+			m.action.editing = false
 			m.action.phase = PhaseConfirming
 			return m, m.action.confirmCmd()
+		case "e":
+			return m, m.action.enterEdit(m.width, m.height)
 		case "d":
 			if m.action.kind == ActionPR {
 				m.action.toggleDraft()
@@ -384,7 +472,7 @@ func (m appModel) updateAction(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// aguarda mensagem async
 
 	case PhaseDone, PhaseError:
-		switch msg.String() {
+		switch keyMsg.String() {
 		case "enter", "esc", "q":
 			return m.closeActionAndRefresh(), loadSnapshotCmd(m.loadProg)
 		}
@@ -393,14 +481,18 @@ func (m appModel) updateAction(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m appModel) closeAction() tea.Model {
+func (m appModel) updateAction(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	return m.updateActionMsg(msg)
+}
+
+func (m appModel) closeAction() appModel {
 	m.screen = ScreenDashboard
 	m.action = nil
 	m.status = "Pronto"
 	return m
 }
 
-func (m appModel) closeActionAndRefresh() tea.Model {
+func (m appModel) closeActionAndRefresh() appModel {
 	m.screen = ScreenDashboard
 	m.action = nil
 	m.loading = true
@@ -435,6 +527,9 @@ func (m appModel) View() string {
 	case ScreenDiff:
 		b.WriteString(m.diff.View(m.width))
 		help = diffHelpLine()
+	case ScreenLogs:
+		b.WriteString(m.logs.View(m.width))
+		help = logsHelpLine()
 	case ScreenReport:
 		b.WriteString(m.report.View())
 		help = reportHelpLine()
@@ -451,7 +546,7 @@ func (m appModel) View() string {
 				}
 				b.WriteString(components.RenderLoading(status, m.action.progress.Percent(), m.width))
 			} else {
-				b.WriteString(m.action.View(m.width))
+				b.WriteString(m.action.View(m.width, m.height))
 			}
 			help = actionHelpLine()
 			if m.action.phase == PhaseConfirm {

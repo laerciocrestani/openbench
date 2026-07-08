@@ -24,12 +24,14 @@ type Options struct {
 	Progress            Progress
 	CachedCommitMessage string
 	CachedPRSuggestion  *ai.PRSuggestion
+	CachedPRBody        string
 }
 
 type Result struct {
 	Suggestion   *ai.CommitSuggestion
 	PRSuggestion *ai.PRSuggestion
 	Message      string
+	PRBody       string
 	PRURL        string
 	PRPreview    string
 }
@@ -129,6 +131,7 @@ func ConfirmPR(ctx context.Context, preview *Result, draft bool, opts Options) (
 	opts.DryRun = false
 	opts.Draft = draft
 	opts.CachedPRSuggestion = preview.PRSuggestion
+	opts.CachedPRBody = preview.PRBody
 	if preview.Message != "" {
 		opts.CachedCommitMessage = preview.Message
 	}
@@ -342,7 +345,7 @@ func RunPR(ctx context.Context, opts Options) (*Result, error) {
 	}
 
 	if opts.DryRun {
-		preview := prClient.PreviewCreate(prSuggestion, resolvedBase, opts.Draft)
+		preview := prClient.PreviewCreate(prSuggestion, resolvedBase, opts.Draft, opts.CachedPRBody)
 		result.PRPreview = preview
 		prog.Detail(preview)
 		if provider != nil {
@@ -355,7 +358,7 @@ func RunPR(ctx context.Context, opts Options) (*Result, error) {
 
 	var url string
 	if err := prog.Step("Creating Pull Request", func() error {
-		url, err = prClient.Create(prSuggestion, resolvedBase, opts.Draft)
+		url, err = prClient.Create(prSuggestion, resolvedBase, opts.Draft, opts.CachedPRBody)
 		return err
 	}); err != nil {
 		return nil, err

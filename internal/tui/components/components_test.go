@@ -11,14 +11,24 @@ import (
 	"github.com/laerciocrestani/gitai/internal/tui/components"
 )
 
-func TestRenderFooter(t *testing.T) {
+func TestRenderFooterLowercaseKeys(t *testing.T) {
 	snap := &app.WorkspaceSnapshot{
-		Overview: &gitpkg.Overview{Modified: 1},
+		Overview: &gitpkg.Overview{
+			Modified:      1,
+			HeadHash:      "abc1234",
+			RecentCommits: []string{"abc feat"},
+		},
 	}
 	items := components.DefaultFooterItems(snap)
-	out := components.RenderFooter(items, 80)
-	if !strings.Contains(out, "Commit") || !strings.Contains(out, "Quit") {
-		t.Fatalf("footer missing shortcuts: %q", out)
+	out := components.RenderFooter(items, 120)
+	plain := ansi.Strip(out)
+	for _, key := range []string{"[p]", "[d]", "[y]", "[l]"} {
+		if !strings.Contains(plain, key) {
+			t.Fatalf("footer missing lowercase key %s: %q", key, plain)
+		}
+	}
+	if strings.Contains(plain, "[P] Push") {
+		t.Fatalf("push should not display uppercase P: %q", plain)
 	}
 }
 

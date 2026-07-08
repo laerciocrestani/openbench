@@ -225,7 +225,7 @@ func mapStepToAction(command string) mappedAction {
 }
 
 func buildActionMessage(action mappedAction, summary ChangeSummary, snap *WorkspaceSnapshot) string {
-	key := strings.ToUpper(action.Key)
+	key := action.Key
 	switch action.Label {
 	case "Commit":
 		if summary.DominantDir != "" {
