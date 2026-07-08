@@ -79,7 +79,8 @@ func TestRenderSummaryShowsStats(t *testing.T) {
 	}
 }
 
-func TestRenderFileTableSortsByChanges(t *testing.T) {
+
+func TestRenderFileTableUsesDotLeaders(t *testing.T) {
 	changes := []gitpkg.FileChange{
 		{Path: "small.go", Status: "modified", Insertions: 2, Deletions: 1},
 		{Path: "big.go", Status: "modified", Insertions: 100, Deletions: 50},
@@ -94,5 +95,21 @@ func TestRenderFileTableSortsByChanges(t *testing.T) {
 	}
 	if !(bigIdx < midIdx && midIdx < smallIdx) {
 		t.Fatalf("files not sorted by change count: big@%d mid@%d small@%d", bigIdx, midIdx, smallIdx)
+	}
+	plain := ansi.Strip(out)
+	if !strings.Contains(plain, "TYPE FILE") {
+		t.Fatalf("header should be TYPE FILE only: %q", plain)
+	}
+	if strings.Contains(plain, "TYPE FILE +") {
+		t.Fatalf("header should not include stats columns: %q", plain)
+	}
+	if !strings.Contains(plain, "+100") || !strings.Contains(plain, "-50") {
+		t.Fatalf("missing stats in output: %q", plain)
+	}
+	if !strings.Contains(plain, "....") {
+		t.Fatalf("missing dot leaders: %q", plain)
+	}
+	if strings.Contains(plain, "+100 …") || strings.Contains(plain, "-50 …") {
+		t.Fatalf("stats should not end with ellipsis: %q", plain)
 	}
 }

@@ -10,7 +10,7 @@ import (
 )
 
 const (
-	BoxTopGradientRatio    = 0.60
+	BoxTopGradientRatio    = 1.0
 	BoxBottomGradientRatio = 1.0
 	boxLeftPrefix          = "│ "
 )

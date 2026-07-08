@@ -49,19 +49,12 @@ func FormatDashboardHeader(ctx *HeaderContext, width int, dryRun bool, colorsEna
 		version += " · dry-run"
 	}
 	version = paint(version, dim)
-
-	var rightParts []string
-	if version != "" {
-		rightParts = append(rightParts, version)
-	}
-
-	type metaLine struct {
-		left  string
-		right string
-	}
-	var metaLines []metaLine
+	lines = append(lines, RenderBoxLine(PadLine(tagline, version, inner), width))
 
 	if ctx != nil {
+		lines = append(lines, RenderBoxLine(headerMetaRow("Repository", ctx.Repo, ctx.Status, inner, paint), width))
+		lines = append(lines, RenderBoxLine(headerMetaRow("Branch", ctx.Branch, ctx.Sync, inner, paint), width))
+
 		aiLabel := formatProviderModel(ctx.Provider, ctx.Model)
 		aiStatus := aiStatusLabel(ctx.AIReady)
 		if colorsEnabled {
@@ -71,6 +64,7 @@ func FormatDashboardHeader(ctx *HeaderContext, width int, dryRun bool, colorsEna
 				aiStatus = paint(aiStatus, yellow)
 			}
 		}
+		lines = append(lines, RenderBoxLine(headerMetaRow("AI", aiLabel, aiStatus, inner, paint), width))
 
 		commitNote := ""
 		if ctx.OnBase {
@@ -87,30 +81,8 @@ func FormatDashboardHeader(ctx *HeaderContext, width int, dryRun bool, colorsEna
 		if ctx.HeadHash != "" {
 			commitValue += "  " + paint("⧉", dim)
 		}
-
-		metaLines = []metaLine{
-			{headerMetaLeft("Repository", ctx.Repo, ctx.Status, inner, paint), ctx.Status},
-			{headerMetaLeft("Branch", ctx.Branch, ctx.Sync, inner, paint), ctx.Sync},
-			{headerMetaLeft("AI", aiLabel, aiStatus, inner, paint), aiStatus},
-			{headerMetaLeft("Commit", commitValue, commitNote, inner, paint), commitNote},
-		}
-		for _, m := range metaLines {
-			if m.right != "" {
-				rightParts = append(rightParts, m.right)
-			}
-		}
-	}
-
-	shade := RightShadeStyle(colorsEnabled && len(rightParts) > 1)
-	rightColW := MaxDisplayWidth(rightParts...)
-
-	lines = append(lines, RenderBoxLine(formatHeaderRow(tagline, version, inner, rightColW, shade), width))
-
-	for _, m := range metaLines {
-		lines = append(lines, RenderBoxLine(formatHeaderRow(m.left, m.right, inner, rightColW, shade), width))
-	}
-
-	if ctx == nil {
+		lines = append(lines, RenderBoxLine(headerMetaRow("Commit", commitValue, commitNote, inner, paint), width))
+	} else {
 		fallback := "AI Git Workflow · " + Version()
 		if dryRun {
 			fallback += " · dry-run"
@@ -145,21 +117,15 @@ func headerBoxStyle(colorsEnabled bool) BoxStyle {
 	}
 }
 
-func formatHeaderRow(left, right string, inner, rightColW int, shade func(string) string) string {
-	if right == "" || shade == nil {
-		return PadLine(left, right, inner)
-	}
-	return PadLineShaded(left, right, inner, rightColW, shade)
-}
-
-func headerMetaLeft(label, value, right string, innerWidth int, paint func(string, string) string) string {
+func headerMetaRow(label, value, right string, innerWidth int, paint func(string, string) string) string {
 	labelPart := paint(fmt.Sprintf("%-10s", label+":"), dim)
 	val := value
 	if val == "" {
 		val = "—"
 	}
+	left := labelPart + " " + val
 	if right == "" {
-		return labelPart + " " + val
+		return PadLine(left, "", innerWidth)
 	}
 
 	rightW := DisplayWidth(right)
@@ -169,8 +135,9 @@ func headerMetaLeft(label, value, right string, innerWidth int, paint func(strin
 	}
 	if DisplayWidth(val) > maxVal {
 		val = truncateRunewidth(val, maxVal)
+		left = labelPart + " " + val
 	}
-	return labelPart + " " + val
+	return PadLine(left, right, innerWidth)
 }
 
 func formatProviderModel(provider, model string) string {

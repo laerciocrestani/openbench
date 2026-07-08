@@ -9,12 +9,12 @@ import (
 	gitpkg "github.com/laerciocrestani/gitai/internal/git"
 	"github.com/laerciocrestani/gitai/internal/tui/theme"
 	"github.com/laerciocrestani/gitai/internal/ui"
-	"github.com/laerciocrestani/gitai/internal/uiprefs"
 )
 
 const (
-	statsColPlus  = 6
-	statsColMinus = 6
+	statsGap   = 4
+	minDots    = 4
+	tagWidth   = 4
 )
 
 // RenderFileTable renders changed files as an aligned table.
@@ -34,26 +34,15 @@ func RenderFileTable(changes []gitpkg.FileChange, width, maxRows int) string {
 	}
 
 	inner := ui.ContentInner(width)
-	statsWidth := statsColPlus + 1 + statsColMinus
-	pathWidth := inner - 4 - 1 - statsWidth
-	if pathWidth < 20 {
-		pathWidth = 20
-	}
-
-	shade := rightShadeStyle(limit > 1)
-	rows := []string{fileTableRow("TYPE", "FILE", "+", "-", pathWidth, statsWidth, inner, shade, true)}
+	rows := []string{theme.S.Hint.Render(fmt.Sprintf("%-*s %s", tagWidth, "TYPE", "FILE"))}
 
 	for _, f := range sorted[:limit] {
-		rows = append(rows, fileTableRow(
+		rows = append(rows, buildFileRow(
 			statusTag(f.Status),
-			truncate(f.Path, pathWidth),
-			fmt.Sprintf("+%d", f.Insertions),
-			fmt.Sprintf("-%d", f.Deletions),
-			pathWidth,
-			statsWidth,
+			f.Path,
+			f.Insertions,
+			f.Deletions,
 			inner,
-			shade,
-			false,
 			f.Status,
 		))
 	}
@@ -68,51 +57,45 @@ func RenderFileTable(changes []gitpkg.FileChange, width, maxRows int) string {
 	return RenderPanel("Changed Files", body, width)
 }
 
-func fileTableRow(tag, path, plus, minus string, pathWidth, statsWidth, inner int, shade func(string) string, header bool, status ...string) string {
-	var plusStyled, minusStyled string
-	if header {
-		plusStyled = theme.S.Hint.Render(padPlain("+", statsColPlus))
-		minusStyled = theme.S.Hint.Render(padPlain("-", statsColMinus))
-	} else {
-		plusStyled = theme.S.Success.Render(padPlain(plus, statsColPlus))
-		minusStyled = theme.S.Error.Render(padPlain(minus, statsColMinus))
-	}
-	right := formatStatsBlock(plusStyled, minusStyled)
-	left := fmt.Sprintf("%-4s %s", tag, padPlain(path, pathWidth))
+func buildFileRow(tag, path string, insertions, deletions, inner int, status string) string {
+	plus := theme.S.Success.Render(fmt.Sprintf("+%d", insertions))
+	minus := theme.S.Error.Render(fmt.Sprintf("-%d", deletions))
+	right := plus + strings.Repeat(" ", statsGap) + minus
+	rightW := ui.DisplayWidth(right)
 
-	var row string
-	if shade != nil {
-		row = PadLineShaded(left, right, inner, statsWidth, shade)
-	} else {
-		row = PadLine(left, right, inner)
+	maxPathW := inner - tagWidth - 1 - minDots - rightW
+	if maxPathW < 8 {
+		maxPathW = 8
 	}
-	if header {
-		return row
-	}
-	st := "modified"
-	if len(status) > 0 {
-		st = status[0]
-	}
-	return fileRowStyle(st).Render(row)
-}
 
-func rightShadeStyle(enabled bool) func(string) string {
-	if !enabled || !uiprefs.ColorsEnabled() {
-		return nil
+	displayPath := path
+	for {
+		if ui.DisplayWidth(displayPath) > maxPathW {
+			displayPath = truncate(displayPath, maxPathW)
+		}
+		left := fmt.Sprintf("%-*s %s", tagWidth, tag, displayPath)
+		if ui.DisplayWidth(left)+minDots+rightW <= inner {
+			break
+		}
+		if ui.DisplayWidth(displayPath) <= 1 {
+			break
+		}
+		displayPath = truncate(displayPath, ui.DisplayWidth(displayPath)-1)
+		maxPathW = ui.DisplayWidth(displayPath)
 	}
-	return func(s string) string { return theme.S.RightShade.Render(s) }
-}
 
-func formatStatsBlock(plus, minus string) string {
-	return PadLine(plus, minus, statsColPlus+1+statsColMinus)
-}
+	left := fmt.Sprintf("%-*s %s", tagWidth, tag, displayPath)
+	leftStyled := fileRowStyle(status).Render(left)
+	leftW := ui.DisplayWidth(leftStyled)
 
-func padPlain(s string, width int) string {
-	w := ui.DisplayWidth(s)
-	if w >= width {
-		return s
+	dots := inner - leftW - rightW
+	if dots < minDots {
+		dots = minDots
 	}
-	return s + strings.Repeat(" ", width-w)
+
+	dotsStyled := theme.S.Hint.Render(strings.Repeat(".", dots))
+	row := leftStyled + dotsStyled + right
+	return ui.PadDisplayWidth(row, inner)
 }
 
 func sortFileChanges(changes []gitpkg.FileChange) []gitpkg.FileChange {
