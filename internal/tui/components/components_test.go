@@ -82,7 +82,7 @@ func TestRenderSummaryShowsStats(t *testing.T) {
 	}
 	out := components.RenderSummary(summary, 80)
 	plain := ansi.Strip(out)
-	for _, want := range []string{"+119", "-214", "Files Changed: 20"} {
+	for _, want := range []string{"+119 · -214", "Files Changed: 20", "...."} {
 		if !strings.Contains(plain, want) {
 			t.Fatalf("summary missing %q in:\n%s", want, plain)
 		}

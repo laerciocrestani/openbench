@@ -13,10 +13,7 @@ import (
 )
 
 const (
-	pathPad    = 3
-	statsPad   = 3
-	minDots    = 4
-	tagWidth   = 4
+	tagWidth = 4
 )
 
 // RenderFileTable renders changed files as an aligned table.
@@ -99,33 +96,6 @@ func buildFileRow(tag, path string, insertions, deletions, inner int, status str
 	dotsStyled := renderGradientDots(dots, uiprefs.ColorsEnabled())
 	row := leftStyled + gapAfterPath + dotsStyled + gapBeforeStats + right
 	return ui.PadDisplayWidth(row, inner)
-}
-
-func buildStatsBlock(insertions, deletions int) (string, int) {
-	plus := theme.S.Success.Render(fmt.Sprintf("+%d", insertions))
-	minus := theme.S.Error.Render(fmt.Sprintf("-%d", deletions))
-	sep := theme.S.Hint.Render("·")
-	right := plus + " " + sep + " " + minus
-	return right, ui.DisplayWidth(right)
-}
-
-func renderGradientDots(count int, colorsEnabled bool) string {
-	if count <= 0 {
-		return ""
-	}
-	var b strings.Builder
-	for i := 0; i < count; i++ {
-		progress := float64(i) / float64(maxInt(count-1, 1))
-		b.WriteString(ui.GradientDot(progress, colorsEnabled))
-	}
-	return b.String()
-}
-
-func maxInt(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
 }
 
 func sortFileChanges(changes []gitpkg.FileChange) []gitpkg.FileChange {

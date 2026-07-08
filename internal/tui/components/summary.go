@@ -16,14 +16,9 @@ func RenderSummary(summary app.ChangeSummary, width int) string {
 		return ""
 	}
 
-	plus := theme.S.Success.Render(fmt.Sprintf("+%d", summary.Insertions))
-	minus := theme.S.Error.Render(fmt.Sprintf("-%d", summary.Deletions))
-	stats := plus + "      " + minus
-	line1 := PadLine(
-		fmt.Sprintf("Files Changed: %d", summary.FileCount),
-		stats,
-		ui.ContentInner(width),
-	)
+	inner := ui.ContentInner(width)
+	left := fmt.Sprintf("Files Changed: %d", summary.FileCount)
+	line1 := buildAlignedStatsRow(left, theme.S.Hint.Render(left), summary.Insertions, summary.Deletions, inner)
 
 	var langParts []string
 	keys := make([]string, 0, len(summary.Languages))
@@ -34,7 +29,7 @@ func RenderSummary(summary app.ChangeSummary, width int) string {
 	for _, k := range keys {
 		langParts = append(langParts, fmt.Sprintf("%s:%d", k, summary.Languages[k]))
 	}
-	line2 := strings.Join(langParts, "     ")
+	line2 := theme.S.Hint.Render(strings.Join(langParts, "     "))
 
 	body := line1 + "\n" + line2
 	return RenderPanel("Repository Summary", body, width)

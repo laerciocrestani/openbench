@@ -44,6 +44,7 @@ type appModel struct {
 	status         string
 	diff           diffModel
 	logs           logsModel
+	branches       branchesModel
 	report         reportModel
 	action         *actionState
 	refresh        refreshConfig
@@ -58,6 +59,7 @@ func newApp(cfg refreshConfig) appModel {
 		loadProg: NewActionProgress(),
 		diff:     newDiffModel(),
 		logs:     newLogsModel(),
+		branches: newBranchesModel(),
 		report:   newReportModel(),
 		refresh:  cfg,
 	}
@@ -149,6 +151,9 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.screen == ScreenLogs {
 			m.logs.SetSize(m.width, m.height)
 		}
+		if m.screen == ScreenBranches {
+			m.branches.SetSize(m.width, m.height)
+		}
 		if m.screen == ScreenReport {
 			m.report.SetSize(m.width, m.height)
 		}
@@ -191,6 +196,24 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.status = "Logs"
 		}
 		return m, nil
+
+	case branchDetailMsg:
+		var cmd tea.Cmd
+		m.branches, cmd = m.branches.Update(msg)
+		return m, cmd
+
+	case branchCheckoutMsg:
+		var cmds []tea.Cmd
+		m.branches, _ = m.branches.Update(msg)
+		if msg.err != nil {
+			m.status = msg.err.Error()
+			return m, nil
+		}
+		m.screen = ScreenDashboard
+		m.loading = true
+		m.status = "Atualizando…"
+		cmds = append(cmds, loadSnapshotCmd(m.loadProg))
+		return m, tea.Batch(cmds...)
 
 	case reportLoadedMsg:
 		m.report.Load(msg)
@@ -239,6 +262,8 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updateDiff(msg)
 		case ScreenLogs:
 			return m.updateLogs(msg)
+		case ScreenBranches:
+			return m.updateBranches(msg)
 		case ScreenAction:
 			return m.updateActionMsg(msg)
 		case ScreenReport:
@@ -257,6 +282,12 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if m.screen == ScreenLogs {
 		var cmd tea.Cmd
 		m.logs, cmd = m.logs.Update(msg)
+		return m, cmd
+	}
+
+	if m.screen == ScreenBranches {
+		var cmd tea.Cmd
+		m.branches, cmd = m.branches.Update(msg)
 		return m, cmd
 	}
 
@@ -311,6 +342,11 @@ func (m appModel) updateDashboard(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.screen = ScreenLogs
 			m.status = "Logs"
 			return m, loadLogsCmdFromSnap(m.snapshot)
+		case dashKeyBranches:
+			m.screen = ScreenBranches
+			m.status = "Branches"
+			m.branches.SetSize(m.width, m.height)
+			return m, m.branches.Load(m.snapshot)
 		case dashKeyCommit:
 			m.screen = ScreenAction
 			m.action = newActionState(ActionCommit)
@@ -381,6 +417,29 @@ func (m appModel) updateLogs(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	var cmd tea.Cmd
 	m.logs, cmd = m.logs.Update(msg)
+	return m, cmd
+}
+
+func (m appModel) updateBranches(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc":
+		if m.branches.confirmDirty {
+			m.branches.confirmDirty = false
+			m.branches.checkoutTarget = ""
+			return m, nil
+		}
+		m.screen = ScreenDashboard
+		m.status = "Pronto"
+		return m, nil
+	case "up", "k":
+		return m, m.branches.moveCursor(-1)
+	case "down", "j":
+		return m, m.branches.moveCursor(1)
+	case "enter":
+		return m, m.branches.requestCheckout()
+	}
+	var cmd tea.Cmd
+	m.branches, cmd = m.branches.Update(msg)
 	return m, cmd
 }
 
@@ -532,6 +591,9 @@ func (m appModel) View() string {
 	case ScreenLogs:
 		b.WriteString(m.logs.View(m.width))
 		help = logsHelpLine()
+	case ScreenBranches:
+		b.WriteString(m.branches.View(m.width))
+		help = branchesHelpLine()
 	case ScreenReport:
 		b.WriteString(m.report.View())
 		help = reportHelpLine()
