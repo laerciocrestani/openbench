@@ -219,6 +219,23 @@ func BottomGradientDash(progress float64, colorsEnabled bool) string {
 	return lipgloss.NewStyle().Foreground(lipgloss.Color(c.Hex())).Render("─")
 }
 
+// GradientDot renders a dot leader character with a left-to-right fade.
+func GradientDot(progress float64, colorsEnabled bool) string {
+	if progress < 0 {
+		progress = 0
+	}
+	if progress > 1 {
+		progress = 1
+	}
+	if !colorsEnabled {
+		return "."
+	}
+	start := colorful.Color{R: 0.55, G: 0.55, B: 0.58}
+	end := colorful.Color{R: 0.12, G: 0.12, B: 0.14}
+	c := start.BlendLuv(end, progress)
+	return lipgloss.NewStyle().Foreground(lipgloss.Color(c.Hex())).Render(".")
+}
+
 func maxInt(a, b int) int {
 	if a > b {
 		return a

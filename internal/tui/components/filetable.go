@@ -9,10 +9,12 @@ import (
 	gitpkg "github.com/laerciocrestani/gitai/internal/git"
 	"github.com/laerciocrestani/gitai/internal/tui/theme"
 	"github.com/laerciocrestani/gitai/internal/ui"
+	"github.com/laerciocrestani/gitai/internal/uiprefs"
 )
 
 const (
-	statsGap   = 4
+	pathPad    = 3
+	statsPad   = 3
 	minDots    = 4
 	tagWidth   = 4
 )
@@ -58,12 +60,12 @@ func RenderFileTable(changes []gitpkg.FileChange, width, maxRows int) string {
 }
 
 func buildFileRow(tag, path string, insertions, deletions, inner int, status string) string {
-	plus := theme.S.Success.Render(fmt.Sprintf("+%d", insertions))
-	minus := theme.S.Error.Render(fmt.Sprintf("-%d", deletions))
-	right := plus + strings.Repeat(" ", statsGap) + minus
-	rightW := ui.DisplayWidth(right)
+	right, rightW := buildStatsBlock(insertions, deletions)
+	gapBeforeStats := strings.Repeat(" ", statsPad)
+	gapAfterPath := strings.Repeat(" ", pathPad)
 
-	maxPathW := inner - tagWidth - 1 - minDots - rightW
+	fixedW := pathPad + statsPad + rightW
+	maxPathW := inner - tagWidth - 1 - minDots - fixedW
 	if maxPathW < 8 {
 		maxPathW = 8
 	}
@@ -74,7 +76,8 @@ func buildFileRow(tag, path string, insertions, deletions, inner int, status str
 			displayPath = truncate(displayPath, maxPathW)
 		}
 		left := fmt.Sprintf("%-*s %s", tagWidth, tag, displayPath)
-		if ui.DisplayWidth(left)+minDots+rightW <= inner {
+		leftW := ui.DisplayWidth(left)
+		if leftW+fixedW+minDots <= inner {
 			break
 		}
 		if ui.DisplayWidth(displayPath) <= 1 {
@@ -86,16 +89,43 @@ func buildFileRow(tag, path string, insertions, deletions, inner int, status str
 
 	left := fmt.Sprintf("%-*s %s", tagWidth, tag, displayPath)
 	leftStyled := fileRowStyle(status).Render(left)
-	leftW := ui.DisplayWidth(leftStyled)
+	leftW := ui.DisplayWidth(leftStyled) + pathPad
 
-	dots := inner - leftW - rightW
+	dots := inner - leftW - statsPad - rightW
 	if dots < minDots {
 		dots = minDots
 	}
 
-	dotsStyled := theme.S.Hint.Render(strings.Repeat(".", dots))
-	row := leftStyled + dotsStyled + right
+	dotsStyled := renderGradientDots(dots, uiprefs.ColorsEnabled())
+	row := leftStyled + gapAfterPath + dotsStyled + gapBeforeStats + right
 	return ui.PadDisplayWidth(row, inner)
+}
+
+func buildStatsBlock(insertions, deletions int) (string, int) {
+	plus := theme.S.Success.Render(fmt.Sprintf("+%d", insertions))
+	minus := theme.S.Error.Render(fmt.Sprintf("-%d", deletions))
+	sep := theme.S.Hint.Render("·")
+	right := plus + " " + sep + " " + minus
+	return right, ui.DisplayWidth(right)
+}
+
+func renderGradientDots(count int, colorsEnabled bool) string {
+	if count <= 0 {
+		return ""
+	}
+	var b strings.Builder
+	for i := 0; i < count; i++ {
+		progress := float64(i) / float64(maxInt(count-1, 1))
+		b.WriteString(ui.GradientDot(progress, colorsEnabled))
+	}
+	return b.String()
+}
+
+func maxInt(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
 }
 
 func sortFileChanges(changes []gitpkg.FileChange) []gitpkg.FileChange {

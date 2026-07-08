@@ -113,8 +113,8 @@ func TestRenderFileTableUsesDotLeaders(t *testing.T) {
 	if strings.Contains(plain, "TYPE FILE +") {
 		t.Fatalf("header should not include stats columns: %q", plain)
 	}
-	if !strings.Contains(plain, "+100") || !strings.Contains(plain, "-50") {
-		t.Fatalf("missing stats in output: %q", plain)
+	if !strings.Contains(plain, "+100 · -50") {
+		t.Fatalf("stats should use middle dot separator: %q", plain)
 	}
 	if !strings.Contains(plain, "....") {
 		t.Fatalf("missing dot leaders: %q", plain)
