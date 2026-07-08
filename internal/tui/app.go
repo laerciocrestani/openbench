@@ -45,6 +45,7 @@ type appModel struct {
 	diff           diffModel
 	logs           logsModel
 	branches       branchesModel
+	add            addModel
 	report         reportModel
 	action         *actionState
 	refresh        refreshConfig
@@ -60,6 +61,7 @@ func newApp(cfg refreshConfig) appModel {
 		diff:     newDiffModel(),
 		logs:     newLogsModel(),
 		branches: newBranchesModel(),
+		add:      newAddModel(),
 		report:   newReportModel(),
 		refresh:  cfg,
 	}
@@ -154,6 +156,9 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.screen == ScreenBranches {
 			m.branches.SetSize(m.width, m.height)
 		}
+		if m.screen == ScreenAdd {
+			m.add.SetSize(m.width, m.height)
+		}
 		if m.screen == ScreenReport {
 			m.report.SetSize(m.width, m.height)
 		}
@@ -215,6 +220,25 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmds = append(cmds, loadSnapshotCmd(m.loadProg))
 		return m, tea.Batch(cmds...)
 
+	case stageFilesMsg:
+		var cmds []tea.Cmd
+		m.add, _ = m.add.Update(msg)
+		if msg.err != nil {
+			m.status = msg.err.Error()
+			return m, nil
+		}
+		m.screen = ScreenDashboard
+		m.loading = true
+		if msg.all {
+			m.status = "git add ."
+		} else if msg.count == 1 {
+			m.status = "1 arquivo adicionado"
+		} else {
+			m.status = fmt.Sprintf("%d arquivos adicionados", msg.count)
+		}
+		cmds = append(cmds, loadSnapshotCmd(m.loadProg))
+		return m, tea.Batch(cmds...)
+
 	case reportLoadedMsg:
 		m.report.Load(msg)
 		m.report.SetSize(m.width, m.height)
@@ -264,6 +288,8 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updateLogs(msg)
 		case ScreenBranches:
 			return m.updateBranches(msg)
+		case ScreenAdd:
+			return m.updateAdd(msg)
 		case ScreenAction:
 			return m.updateActionMsg(msg)
 		case ScreenReport:
@@ -288,6 +314,12 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if m.screen == ScreenBranches {
 		var cmd tea.Cmd
 		m.branches, cmd = m.branches.Update(msg)
+		return m, cmd
+	}
+
+	if m.screen == ScreenAdd {
+		var cmd tea.Cmd
+		m.add, cmd = m.add.Update(msg)
 		return m, cmd
 	}
 
@@ -347,6 +379,12 @@ func (m appModel) updateDashboard(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.status = "Branches"
 			m.branches.SetSize(m.width, m.height)
 			return m, m.branches.Load(m.snapshot)
+		case dashKeyAdd:
+			m.screen = ScreenAdd
+			m.status = "Add"
+			m.add.SetSize(m.width, m.height)
+			m.add.Load(m.snapshot)
+			return m, nil
 		case dashKeyCommit:
 			m.screen = ScreenAction
 			m.action = newActionState(ActionCommit)
@@ -417,6 +455,32 @@ func (m appModel) updateLogs(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	var cmd tea.Cmd
 	m.logs, cmd = m.logs.Update(msg)
+	return m, cmd
+}
+
+func (m appModel) updateAdd(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc":
+		m.screen = ScreenDashboard
+		m.status = "Pronto"
+		return m, nil
+	case "up", "k":
+		return m, m.add.moveCursor(-1)
+	case "down", "j":
+		return m, m.add.moveCursor(1)
+	case " ":
+		m.add.toggleCursor()
+		return m, nil
+	case "A", "shift+a":
+		m.add.toggleAll()
+		return m, nil
+	case "enter":
+		return m, m.add.requestStageSelected()
+	case ".":
+		return m, stageAllCmd()
+	}
+	var cmd tea.Cmd
+	m.add, cmd = m.add.Update(msg)
 	return m, cmd
 }
 
@@ -594,6 +658,9 @@ func (m appModel) View() string {
 	case ScreenBranches:
 		b.WriteString(m.branches.View(m.width))
 		help = branchesHelpLine()
+	case ScreenAdd:
+		b.WriteString(m.add.View(m.width))
+		help = addHelpLine()
 	case ScreenReport:
 		b.WriteString(m.report.View())
 		help = reportHelpLine()
@@ -604,11 +671,11 @@ func (m appModel) View() string {
 	case ScreenAction:
 		if m.action != nil {
 			if m.action.phase == PhaseRunning || m.action.phase == PhaseConfirming {
-				status, _ := m.action.progress.Snapshot()
+				status, logs := m.action.progress.Snapshot()
 				if status == "" {
 					status = "Generating…"
 				}
-				b.WriteString(components.RenderLoading(status, m.action.progress.Percent(), m.width))
+				b.WriteString(components.RenderLoading(status, components.AlertLogs(logs), m.action.progress.Percent(), m.width))
 			} else {
 				b.WriteString(m.action.View(m.width, m.height))
 			}
@@ -622,11 +689,11 @@ func (m appModel) View() string {
 		}
 	default:
 		if m.loading {
-			status, _ := m.loadProg.Snapshot()
+			status, logs := m.loadProg.Snapshot()
 			if status == "" {
 				status = m.status
 			}
-			b.WriteString(views.RenderLoadingDashboard(status, m.loadProg.Percent(), m.width))
+			b.WriteString(views.RenderLoadingDashboard(status, components.AlertLogs(logs), m.loadProg.Percent(), m.width))
 		} else if m.err != nil {
 			b.WriteString("\n")
 			b.WriteString(styleError.Render("  ✖ " + m.err.Error()))

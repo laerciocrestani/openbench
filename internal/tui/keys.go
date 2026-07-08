@@ -14,6 +14,7 @@ const (
 	dashKeyPR
 	dashKeyDiff
 	dashKeyBranches
+	dashKeyAdd
 	dashKeySync
 	dashKeyOpenPR
 	dashKeyCopyHash
@@ -55,6 +56,10 @@ func parseDashboardKey(msg tea.KeyMsg, snap *app.WorkspaceSnapshot) (dashKey, bo
 	case "b":
 		if snap != nil && snap.Overview != nil && len(snap.Overview.Branches) > 0 {
 			return dashKeyBranches, true
+		}
+	case "a":
+		if app.CanAdd(snap) {
+			return dashKeyAdd, true
 		}
 	case "s":
 		if snap != nil && snap.Overview != nil && snap.Overview.Behind > 0 {

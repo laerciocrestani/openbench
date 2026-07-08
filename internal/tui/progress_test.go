@@ -6,6 +6,15 @@ import (
 	"github.com/laerciocrestani/gitai/internal/tui"
 )
 
+func TestActionProgressWarn(t *testing.T) {
+	p := tui.NewActionProgress()
+	p.Warn("Modelo sobrecarregado — tentando novamente em 3s (1/3)...")
+	_, logs := p.Snapshot()
+	if len(logs) != 1 || logs[0] != "✖ Modelo sobrecarregado — tentando novamente em 3s (1/3)..." {
+		t.Fatalf("logs = %v", logs)
+	}
+}
+
 func TestActionProgressAdvancesByStep(t *testing.T) {
 	p := tui.NewActionProgress()
 	p.Reset()

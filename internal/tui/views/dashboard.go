@@ -64,8 +64,8 @@ func RenderDashboard(snap *app.WorkspaceSnapshot, opts DashboardOptions) string 
 }
 
 // RenderLoadingDashboard shows a loading panel while fetching snapshot data.
-func RenderLoadingDashboard(message string, percent, width int) string {
-	return components.RenderLoading(message, percent, width)
+func RenderLoadingDashboard(message string, alerts []string, percent, width int) string {
+	return components.RenderLoading(message, alerts, percent, width)
 }
 
 func fileLimit(height int) int {

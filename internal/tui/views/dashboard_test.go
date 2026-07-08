@@ -37,7 +37,7 @@ func TestRenderDashboardPanels(t *testing.T) {
 }
 
 func TestRenderLoadingDashboard(t *testing.T) {
-	out := views.RenderLoadingDashboard("Carregando…", 45, 60)
+	out := views.RenderLoadingDashboard("Carregando…", nil, 45, 60)
 	if !strings.Contains(out, "Carregando") {
 		t.Fatalf("loading missing message: %q", out)
 	}

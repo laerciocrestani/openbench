@@ -69,6 +69,12 @@ func (p *ActionProgress) Info(msg string) {
 	p.Detail(msg)
 }
 
+func (p *ActionProgress) Warn(msg string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.Logs = append(p.Logs, "✖ "+msg)
+}
+
 func (p *ActionProgress) Success(msg string) {
 	p.setStatus(msg)
 	p.mu.Lock()

@@ -8,6 +8,7 @@ const (
 	ScreenDiff
 	ScreenLogs
 	ScreenBranches
+	ScreenAdd
 	ScreenAction
 	ScreenReport
 	ScreenHelp

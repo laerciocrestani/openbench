@@ -232,6 +232,7 @@ func RunPR(ctx context.Context, opts Options) (*Result, error) {
 	if opts.Progress == nil {
 		opts.session("pr").Header()
 	}
+	ctx = withAINotices(ctx, prog)
 
 	cfg, err := config.Load()
 	if err != nil {
@@ -396,6 +397,7 @@ func RunPR(ctx context.Context, opts Options) (*Result, error) {
 }
 
 func commitFlow(ctx context.Context, opts Options, prog Progress) (*Result, ai.Provider, error) {
+	ctx = withAINotices(ctx, prog)
 	cfg, err := config.Load()
 	if err != nil {
 		return nil, nil, err

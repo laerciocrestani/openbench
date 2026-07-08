@@ -31,3 +31,4 @@ Ex.: 13 commits → `v0.1.12`. O `go install` injeta versão e commit via `-ldfl
 - `gitai config` preserva valores existentes — Enter mantém cada campo.
 - `gitai update` funciona de qualquer diretório (usa clone salvo ou GitHub).
 - `gitai pr` requer `gh` autenticado (`gh auth login`).
+- Instalação completa: `./install.sh` (Go + binário + PATH + `gitai config`).

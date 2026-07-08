@@ -8,7 +8,7 @@ import (
 )
 
 // RenderLoading renders a loading state with step-based progress.
-func RenderLoading(message string, percent, width int) string {
+func RenderLoading(message string, alerts []string, percent, width int) string {
 	if width < 20 {
 		width = 78
 	}
@@ -39,7 +39,35 @@ func RenderLoading(message string, percent, width int) string {
 	}
 	lines = append(lines, theme.S.Info.Render(bar))
 	lines = append(lines, theme.S.Hint.Render(fmt.Sprintf("%d%%", percent)))
+	for _, alert := range alerts {
+		lines = append(lines, styleAlertLine(alert))
+	}
 
 	body := strings.Join(lines, "\n")
 	return RenderPanel("Loading", body, width)
+}
+
+func styleAlertLine(line string) string {
+	line = strings.TrimSpace(line)
+	if line == "" {
+		return ""
+	}
+	if strings.HasPrefix(line, "✖") || strings.HasPrefix(line, "✗") {
+		return theme.S.Error.Render("  " + line)
+	}
+	if strings.HasPrefix(line, "✓") {
+		return theme.S.Success.Render("  " + line)
+	}
+	return theme.S.Warn.Render("  " + line)
+}
+
+func AlertLogs(logs []string) []string {
+	var alerts []string
+	for _, line := range logs {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "✖") || strings.HasPrefix(trimmed, "✗") {
+			alerts = append(alerts, trimmed)
+		}
+	}
+	return alerts
 }

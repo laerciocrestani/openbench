@@ -95,6 +95,7 @@ func TestParseDashboardKey_lowercaseActions(t *testing.T) {
 			HeadHash:      "abc",
 			RecentCommits: []string{"x"},
 			Branches:      []gitpkg.BranchInfo{{Name: "main", Current: true}},
+			FileChanges:   []gitpkg.FileChange{{Path: "new.go", Status: "untracked"}},
 		},
 	}
 	cases := []struct {
@@ -106,6 +107,7 @@ func TestParseDashboardKey_lowercaseActions(t *testing.T) {
 		{"y", dashKeyCopyHash},
 		{"l", dashKeyLogs},
 		{"b", dashKeyBranches},
+		{"a", dashKeyAdd},
 	}
 	for _, tc := range cases {
 		k, ok := parseDashboardKey(keyRunes(tc.key), snap)

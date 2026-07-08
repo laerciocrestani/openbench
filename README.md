@@ -13,6 +13,7 @@ CLI em Go para gerar **Conventional Commits** com IA barata, automatizar **push*
 - [Por quê usar o gitai?](#por-quê-usar-o-gitai)
 - [Requisitos](#requisitos)
 - [Instalação rápida](#instalação-rápida)
+- [Dashboard TUI](#referência-de-comandos)
 - [Instalação manual](#instalação-manual)
 - [Atualização](#atualização)
 - [Configuração](#configuração)
@@ -47,9 +48,9 @@ Com o gitai você obtém:
 
 | Ferramenta | Versão mínima | Para quê |
 |------------|---------------|----------|
-| [Go](https://go.dev/dl/) | 1.22+ | Compilar e instalar o gitai |
 | [git](https://git-scm.com/) | qualquer recente | Repositório local, diff, commit, push |
-| [GitHub CLI (`gh`)](https://cli.github.com/) | autenticado | Criar PR (`gitai pr`) |
+| [Go](https://go.dev/dl/) | 1.22+ | Compilar o gitai (o `install.sh` instala automaticamente se faltar) |
+| [GitHub CLI (`gh`)](https://cli.github.com/) | autenticado | Criar PR (`gitai pr`) — opcional até usar PR |
 
 Autentique o GitHub CLI antes de usar `gitai pr`:
 
@@ -62,27 +63,75 @@ gh auth status
 
 ## Instalação rápida
 
-O jeito mais simples — três comandos após clonar:
+### Um comando (recomendado)
+
+O script `install.sh` executa **tudo em ordem**:
+
+1. Verifica `git`, `curl` e `tar`
+2. Instala Go em `~/sdk/go` se não houver versão compatível
+3. Clona o repositório em `~/.config/gitai/repository` (ou usa o clone atual)
+4. Compila e instala o binário (`go run ./cmd/gitai install`)
+5. Grava `PATH` no `~/.zshrc` ou `~/.bashrc` (Go + `~/go/bin`)
+6. Executa `gitai config` (wizard interativo)
+
+**A partir do clone:**
 
 ```bash
 git clone https://github.com/laerciocrestani/gitai.git
 cd gitai
-go run ./cmd/gitai install    # única forma de instalar (primeira vez)
-gitai config                  # wizard (provider, API key, idioma...)
+./install.sh
 ```
 
-Pronto. Use:
+**Sem clonar (curl):**
 
 ```bash
-gitai status
+curl -fsSL https://raw.githubusercontent.com/laerciocrestani/gitai/main/install.sh | bash
+```
+
+Opções do instalador:
+
+| Opção | Descrição |
+|-------|-----------|
+| `--no-config` | Pula o wizard `gitai config` ao final |
+| `--skip-go` | Não instala Go automaticamente (falha se ausente) |
+| `--help` | Ajuda |
+
+Variáveis úteis: `GITAI_REPO_URL`, `GITAI_INSTALL_DIR`, `GO_VERSION` (default `1.25.0`).
+
+### Desinstalar
+
+Remove binário, `~/.config/gitai/`, blocos de PATH no shell e (se instalado pelo `install.sh`) o Go em `~/sdk/go`:
+
+```bash
+./uninstall.sh
+# ou
+curl -fsSL https://raw.githubusercontent.com/laerciocrestani/gitai/main/uninstall.sh | bash
+```
+
+| Opção | Descrição |
+|-------|-----------|
+| `-y`, `--yes` | Não pede confirmação |
+| `--remove-go` | Remove `~/sdk/go` mesmo sem marker do instalador |
+| `--keep-go` | Mantém o Go em `~/sdk/go` |
+
+**Não remove:** arquivos `.gitai.yaml` em projetos nem variáveis `GITAI_*` definidas manualmente.
+
+O script `./scripts/setup.sh uninstall` delega para `./uninstall.sh`.
+
+Após instalar, abra um novo terminal (ou `source ~/.zshrc`) e use:
+
+```bash
+gitai              # dashboard TUI dentro de um repo git
+gitai commit
 gitai pr
 ```
 
-### Comandos de setup
+### Comandos pós-instalação
 
 | Comando | O que faz |
 |---------|-----------|
-| `go run ./cmd/gitai install` | `go install`, verifica dependências, adiciona `~/go/bin` ao PATH |
+| `./install.sh` | Instalação completa (Go + binário + PATH + config) |
+| `./uninstall.sh` | Remove gitai, dados e PATH do instalador |
 | `gitai config` | Wizard de configuração (equivale a `gitai config init`) |
 | `gitai config show` | Exibe config ativa (API key mascarada) |
 | `gitai update` | Atualiza e reinstala o binário (funciona de qualquer diretório) |
@@ -90,6 +139,8 @@ gitai pr
 | `gitai report` | Relatório de uso e custos de IA (últimas 24h por padrão) |
 | `gitai pricing update` | Busca preços oficiais do Gemini e salva localmente |
 | `gitai status` | Alias para `git status` |
+
+O script `./scripts/setup.sh` é um wrapper de compatibilidade que delega para `./install.sh` e `./uninstall.sh`.
 
 ### Atualizar depois
 
@@ -99,13 +150,13 @@ De qualquer diretório:
 gitai update
 ```
 
-O gitai usa o clone salvo em `~/.config/gitai/source`, a variável `GITAI_ROOT` ou, se não encontrar clone local, baixa a última versão do GitHub automaticamente.
-
-O script `./scripts/setup.sh` ainda funciona como wrapper de compatibilidade.
+O gitai usa o clone salvo em `~/.config/gitai/repository`, a variável `GITAI_ROOT` ou, se não encontrar clone local, baixa a última versão do GitHub automaticamente.
 
 ---
 
 ## Instalação manual
+
+Se preferir não usar o `install.sh`:
 
 ### 1. Clonar o repositório
 
@@ -114,45 +165,22 @@ git clone https://github.com/laerciocrestani/gitai.git
 cd gitai
 ```
 
-### 2. Instalar o binário
+### 2. Instalar Go 1.22+
+
+https://go.dev/dl/ — ou deixe o `./install.sh` instalar em `~/sdk/go`.
+
+### 3. Instalar o binário
 
 ```bash
-go install ./cmd/gitai
+go run ./cmd/gitai install
 ```
 
-O binário é instalado em `~/go/bin/gitai`.
+O binário é instalado em `~/go/bin/gitai` e o instalador configura o PATH.
 
-### 3. Adicionar ao PATH (permanente)
-
-Adicione ao `~/.zshrc` (ou `~/.bashrc`):
+### 4. Configurar
 
 ```bash
-export PATH="$PATH:$HOME/go/bin"
-```
-
-Recarregue o shell:
-
-```bash
-source ~/.zshrc
-```
-
-### 4. Verificar instalação
-
-```bash
-which gitai
-gitai --help
-```
-
-Saída esperada de `which gitai`:
-
-```
-/Users/seu-usuario/go/bin/gitai
-```
-
-### 5. Configurar pela primeira vez
-
-```bash
-gitai config init
+gitai config
 ```
 
 ### Alternativa sem alterar o PATH
@@ -232,6 +260,8 @@ max_diff_bytes: 120000
 clear_screen: false       # true = limpa o terminal antes de cada comando
 interactive_ui: true      # true = gitai abre TUI no terminal (padrão)
 ui_color: true            # cores na CLI e TUI (padrão)
+ui_auto_refresh_seconds: 5   # polling do dashboard (0 = desliga)
+ui_watch_files: true      # fsnotify no working tree (padrão)
 
 # opcional — sobrescreve preços padrão do Gemini
 # input_price_per_1m: 0.14
@@ -254,7 +284,7 @@ Crie `.gitai.yaml` na raiz do projeto. **Tem prioridade** sobre o config global.
 |----------|-----------|
 | `GITAI_API_KEY` | Sobrescreve `api_key` do YAML (recomendado em CI) |
 | `GITAI_CONFIG` | Caminho alternativo para o arquivo de config |
-| `GITAI_ROOT` | Caminho do clone gitai (usado por `gitai update`) |
+| `GITAI_ROOT` | Caminho do clone gitai (usado por `gitai update` e `install.sh`) |
 | `GITAI_NO_CLEAR` | Desativa limpeza do terminal (`clear_screen` ignorado) |
 | `GITAI_NO_UI` | Força overview CLI em vez da TUI (`interactive_ui` ignorado) |
 | `NO_COLOR` | Desativa cores ANSI (convenção Unix; ver [no-color.org](https://no-color.org)) |
@@ -289,6 +319,8 @@ A API key é **mascarada** na saída (ex.: `sk-o...abcd`).
 | `clear_screen` | bool | não | `false` | Limpa o terminal antes de cada comando |
 | `interactive_ui` | bool | não | `true` | Abre TUI ao rodar `gitai` sem subcomando |
 | `ui_color` | bool | não | `true` | Cores ANSI na CLI e na TUI |
+| `ui_auto_refresh_seconds` | int | não | `5` | Polling do dashboard em segundos (`0` = off) |
+| `ui_watch_files` | bool | não | `true` | Observa mudanças no filesystem (fsnotify) |
 | `input_price_per_1m` | float | não | — | USD por 1M tokens de input (estimativa de custo) |
 | `output_price_per_1m` | float | não | — | USD por 1M tokens de output (estimativa de custo) |
 
@@ -321,19 +353,39 @@ O `go install` injeta versão e commit via `-ldflags` no build.
 
 ## Referência de comandos
 
-Rodar **`gitai` sem subcomando** exibe um **overview** do repositório (comando padrão), nesta ordem:
+Rodar **`gitai` sem subcomando** dentro de um repositório git abre a **TUI fullscreen** (dashboard), com painéis:
 
-1. **GitAi config** — provider, model, API key
-2. **Recent commits** — últimos 5 commits
-3. **Branches** — branches locais com tracking
-4. **Changed files** — status e `+/-` linhas
-5. **Repository / Branch / Status / Sync** — meta do repo
-6. **Next steps** — sugestões (`gitai commit`, `gitai pr`, etc.)
+- **Git Graph** — branch atual vs base
+- **Repository Summary** — arquivos alterados e stats `+N · -M`
+- **Changed Files** — lista com dot leaders e stats por arquivo
+- **Recent Commits** — últimos 3 commits
+- **AI Engine** — provider, modelo e status
+- **Suggested Action** — próximo passo recomendado
 
-Também exibe PR aberto (via `gh`), stash e delta em relação à base quando aplicável.
+### Atalhos do dashboard (TUI)
+
+| Tecla | Ação |
+|-------|------|
+| `c` | Commit com IA (preview → editar → confirmar) |
+| `p` | Push (preview → confirmar) |
+| `P` | Pull Request com IA (preview → editar → confirmar) |
+| `d` | Ver diff |
+| `b` | Trocar de branch (lista + contexto + checkout) |
+| `l` | Log de commits |
+| `y` | Copiar hash do HEAD |
+| `s` | Sync (quando behind) |
+| `o` | Abrir PR no browser |
+| `u` | Relatório de uso/custo de IA |
+| `r` | Atualizar dashboard |
+| `?` | Ajuda |
+| `q` | Sair |
+
+Commit, push e PR passam por **preview com confirmação** (`Enter` confirma, `esc` cancela). No preview, `e` edita mensagem (commit/push) ou título/corpo (PR).
+
+Com `GITAI_NO_UI=1` ou fora de um repo git, exibe o **overview CLI** (texto ANSI).
 
 ```
-gitai                 Overview do repositório (default)
+gitai                 Dashboard TUI ou overview CLI (default)
 ├── sync              fetch + pull da branch base (--prune para limpar branches)
 ├── update            atualiza e reinstala o binário
 ├── version           versão automática + commit
@@ -351,7 +403,7 @@ gitai                 Overview do repositório (default)
     └── show          exibe config ativa (key mascarada)
 ```
 
-> Instalação (uma vez, a partir do clone): `go run ./cmd/gitai install`
+> Instalação: `./install.sh` ou `curl -fsSL …/install.sh | bash`
 
 ### Visão geral
 
@@ -537,6 +589,8 @@ gitai commit --dry-run --verbose
 
 **Quando usar:** enviar branch para origin. Se houver alterações pendentes, commita antes; senão faz push dos commits existentes.
 
+**Na TUI:** preview com confirmação antes de executar (igual ao PR).
+
 **Fluxo:** `git add .` (se não `--no-add`) → commit com IA (só se houver diff) → `git push -u origin HEAD`.
 
 ```bash
@@ -552,6 +606,8 @@ gitai push --dry-run
 ### `gitai pr` (comando principal)
 
 **Quando usar:** finalizar trabalho na branch — commit pendente, push e PR detalhado.
+
+**Na TUI:** preview editável (título, corpo markdown, toggle draft) com confirmação antes de criar o PR.
 
 **Fluxo inteligente:**
 
@@ -754,10 +810,13 @@ Tipos aceitos: `fix`, `feat`, `refactor`, `docs`, `test`, `chore`, `perf`, `ci`,
 
 ### `gitai: command not found`
 
+Rode o instalador ou adicione ao PATH:
+
 ```bash
-export PATH="$PATH:$HOME/go/bin"
+./install.sh
 # ou
-~/go/bin/gitai --help
+export PATH="$HOME/sdk/go/bin:$PATH:$HOME/go/bin"
+source ~/.zshrc
 ```
 
 ### `config não encontrada. Execute: gitai config init`

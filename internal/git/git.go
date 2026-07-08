@@ -37,6 +37,16 @@ func (r *Repo) AddAll() error {
 	return err
 }
 
+// Add stages one or more paths. With no paths, stages everything (git add .).
+func (r *Repo) Add(paths ...string) error {
+	if len(paths) == 0 {
+		return r.AddAll()
+	}
+	args := append([]string{"add"}, paths...)
+	_, err := r.run(args...)
+	return err
+}
+
 func (r *Repo) DiffStaged() (string, error) {
 	return r.run("diff", "--cached")
 }

@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"strings"
 
 	"github.com/laerciocrestani/gitai/internal/config"
@@ -61,7 +60,7 @@ func withModelFallback(
 		return "", err
 	}
 
-	fmt.Fprintf(os.Stderr, "  %s indisponível — usando fallback %s...\n", primaryModel, fallback)
+	emitNotice(ctx, fmt.Sprintf("%s indisponível — usando fallback %s...", primaryModel, fallback))
 	result, err = fn(fallback)
 	if err != nil {
 		return "", &FallbackError{

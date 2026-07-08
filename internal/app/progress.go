@@ -7,5 +7,6 @@ type Progress interface {
 	StepQuiet(fn func() error) error
 	Detail(msg string)
 	Info(msg string)
+	Warn(msg string)
 	Success(msg string)
 }

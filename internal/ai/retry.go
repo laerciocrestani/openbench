@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"os"
 	"time"
 )
 
@@ -52,8 +51,8 @@ func callWithRetry(ctx context.Context, provider string, fn func() (string, erro
 
 		delay := retryDelayFor(err, attempt)
 		hint := retryMessage(err, provider)
-		fmt.Fprintf(os.Stderr, "  %s — tentando novamente em %s (%d/%d)...\n",
-			hint, formatDelay(delay), attempt, maxAttempts)
+		emitNotice(ctx, fmt.Sprintf("%s — tentando novamente em %s (%d/%d)...",
+			hint, formatDelay(delay), attempt, maxAttempts))
 
 		if err := sleep(ctx, delay); err != nil {
 			return "", err

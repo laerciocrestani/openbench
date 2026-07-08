@@ -52,6 +52,7 @@ func DefaultFooterItems(snap *app.WorkspaceSnapshot) []FooterItem {
 	}
 
 	items := []FooterItem{
+		{Key: "a", Label: "Add", Enabled: app.CanAdd(snap)},
 		{Key: "c", Label: "Commit", Enabled: commitEnabled},
 		{Key: "p", Label: "Push", Enabled: pushEnabled},
 		{Key: "P", Label: "PR", Enabled: prEnabled},
