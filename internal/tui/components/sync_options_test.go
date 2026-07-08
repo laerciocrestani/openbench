@@ -42,7 +42,7 @@ func TestSyncModeToAppOptions(t *testing.T) {
 func TestRenderSyncOptionsPanel(t *testing.T) {
 	modes := components.SyncModeCatalog()
 	out := components.RenderSyncOptionsPanel(0, modes, "main", false, 90)
-	for _, want := range []string{"Sync · Opções", "Sync padrão", "Base: main", "git fetch origin --prune", "--prune-remote", "--prune"} {
+	for _, want := range []string{"Sync · Options", "Standard sync", "Base: main", "git fetch origin --prune", "--prune-remote", "--prune"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("missing %q in:\n%s", want, out)
 		}

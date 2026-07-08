@@ -107,7 +107,7 @@ func (a *actionState) previewCmd() tea.Cmd {
 			preview, err := app.PreviewPR(ctx, opts)
 			return actionPreviewMsg{kind: a.kind, preview: preview, err: err}
 		default:
-			return actionPreviewMsg{kind: a.kind, err: fmt.Errorf("ação sem preview")}
+			return actionPreviewMsg{kind: a.kind, err: fmt.Errorf("action has no preview")}
 		}
 	}
 }
@@ -129,7 +129,7 @@ func (a *actionState) confirmCmd() tea.Cmd {
 			result, err := app.ConfirmPR(ctx, a.preview, a.draft, opts)
 			return actionConfirmMsg{kind: ActionPR, result: result, err: err}
 		default:
-			return actionConfirmMsg{err: fmt.Errorf("confirmação não suportada")}
+			return actionConfirmMsg{err: fmt.Errorf("confirmation not supported")}
 		}
 	}
 }
@@ -138,7 +138,7 @@ func (a *actionState) directCmd() tea.Cmd {
 	return func() tea.Msg {
 		switch a.kind {
 		case ActionPush:
-			return actionSimpleMsg{kind: a.kind, err: fmt.Errorf("push requer confirmação via preview")}
+			return actionSimpleMsg{kind: a.kind, err: fmt.Errorf("push requires preview confirmation")}
 		case ActionSync:
 			opts := a.syncOpts
 			opts.Progress = a.progress
@@ -152,7 +152,7 @@ func (a *actionState) directCmd() tea.Cmd {
 			_, err = client.OpenInBrowser()
 			return actionSimpleMsg{kind: a.kind, err: err}
 		default:
-			return actionSimpleMsg{kind: a.kind, err: fmt.Errorf("ação inválida")}
+			return actionSimpleMsg{kind: a.kind, err: fmt.Errorf("invalid action")}
 		}
 	}
 }
@@ -194,7 +194,7 @@ func (a *actionState) toggleDraft() {
 func (a *actionState) title() string {
 	switch a.kind {
 	case ActionCommit:
-		return "Commit com IA"
+		return "AI Commit"
 	case ActionPush:
 		return "Push"
 	case ActionPR:
@@ -202,9 +202,9 @@ func (a *actionState) title() string {
 	case ActionSync:
 		return "Sync"
 	case ActionOpenPR:
-		return "Abrir PR"
+		return "Open PR"
 	default:
-		return "Ação"
+		return "Action"
 	}
 }
 
@@ -238,7 +238,7 @@ func (a *actionState) View(width, height int) string {
 	case PhaseRunning, PhaseConfirming:
 		status, logs := a.progress.Snapshot()
 		if status == "" {
-			status = "Trabalhando…"
+			status = "Working…"
 		}
 		b.WriteString(styleHint.Render("  " + status))
 		b.WriteString("\n")
@@ -248,7 +248,7 @@ func (a *actionState) View(width, height int) string {
 		}
 		if a.phase == PhaseConfirming {
 			b.WriteString("\n")
-			b.WriteString(styleHint.Render("  Confirmando…"))
+			b.WriteString(styleHint.Render("  Confirming…"))
 		}
 
 	case PhaseConfirm:
@@ -265,7 +265,7 @@ func (a *actionState) View(width, height int) string {
 			b.WriteString(styleError.Render("  ✗ " + a.err.Error()))
 		}
 		b.WriteString("\n\n")
-		b.WriteString(styleHint.Render("  Enter ou Esc para voltar"))
+		b.WriteString(styleHint.Render("  Press Enter or Esc to go back"))
 	}
 
 	return b.String()
@@ -279,24 +279,24 @@ func renderPreview(a *actionState) string {
 
 	switch a.kind {
 	case ActionCommit:
-		b.WriteString(styleHint.Render("Preview do commit:\n\n"))
+		b.WriteString(styleHint.Render("Commit preview:\n\n"))
 		b.WriteString(wrapPreview(a.preview.Message, 76))
 
 	case ActionPush:
-		b.WriteString(styleHint.Render("Confirme o push:\n\n"))
+		b.WriteString(styleHint.Render("Confirm push:\n\n"))
 		if a.preview.Message != "" {
-			b.WriteString(styleHint.Render("Commit (IA):\n\n"))
+			b.WriteString(styleHint.Render("Commit (AI):\n\n"))
 			b.WriteString(wrapPreview(a.preview.Message, 76))
 			b.WriteString("\n\n")
 		} else {
-			b.WriteString(styleHint.Render("  Nenhum commit pendente — apenas push dos commits existentes.\n\n"))
+			b.WriteString(styleHint.Render("  No pending commit — push existing commits only.\n\n"))
 		}
-		b.WriteString(styleHint.Render("Comando:"))
+		b.WriteString(styleHint.Render("Command:"))
 		b.WriteString("\n")
 		b.WriteString(styleHint.Render("  git push -u origin HEAD"))
 
 	case ActionPR:
-		b.WriteString(styleHint.Render("Confirme o Pull Request:\n\n"))
+		b.WriteString(styleHint.Render("Confirm Pull Request:\n\n"))
 		if a.preview.PRSuggestion != nil {
 			s := a.preview.PRSuggestion
 			b.WriteString(styleTitle.Render(s.Title))
@@ -312,7 +312,7 @@ func renderPreview(a *actionState) string {
 		}
 		if a.preview.PRPreview != "" {
 			b.WriteString("\n\n")
-			b.WriteString(styleHint.Render("Comando:"))
+			b.WriteString(styleHint.Render("Command:"))
 			b.WriteString("\n")
 			b.WriteString(styleHint.Render("  " + a.preview.PRPreview))
 		}
@@ -323,19 +323,19 @@ func renderPreview(a *actionState) string {
 
 func actionConfirmHelp(a *actionState) string {
 	if a.editing {
-		parts := styleKey.Render("esc") + " ou " + styleKey.Render("e") + " voltar ao preview"
+		parts := styleKey.Render("esc") + " or " + styleKey.Render("e") + " back to preview"
 		if a.kind == ActionPR {
-			parts += "  " + styleKey.Render("tab") + " título/corpo"
+			parts += "  " + styleKey.Render("tab") + " title/body"
 		}
 		return styleHint.Render("  ") + parts
 	}
 
-	parts := styleKey.Render("Enter") + " confirmar  " +
-		styleKey.Render("esc") + " cancelar"
+	parts := styleKey.Render("Enter") + " confirm  " +
+		styleKey.Render("esc") + " cancel"
 	if a.canEditPreview() {
-		parts = styleKey.Render("Enter") + " confirmar  " +
-			styleKey.Render("e") + " editar  " +
-			styleKey.Render("esc") + " cancelar"
+		parts = styleKey.Render("Enter") + " confirm  " +
+			styleKey.Render("e") + " edit  " +
+			styleKey.Render("esc") + " cancel"
 	}
 	if a.kind == ActionPR {
 		parts += "  " + styleKey.Render("d") + " draft"
@@ -369,5 +369,5 @@ func wrapPreview(text string, width int) string {
 }
 
 func actionHelpLine() string {
-	return styleKey.Render("esc") + " cancelar"
+	return styleKey.Render("esc") + " cancel"
 }

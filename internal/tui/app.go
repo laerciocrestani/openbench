@@ -57,7 +57,7 @@ func newApp(cfg refreshConfig) appModel {
 	return appModel{
 		screen:   ScreenDashboard,
 		loading:  true,
-		status:   "Carregando repositório…",
+		status:   "Loading repository…",
 		loadProg: NewActionProgress(),
 		diff:     newDiffModel(),
 		logs:     newLogsModel(),
@@ -132,9 +132,9 @@ func (m appModel) applySnapshot(msg snapshotMsg) (appModel, tea.Cmd) {
 			m.status = msg.err.Error()
 		}
 	} else if !msg.silent {
-		m.status = "Pronto"
+		m.status = "Ready"
 	} else {
-		m.status = "Atualizado"
+		m.status = "Updated"
 	}
 
 	if msg.err == nil && m.screen == ScreenDiff {
@@ -233,7 +233,7 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.screen = ScreenDashboard
 		m.loading = true
-		m.status = "Atualizando…"
+		m.status = "Refreshing…"
 		cmds = append(cmds, loadSnapshotCmd(m.loadProg))
 		return m, tea.Batch(cmds...)
 
@@ -247,7 +247,7 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.branches.cancelNewBranch()
 		m.screen = ScreenDashboard
 		m.loading = true
-		m.status = "Branch criada: " + msg.name
+		m.status = "Branch created: " + msg.name
 		cmds = append(cmds, loadSnapshotCmd(m.loadProg))
 		return m, tea.Batch(cmds...)
 
@@ -263,9 +263,9 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.all {
 			m.status = "git add ."
 		} else if msg.count == 1 {
-			m.status = "1 arquivo adicionado"
+			m.status = "1 file staged"
 		} else {
-			m.status = fmt.Sprintf("%d arquivos adicionados", msg.count)
+			m.status = fmt.Sprintf("%d files staged", msg.count)
 		}
 		cmds = append(cmds, loadSnapshotCmd(m.loadProg))
 		return m, tea.Batch(cmds...)
@@ -276,7 +276,7 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.err != nil {
 			m.status = msg.err.Error()
 		} else {
-			m.status = "Uso de IA"
+			m.status = "AI usage"
 		}
 		return m, nil
 
@@ -305,7 +305,7 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, tea.Quit
 			case keyRefresh:
 				m.loading = true
-				m.status = "Atualizando…"
+				m.status = "Refreshing…"
 				return m, loadSnapshotCmd(m.loadProg)
 			}
 		}
@@ -387,7 +387,7 @@ func (m appModel) updateDashboard(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				return m, tea.Quit
 			case keyRefresh:
 				m.loading = true
-				m.status = "Atualizando…"
+				m.status = "Refreshing…"
 				return m, loadSnapshotCmd(m.loadProg)
 			}
 		}
@@ -400,7 +400,7 @@ func (m appModel) updateDashboard(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 		case keyRefresh:
 			m.loading = true
-			m.status = "Atualizando…"
+			m.status = "Refreshing…"
 			return m, loadSnapshotCmd(m.loadProg)
 		}
 	}
@@ -449,13 +449,13 @@ func (m appModel) updateDashboard(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, m.action.directCmd()
 		case dashKeySyncOptions:
 			m.screen = ScreenSync
-			m.status = "Sync · opções"
+			m.status = "Sync · options"
 			m.sync.Load(m.snapshot)
 			return m, nil
 		case dashKeyOpenPR:
 			m.screen = ScreenAction
 			m.action = newActionState(ActionOpenPR)
-			m.status = "Abrindo PR"
+			m.status = "Opening PR"
 			return m, m.action.directCmd()
 		case dashKeyCopyHash:
 			if m.snapshot != nil && m.snapshot.Overview != nil {
@@ -464,19 +464,19 @@ func (m appModel) updateDashboard(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 					hash = m.snapshot.Overview.HeadHash
 				}
 				if err := ui.CopyToClipboard(hash); err != nil {
-					m.status = "Erro ao copiar hash"
+					m.status = "Failed to copy hash"
 				} else {
-					m.status = "Hash copiado: " + hash
+					m.status = "Hash copied: " + hash
 				}
 			}
 			return m, nil
 		case dashKeyReport:
 			m.screen = ScreenReport
-			m.status = "Uso de IA"
+			m.status = "AI usage"
 			return m, loadReportCmd(m.report.period)
 		case dashKeyHelp:
 			m.screen = ScreenHelp
-			m.status = "Ajuda"
+			m.status = "Help"
 			return m, nil
 		}
 	}
@@ -488,7 +488,7 @@ func (m appModel) updateDiff(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "esc":
 		m.screen = ScreenDashboard
-		m.status = "Pronto"
+		m.status = "Ready"
 		return m, nil
 	}
 	var cmd tea.Cmd
@@ -500,7 +500,7 @@ func (m appModel) updateLogs(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "esc":
 		m.screen = ScreenDashboard
-		m.status = "Pronto"
+		m.status = "Ready"
 		return m, nil
 	}
 	var cmd tea.Cmd
@@ -512,7 +512,7 @@ func (m appModel) updateAdd(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "esc":
 		m.screen = ScreenDashboard
-		m.status = "Pronto"
+		m.status = "Ready"
 		return m, nil
 	case "up", "k":
 		return m, m.add.moveCursor(-1)
@@ -539,7 +539,7 @@ func (m appModel) updateSync(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.screen = ScreenDashboard
-		m.status = "Pronto"
+		m.status = "Ready"
 		return m, nil
 	case "up", "k":
 		if m.sync.screen == syncScreenModes {
@@ -592,7 +592,7 @@ func (m appModel) updateBranches(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.screen = ScreenDashboard
-		m.status = "Pronto"
+		m.status = "Ready"
 		return m, nil
 	case "n":
 		if m.branches.mode == branchesModeList {
@@ -620,7 +620,7 @@ func (m appModel) updateReport(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "esc":
 		m.screen = ScreenDashboard
-		m.status = "Pronto"
+		m.status = "Ready"
 		return m, nil
 	case "r":
 		return m, loadReportCmd(m.report.period)
@@ -646,7 +646,7 @@ func (m appModel) updateHelp(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "esc", "?", "q":
 		m.screen = ScreenDashboard
-		m.status = "Pronto"
+		m.status = "Ready"
 		return m, nil
 	}
 	return m, nil
@@ -722,7 +722,7 @@ func (m appModel) updateAction(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m appModel) closeAction() appModel {
 	m.screen = ScreenDashboard
 	m.action = nil
-	m.status = "Pronto"
+	m.status = "Ready"
 	return m
 }
 
@@ -730,20 +730,20 @@ func (m appModel) closeActionAndRefresh() appModel {
 	m.screen = ScreenDashboard
 	m.action = nil
 	m.loading = true
-	m.status = "Atualizando…"
+	m.status = "Refreshing…"
 	return m
 }
 
 func (m appModel) View() string {
 	if m.width == 0 {
-		return "Iniciando…"
+		return "Starting…"
 	}
 
 	var b strings.Builder
 
 	if terminalTooSmall(m.width, m.height) {
 		b.WriteString(styleWarn.Render(fmt.Sprintf(
-			"  Terminal pequeno (%dx%d) — recomendado %dx%d+\n",
+			"  Terminal too small (%dx%d) — recommended %dx%d+\n",
 			m.width, m.height, minWidth, minHeight,
 		)))
 	}
@@ -800,7 +800,7 @@ func (m appModel) View() string {
 				help = actionConfirmHelp(m.action)
 			}
 			if m.action.phase == PhaseDone || m.action.phase == PhaseError {
-				help = styleKey.Render("enter") + " voltar"
+				help = styleKey.Render("enter") + " back"
 			}
 		}
 	default:

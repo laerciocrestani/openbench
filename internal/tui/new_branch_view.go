@@ -293,8 +293,8 @@ func createBranchCmd(name, from string) tea.Cmd {
 }
 
 var (
-	errEmptyBranchName   = teaErr("selecione a branch de origem")
-	errInvalidBranchName = teaErr("nome de branch inválido")
+	errEmptyBranchName   = teaErr("select a source branch")
+	errInvalidBranchName = teaErr("invalid branch name")
 )
 
 type teaErr string

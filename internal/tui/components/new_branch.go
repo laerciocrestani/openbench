@@ -24,7 +24,7 @@ func RenderNewBranchFromPanel(cursor, total int, body string, width int) string 
 		title += fmt.Sprintf("  %d/%d", cursor+1, total)
 	}
 	if strings.TrimSpace(body) == "" {
-		body = theme.S.Hint.Render("  (nenhuma branch local)")
+		body = theme.S.Hint.Render("  (no local branches)")
 	}
 	return RenderPanel(title, body, width)
 }
@@ -35,7 +35,7 @@ func RenderNewBranchTemplateListBody(cursor int, items []NewBranchTemplateItem) 
 	selectableIdx := 0
 	for _, item := range items {
 		if item.Separator {
-			lines = append(lines, theme.S.Hint.Render("  ─── outros ───"))
+			lines = append(lines, theme.S.Hint.Render("  ─── more ───"))
 			continue
 		}
 		line := "  " + item.Template.ListLabel()
@@ -70,7 +70,7 @@ func RenderNewBranchTemplatePanel(cursor, selectable int, body string, width int
 
 func renderFullTemplateTable(items []NewBranchTemplateItem, selected NewBranchTemplate, inner int) []string {
 	_ = inner
-	header := theme.S.Hint.Render("  Exemplo · Uso · Exemplo")
+	header := theme.S.Hint.Render("  Example · Usage · Example")
 	lines := []string{header}
 
 	for _, item := range items {
@@ -94,17 +94,17 @@ func RenderNewBranchNamePanel(from string, template NewBranchTemplate, nameField
 
 	lines = append(lines, theme.S.Hint.Render("  From: "+from))
 	if template.Other {
-		lines = append(lines, theme.S.Hint.Render("  Template: ✏️ Outro (nome livre)"))
+		lines = append(lines, theme.S.Hint.Render("  Template: ✏️ Other (free-form name)"))
 	} else if template.Prefix != "" {
 		lines = append(lines, theme.S.Hint.Render("  Template: "+template.ListLabel()))
 	}
 	lines = append(lines, "")
-	lines = append(lines, theme.S.Hint.Render("  Nome da branch:"))
+	lines = append(lines, theme.S.Hint.Render("  Branch name:"))
 	lines = append(lines, "  "+nameField)
 
 	preview := strings.TrimSpace(stripANSI(nameField))
 	if preview == "" {
-		preview = "(digite o nome)"
+		preview = "(type a name)"
 	}
 	lines = append(lines, "")
 	lines = append(lines, theme.S.Hint.Render("  Preview: "+preview))

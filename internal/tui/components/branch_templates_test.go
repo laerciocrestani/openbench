@@ -81,10 +81,10 @@ func TestRenderNewBranchTemplatePanel(t *testing.T) {
 	body := components.RenderNewBranchTemplateBody(0, items, selected, 70)
 	out := components.RenderNewBranchTemplatePanel(0, components.SelectableTemplateCount(items), body, 80)
 	for _, want := range []string{
-		"Exemplo · Uso · Exemplo", "New Branch · Template",
+		"Example · Usage · Example", "New Branch · Template",
 		"⚙️ ci/github-actions · CI/CD · ci/github-actions",
-		"✨ feature/user-profile · Nova funcionalidade · feature/user-profile",
-		"✏️ Outro",
+		"✨ feature/user-profile · New feature · feature/user-profile",
+		"✏️ Other",
 	} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("missing %q in:\n%s", want, out)

@@ -66,7 +66,7 @@ func TestRenderActionDone(t *testing.T) {
 		"✓ Synced with origin/main",
 	}
 	out := components.RenderActionDone("Sync", "Synced with origin/main", logs, 80)
-	for _, want := range []string{"Concluído", "Synced with origin/main", "Fetching origin", "Pulling main"} {
+	for _, want := range []string{"Done", "Synced with origin/main", "Fetching origin", "Pulling main"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("missing %q in:\n%s", want, out)
 		}

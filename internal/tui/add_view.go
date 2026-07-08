@@ -70,7 +70,7 @@ func (m *addModel) SetSize(width, height int) {
 
 func (m *addModel) listContent() string {
 	if len(m.files) == 0 {
-		return styleHint.Render("  (nenhum arquivo para adicionar)")
+		return styleHint.Render("  (no files to stage)")
 	}
 	lines := make([]string, m.rowCount())
 	lines[0] = components.RenderAddTodosLine(m.allSelected(), m.cursor == addRowTodos)
@@ -202,7 +202,7 @@ func (m addModel) Update(msg tea.Msg) (addModel, tea.Cmd) {
 
 func (m addModel) View(width int) string {
 	var b strings.Builder
-	b.WriteString(styleSection.Render("Adicionar ao stage"))
+	b.WriteString(styleSection.Render("Stage files"))
 	b.WriteString("\n\n")
 
 	if m.err != nil {
@@ -213,11 +213,11 @@ func (m addModel) View(width int) string {
 	if m.ready {
 		b.WriteString(m.viewport.View())
 	} else {
-		b.WriteString(styleHint.Render("  (vazio)"))
+		b.WriteString(styleHint.Render("  (empty)"))
 	}
 
 	count := len(m.selectedPaths())
-	footer := fmt.Sprintf("%d selecionado(s) · %d disponível(is)", count, len(m.files))
+	footer := fmt.Sprintf("%d selected · %d available", count, len(m.files))
 	b.WriteString("\n\n")
 	b.WriteString(styleHint.Render("  " + footer))
 
@@ -226,9 +226,9 @@ func (m addModel) View(width int) string {
 }
 
 func addHelpLine() string {
-	return styleKey.Render("↑↓") + " navegar  " +
-		styleKey.Render("space") + " selecionar  " +
-		styleKey.Render("Enter") + " adicionar  " +
+	return styleKey.Render("↑↓") + " navigate  " +
+		styleKey.Render("space") + " toggle  " +
+		styleKey.Render("Enter") + " stage  " +
 		styleKey.Render(".") + " git add .  " +
-		styleKey.Render("esc") + " voltar"
+		styleKey.Render("esc") + " back"
 }

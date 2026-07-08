@@ -102,12 +102,12 @@ func (m reportModel) View(tick int) string {
 	}
 
 	var b strings.Builder
-	b.WriteString(styleSection.Render("Uso de IA"))
+	b.WriteString(styleSection.Render("AI Usage"))
 	b.WriteString("\n")
 	b.WriteString(styleHint.Render("  " + periodLabel(m.period)))
 	b.WriteString("\n\n")
 	if !m.ready {
-		b.WriteString(components.RenderSpinnerLine("Carregando", tick))
+		b.WriteString(components.RenderSpinnerLine("Loading", tick))
 		return b.String()
 	}
 	b.WriteString(m.viewport.View())
@@ -117,20 +117,20 @@ func (m reportModel) View(tick int) string {
 func periodLabel(p reportPeriod) string {
 	switch p {
 	case report7d:
-		return "últimos 7 dias"
+		return "last 7 days"
 	case reportMonth:
-		return "mês atual"
+		return "current month"
 	case reportAll:
-		return "todo o histórico"
+		return "all history"
 	default:
-		return "últimas 24 horas"
+		return "last 24 hours"
 	}
 }
 
 func reportHelpLine() string {
 	return styleKey.Render("1") + " 24h  " +
 		styleKey.Render("2") + " 7d  " +
-		styleKey.Render("3") + " mês  " +
-		styleKey.Render("a") + " tudo  " +
-		styleKey.Render("esc") + " voltar"
+		styleKey.Render("3") + " month  " +
+		styleKey.Render("a") + " all  " +
+		styleKey.Render("esc") + " back"
 }

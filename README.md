@@ -355,6 +355,8 @@ O `go install` injeta versão e commit via `-ldflags` no build.
 
 Rodar **`gitai` sem subcomando** dentro de um repositório git abre a **TUI fullscreen** (dashboard), com painéis:
 
+![gitai TUI dashboard](docs/tui-dashboard.png)
+
 - **Git Graph** — branch atual vs base
 - **Repository Summary** — arquivos alterados e stats `+N · -M`
 - **Changed Files** — lista com dot leaders e stats por arquivo

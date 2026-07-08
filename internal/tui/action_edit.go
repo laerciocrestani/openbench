@@ -76,7 +76,7 @@ func (a *actionState) initEditors(width, height int) {
 	case ActionPR:
 		a.prTitle = textinput.New()
 		a.prTitle.Width = innerW
-		a.prTitle.Placeholder = "Título do PR"
+		a.prTitle.Placeholder = "PR title"
 		if a.preview.PRSuggestion != nil {
 			a.prTitle.SetValue(a.preview.PRSuggestion.Title)
 		}
@@ -230,15 +230,15 @@ func (a *actionState) renderEditView() string {
 
 	switch a.kind {
 	case ActionCommit, ActionPush:
-		b.WriteString(styleHint.Render("Edite a mensagem do commit:"))
+		b.WriteString(styleHint.Render("Edit commit message:"))
 		b.WriteString("\n\n")
 		b.WriteString(a.commitArea.View())
 	case ActionPR:
-		b.WriteString(styleHint.Render("Título:"))
+		b.WriteString(styleHint.Render("Title:"))
 		b.WriteString("\n")
 		b.WriteString(a.prTitle.View())
 		b.WriteString("\n\n")
-		b.WriteString(styleHint.Render("Corpo do PR:"))
+		b.WriteString(styleHint.Render("PR body:"))
 		b.WriteString("\n")
 		b.WriteString(a.prBody.View())
 	}

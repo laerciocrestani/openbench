@@ -91,7 +91,7 @@ func LoadWorkspaceSnapshotWithProgress(prog Progress) (*WorkspaceSnapshot, error
 	snap.NextSteps = buildNextSteps(overview, snap.OpenPR, cfgErr == nil)
 
 	if prog != nil {
-		prog.Success("Pronto")
+		prog.Success("Ready")
 	}
 	return snap, nil
 }

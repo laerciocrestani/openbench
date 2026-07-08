@@ -17,7 +17,7 @@ type NewBranchTemplateItem struct {
 
 func (t NewBranchTemplate) Label() string {
 	if t.Other {
-		return t.Icon + " Outro"
+		return t.Icon + " Other"
 	}
 	return t.Icon + " " + t.Prefix
 }
@@ -30,14 +30,14 @@ func (t NewBranchTemplate) ListLabel() string {
 // DetailLabel formats icon + example · usage · example for list and reference rows.
 func (t NewBranchTemplate) DetailLabel() string {
 	if t.Other {
-		return t.Icon + " Outro · " + t.Usage + " · " + t.Example
+		return t.Icon + " Other · " + t.Usage + " · " + t.Example
 	}
 	return t.Icon + " " + t.Example + " · " + t.Usage + " · " + t.Example
 }
 
 func (t NewBranchTemplate) PrefixColumn() string {
 	if t.Other {
-		return t.Icon + " Outro"
+		return t.Icon + " Other"
 	}
 	return t.Icon + " " + t.Prefix
 }
@@ -60,7 +60,7 @@ func templatesMatch(a, b NewBranchTemplate) bool {
 	return a.Prefix == b.Prefix
 }
 
-// BranchTemplateCatalog returns all templates: common, rest, and Outro.
+// BranchTemplateCatalog returns all templates: common, rest, and Other.
 func BranchTemplateCatalog() []NewBranchTemplate {
 	common := commonBranchTemplates()
 	rest := restBranchTemplates()
@@ -70,41 +70,39 @@ func BranchTemplateCatalog() []NewBranchTemplate {
 	out = append(out, rest...)
 	out = append(out, NewBranchTemplate{
 		Icon:    "✏️",
-		Usage:   "Nome personalizado",
-		Example: "minha-branch",
+		Usage:   "Custom branch name",
+		Example: "my-branch",
 		Other:   true,
 	})
 	return out
 }
 
 func commonBranchTemplates() []NewBranchTemplate {
-	// Mais comuns — ordem alfabética por prefixo.
 	return []NewBranchTemplate{
-		{Prefix: "chore/", Icon: "🔧", Usage: "Tarefas técnicas sem impacto funcional", Example: "chore/update-dependencies"},
-		{Prefix: "docs/", Icon: "📚", Usage: "Documentação", Example: "docs/api-reference"},
-		{Prefix: "feature/", Icon: "✨", Usage: "Nova funcionalidade", Example: "feature/user-profile"},
-		{Prefix: "fix/", Icon: "🐛", Usage: "Correção de bug", Example: "fix/login-error"},
-		{Prefix: "hotfix/", Icon: "🚑", Usage: "Correção urgente em produção", Example: "hotfix/payment-timeout"},
-		{Prefix: "refactor/", Icon: "♻️", Usage: "Refatoração sem mudança de comportamento", Example: "refactor/auth-service"},
-		{Prefix: "release/", Icon: "🚀", Usage: "Preparação de uma versão", Example: "release/v2.4.0"},
-		{Prefix: "test/", Icon: "🧪", Usage: "Testes", Example: "test/user-controller"},
+		{Prefix: "chore/", Icon: "🔧", Usage: "Technical tasks without functional impact", Example: "chore/update-dependencies"},
+		{Prefix: "docs/", Icon: "📚", Usage: "Documentation", Example: "docs/api-reference"},
+		{Prefix: "feature/", Icon: "✨", Usage: "New feature", Example: "feature/user-profile"},
+		{Prefix: "fix/", Icon: "🐛", Usage: "Bug fix", Example: "fix/login-error"},
+		{Prefix: "hotfix/", Icon: "🚑", Usage: "Urgent production fix", Example: "hotfix/payment-timeout"},
+		{Prefix: "refactor/", Icon: "♻️", Usage: "Refactor without behavior change", Example: "refactor/auth-service"},
+		{Prefix: "release/", Icon: "🚀", Usage: "Release preparation", Example: "release/v2.4.0"},
+		{Prefix: "test/", Icon: "🧪", Usage: "Tests", Example: "test/user-controller"},
 	}
 }
 
 func restBranchTemplates() []NewBranchTemplate {
-	// Demais prefixos — ordem alfabética.
 	return []NewBranchTemplate{
-		{Prefix: "bugfix/", Icon: "🪲", Usage: "Correção de bug (alternativa ao fix)", Example: "bugfix/memory-leak"},
-		{Prefix: "build/", Icon: "📦", Usage: "Build e ferramentas", Example: "build/docker"},
+		{Prefix: "bugfix/", Icon: "🪲", Usage: "Bug fix (alternative to fix)", Example: "bugfix/memory-leak"},
+		{Prefix: "build/", Icon: "📦", Usage: "Build and tooling", Example: "build/docker"},
 		{Prefix: "ci/", Icon: "⚙️", Usage: "CI/CD", Example: "ci/github-actions"},
-		{Prefix: "develop", Icon: "🌱", Usage: "Branch principal de desenvolvimento (GitFlow)", Example: "develop"},
-		{Prefix: "experiment/", Icon: "🤖", Usage: "Experimentos/POCs", Example: "experiment/llm-provider"},
-		{Prefix: "main", Icon: "🌿", Usage: "Branch principal de produção", Example: "main"},
-		{Prefix: "master", Icon: "🌳", Usage: "Antigo nome da branch principal", Example: "master"},
-		{Prefix: "perf/", Icon: "⚡", Usage: "Melhorias de performance", Example: "perf/query-cache"},
-		{Prefix: "revert/", Icon: "↩️", Usage: "Reverter alterações", Example: "revert/pr-142"},
-		{Prefix: "spike/", Icon: "🔬", Usage: "Pesquisa técnica", Example: "spike/openai-responses-api"},
-		{Prefix: "style/", Icon: "💅", Usage: "Formatação/código (sem alterar lógica)", Example: "style/php-cs-fixer"},
+		{Prefix: "develop", Icon: "🌱", Usage: "Main development branch (GitFlow)", Example: "develop"},
+		{Prefix: "experiment/", Icon: "🤖", Usage: "Experiments and POCs", Example: "experiment/llm-provider"},
+		{Prefix: "main", Icon: "🌿", Usage: "Production main branch", Example: "main"},
+		{Prefix: "master", Icon: "🌳", Usage: "Legacy main branch name", Example: "master"},
+		{Prefix: "perf/", Icon: "⚡", Usage: "Performance improvements", Example: "perf/query-cache"},
+		{Prefix: "revert/", Icon: "↩️", Usage: "Revert changes", Example: "revert/pr-142"},
+		{Prefix: "spike/", Icon: "🔬", Usage: "Technical research", Example: "spike/openai-responses-api"},
+		{Prefix: "style/", Icon: "💅", Usage: "Formatting/style (no logic change)", Example: "style/php-cs-fixer"},
 	}
 }
 

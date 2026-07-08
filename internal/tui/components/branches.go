@@ -18,7 +18,7 @@ func RenderBranchesPanel(cursor, total int, base, body string, width int) string
 		title += " · base " + base
 	}
 	if strings.TrimSpace(body) == "" {
-		body = theme.S.Hint.Render("  (nenhuma branch local)")
+		body = theme.S.Hint.Render("  (no local branches)")
 	}
 	return RenderPanel(title, body, width)
 }
@@ -31,9 +31,9 @@ func RenderBranchDetail(detail *gitpkg.BranchDetail, branchName, base string, wi
 	}
 
 	if detail == nil {
-		msg := "Carregando"
+		msg := "Loading"
 		if branchName != "" {
-			msg = "Carregando contexto de " + branchName
+			msg = "Loading context for " + branchName
 		}
 		return RenderPanel(title, RenderSpinnerLine(msg, tick), width)
 	}
@@ -72,7 +72,7 @@ func RenderBranchDetail(detail *gitpkg.BranchDetail, branchName, base string, wi
 		lines = append(lines, theme.S.Success.Render(fmt.Sprintf("  +%d", detail.Insertions))+
 			theme.S.Hint.Render(" · ")+
 			theme.S.Error.Render(fmt.Sprintf("-%d", detail.Deletions))+
-			theme.S.Hint.Render(fmt.Sprintf("  em %d arquivo(s) vs %s", detail.FilesChanged, base)))
+			theme.S.Hint.Render(fmt.Sprintf("  vs %d file(s) vs %s", detail.FilesChanged, base)))
 	}
 
 	if len(detail.RecentCommits) > 0 {

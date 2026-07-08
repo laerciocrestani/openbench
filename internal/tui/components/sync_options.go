@@ -33,28 +33,28 @@ func SyncModeCatalog() []SyncModeOption {
 	return []SyncModeOption{
 		{
 			Mode:        SyncModeStandard,
-			Label:       "Sync padrão",
-			Flag:        "(nenhuma)",
-			Summary:     "Fetch + pull da branch base",
-			Description: "Atualiza refs remotas (fetch --prune) e faz fast-forward da branch base com origin. Não remove branches mergeadas.",
+			Label:       "Standard sync",
+			Flag:        "(none)",
+			Summary:     "Fetch + pull base branch",
+			Description: "Updates remote refs (fetch --prune) and fast-forwards the base branch with origin. Does not remove merged branches.",
 			Prune:       false,
 			PruneRemote: false,
 		},
 		{
 			Mode:        SyncModePruneRemote,
-			Label:       "Sync + prune remoto",
+			Label:       "Sync + remote prune",
 			Flag:        "--prune-remote",
-			Summary:     "Sync + limpa branches no GitHub",
-			Description: "Após o sync, remove branches remotas já mergeadas na base (git push origin --delete). Mantém branches locais.",
+			Summary:     "Sync + clean branches on GitHub",
+			Description: "After sync, removes remote branches already merged into base (git push origin --delete). Keeps local branches.",
 			Prune:       false,
 			PruneRemote: true,
 		},
 		{
 			Mode:        SyncModePruneFull,
-			Label:       "Sync + prune completo",
+			Label:       "Sync + full prune",
 			Flag:        "--prune",
-			Summary:     "Sync + limpa local e remoto",
-			Description: "Após o sync, remove branches locais e remotas já mergeadas na base. Branches divergentes pedem confirmação antes do -D.",
+			Summary:     "Sync + clean local and remote",
+			Description: "After sync, removes local and remote branches merged into base. Divergent branches prompt before -D.",
 			Prune:       true,
 			PruneRemote: false,
 		},
@@ -72,7 +72,7 @@ func RenderSyncOptionsPanel(cursor int, modes []SyncModeOption, base string, dir
 	var lines []string
 
 	if dirty {
-		lines = append(lines, theme.S.Warn.Render("  ⚠ Working tree suja — commit ou stash antes de sincronizar"))
+		lines = append(lines, theme.S.Warn.Render("  ⚠ Dirty working tree — commit or stash before syncing"))
 		lines = append(lines, "")
 	}
 
@@ -82,8 +82,8 @@ func RenderSyncOptionsPanel(cursor int, modes []SyncModeOption, base string, dir
 			marker = "> "
 		}
 		flag := mode.Flag
-		if flag == "" {
-			flag = theme.S.Hint.Render("(padrão)")
+		if flag == "(none)" {
+			flag = theme.S.Hint.Render("(none)")
 		} else {
 			flag = theme.S.Key.Render(flag)
 		}
@@ -103,23 +103,21 @@ func RenderSyncOptionsPanel(cursor int, modes []SyncModeOption, base string, dir
 	lines = append(lines, renderSyncDetailTable(selected, base, inner))
 
 	body := strings.Join(lines, "\n")
-	return RenderPanel("Sync · Opções", body, width)
+	return RenderPanel("Sync · Options", body, width)
 }
 
 func renderSyncDetailTable(mode SyncModeOption, base string, inner int) string {
-	const (
-		colW = 14
-	)
+	const colW = 14
 
 	lines := []string{
-		theme.S.Hint.Render(fmt.Sprintf("  %-*s %s", colW, "Opção", mode.Label)),
+		theme.S.Hint.Render(fmt.Sprintf("  %-*s %s", colW, "Option", mode.Label)),
 		theme.S.Hint.Render(fmt.Sprintf("  %-*s %s", colW, "Flag", mode.Flag)),
-		theme.S.Hint.Render(fmt.Sprintf("  %-*s %s", colW, "Resumo", truncatePlain(mode.Summary, inner-colW-2))),
+		theme.S.Hint.Render(fmt.Sprintf("  %-*s %s", colW, "Summary", truncatePlain(mode.Summary, inner-colW-2))),
 		"",
-		theme.S.Hint.Render("  O que faz"),
+		theme.S.Hint.Render("  What it does"),
 		"  " + wrapPlain(mode.Description, inner-2),
 		"",
-		theme.S.Hint.Render("  Comandos"),
+		theme.S.Hint.Render("  Commands"),
 	}
 
 	for _, cmd := range syncCommandPreview(mode, base) {
@@ -139,7 +137,7 @@ func syncCommandPreview(mode SyncModeOption, base string) []string {
 		"git pull --ff-only origin " + base,
 	}
 	if mode.Prune || mode.PruneRemote {
-		cmds = append(cmds, "git branch --merged " + base + " …")
+		cmds = append(cmds, "git branch --merged "+base+" …")
 	}
 	if mode.Prune {
 		cmds = append(cmds, "git branch -d/-D <merged-local> …")
@@ -152,7 +150,7 @@ func syncCommandPreview(mode SyncModeOption, base string) []string {
 
 // RenderSyncBaseEditor renders the base branch edit step.
 func RenderSyncBaseEditor(baseField string, width int) string {
-	body := theme.S.Hint.Render("  Branch base para pull e prune:\n\n  ") + baseField
+	body := theme.S.Hint.Render("  Base branch for pull and prune:\n\n  ") + baseField
 	return RenderPanel("Sync · Base branch", body, width)
 }
 

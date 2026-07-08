@@ -295,11 +295,11 @@ func (m branchesModel) View(width, tick int) string {
 	}
 
 	if m.confirmDirty {
-		b.WriteString(styleWarn.Render("  Working tree com alterações não commitadas."))
+		b.WriteString(styleWarn.Render("  Working tree has uncommitted changes."))
 		b.WriteString("\n")
-		b.WriteString(styleWarn.Render("  Enter confirma checkout para " + m.checkoutTarget))
+		b.WriteString(styleWarn.Render("  Enter confirms checkout to " + m.checkoutTarget))
 		b.WriteString("\n")
-		b.WriteString(styleHint.Render("  esc cancela"))
+		b.WriteString(styleHint.Render("  esc cancels"))
 		b.WriteString("\n\n")
 	}
 
@@ -317,21 +317,21 @@ func (m branchesModel) View(width, tick int) string {
 }
 
 func branchesHelpLine() string {
-	return styleKey.Render("↑↓") + " navegar  " +
+	return styleKey.Render("↑↓") + " navigate  " +
 		styleKey.Render("Enter") + " checkout  " +
-		styleKey.Render("n") + " nova branch  " +
-		styleKey.Render("esc") + " voltar"
+		styleKey.Render("n") + " new branch  " +
+		styleKey.Render("esc") + " back"
 }
 
 func newBranchHelpLine(step components.NewBranchStep) string {
 	switch step {
 	case components.NewBranchStepName:
-		return styleKey.Render("Enter") + " criar  " +
-			styleKey.Render("esc") + " voltar  " +
-			styleKey.Render("tab") + " editar nome"
+		return styleKey.Render("Enter") + " create  " +
+			styleKey.Render("esc") + " back  " +
+			styleKey.Render("tab") + " edit name"
 	default:
-		return styleKey.Render("↑↓") + " navegar  " +
-			styleKey.Render("Enter") + " avançar  " +
-			styleKey.Render("esc") + " voltar"
+		return styleKey.Render("↑↓") + " navigate  " +
+			styleKey.Render("Enter") + " next  " +
+			styleKey.Render("esc") + " back"
 	}
 }

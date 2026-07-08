@@ -134,16 +134,16 @@ func (m *syncModel) Update(msg tea.Msg) (tea.Cmd, bool) {
 func syncHelpLine(screen syncScreenMode, dirty bool) string {
 	switch screen {
 	case syncScreenBase:
-		return styleKey.Render("Enter") + " confirmar  " +
-			styleKey.Render("esc") + " voltar"
+		return styleKey.Render("Enter") + " confirm  " +
+			styleKey.Render("esc") + " back"
 	default:
-		run := styleKey.Render("Enter") + " executar"
+		run := styleKey.Render("Enter") + " run"
 		if dirty {
-			run = styleHint.Render("Enter (working tree suja)")
+			run = styleHint.Render("Enter (dirty working tree)")
 		}
-		return styleKey.Render("↑↓") + " opção  " +
+		return styleKey.Render("↑↓") + " option  " +
 			styleKey.Render("b") + " base  " +
 			run + "  " +
-			styleKey.Render("esc") + " voltar"
+			styleKey.Render("esc") + " back"
 	}
 }

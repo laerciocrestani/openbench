@@ -69,7 +69,7 @@ func (m diffModel) View(width int) string {
 		b.WriteString("\n\n")
 	}
 	if !m.ready {
-		b.WriteString(styleHint.Render("  (vazio)"))
+		b.WriteString(styleHint.Render("  (empty)"))
 		return b.String()
 	}
 	b.WriteString(m.viewport.View())
@@ -78,5 +78,5 @@ func (m diffModel) View(width int) string {
 
 func diffHelpLine() string {
 	return styleKey.Render("↑↓") + " scroll  " +
-		styleKey.Render("esc") + " voltar"
+		styleKey.Render("esc") + " back"
 }

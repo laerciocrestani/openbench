@@ -49,7 +49,7 @@ func RenderLoading(message string, alerts []string, tick, width int) string {
 // RenderActionDone renders a structured completion panel for long-running actions.
 func RenderActionDone(title, summary string, logs []string, width int) string {
 	var lines []string
-	lines = append(lines, theme.S.Success.Render("  ✓ Concluído"))
+	lines = append(lines, theme.S.Success.Render("  ✓ Done"))
 	if summary != "" {
 		lines = append(lines, theme.S.Current.Render("  "+summary))
 	}
@@ -61,7 +61,7 @@ func RenderActionDone(title, summary string, logs []string, width int) string {
 	}
 
 	lines = append(lines, "")
-	lines = append(lines, theme.S.Hint.Render("  Enter para voltar"))
+	lines = append(lines, theme.S.Hint.Render("  Press Enter to go back"))
 
 	body := strings.Join(lines, "\n")
 	return RenderPanel(title, body, width)
