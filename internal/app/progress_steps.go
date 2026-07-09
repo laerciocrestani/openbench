@@ -34,5 +34,5 @@ var stepWeights = map[string]int{
 	"Resolving base branch":       8,
 	"Creating Pull Request":       12,
 	"Fetching origin":             35,
-	"Finding merged branches":     25,
+	"Finding branches to prune":   25,
 }

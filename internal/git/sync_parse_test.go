@@ -46,3 +46,20 @@ func TestParseBranchVVLine_noUpstream(t *testing.T) {
 		t.Fatalf("tracking = %q, want empty", tracking)
 	}
 }
+
+func TestIsGoneUpstreamTrack(t *testing.T) {
+	cases := []struct {
+		track string
+		want  bool
+	}{
+		{"[gone]", true},
+		{"origin/feature/foo: gone", true},
+		{"", false},
+		{"ahead 1", false},
+	}
+	for _, tc := range cases {
+		if got := isGoneUpstreamTrack(tc.track); got != tc.want {
+			t.Fatalf("track %q: got %v want %v", tc.track, got, tc.want)
+		}
+	}
+}

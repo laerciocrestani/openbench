@@ -47,7 +47,7 @@ func (r *Repo) PullBase(base string) error {
 }
 
 // LocalPruneCandidates lists local branches to remove during sync --prune:
-// merged into base and/or whose upstream was deleted on the remote (gone).
+// merged into base, absorbed into base (squash/rebase), and/or upstream gone.
 func (r *Repo) LocalPruneCandidates(base string) ([]string, error) {
 	merged, err := r.MergedLocalBranches(base)
 	if err != nil {
@@ -57,13 +57,17 @@ func (r *Repo) LocalPruneCandidates(base string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	return uniqueStrings(append(merged, gone...)), nil
+	absorbed, err := r.LocalBranchesAbsorbedIntoBase(base)
+	if err != nil {
+		return nil, err
+	}
+	return uniqueStrings(append(append(merged, gone...), absorbed...)), nil
 }
 
 // LocalBranchesWithGoneUpstream returns local branches whose tracking ref was
-// removed by fetch --prune (git branch -vv shows "[origin/foo: gone]").
+// removed by fetch --prune (upstream:track = [gone]).
 func (r *Repo) LocalBranchesWithGoneUpstream(base string) ([]string, error) {
-	out, err := r.run("branch", "-vv", "--color=never")
+	out, err := r.run("for-each-ref", "refs/heads/", "--format=%(refname:short)\t%(upstream:short)\t%(upstream:track)")
 	if err != nil {
 		return nil, err
 	}
@@ -73,16 +77,96 @@ func (r *Repo) LocalBranchesWithGoneUpstream(base string) ([]string, error) {
 
 	var branches []string
 	for _, line := range splitLines(out) {
-		name, tracking, ok := parseBranchVVLine(line)
-		if !ok || !isGoneUpstream(tracking) {
+		parts := strings.Split(line, "\t")
+		if len(parts) == 0 {
 			continue
 		}
+		name := strings.TrimSpace(parts[0])
 		if name == "" || protected[name] || name == current {
 			continue
 		}
-		branches = append(branches, name)
+
+		track := ""
+		if len(parts) > 2 {
+			track = parts[2]
+		}
+		if isGoneUpstreamTrack(track) {
+			branches = append(branches, name)
+			continue
+		}
+
+		upstreamShort := ""
+		if len(parts) > 1 {
+			upstreamShort = strings.TrimSpace(parts[1])
+		}
+		if upstreamShort == "" {
+			continue
+		}
+		upstream, err := r.BranchUpstream(name)
+		if err != nil {
+			continue
+		}
+		if _, err := r.run("rev-parse", "--verify", upstream); err != nil {
+			branches = append(branches, name)
+		}
 	}
 	return uniqueStrings(branches), nil
+}
+
+// LocalBranchesAbsorbedIntoBase returns local branches whose patch content is
+// already in base (e.g. squash merge) but are not listed by git branch --merged.
+func (r *Repo) LocalBranchesAbsorbedIntoBase(base string) ([]string, error) {
+	out, err := r.run("branch", "--format=%(refname:short)")
+	if err != nil {
+		return nil, err
+	}
+
+	current, _ := r.CurrentBranch()
+	protected := protectedBranches(base)
+
+	var branches []string
+	for _, name := range splitLines(out) {
+		if name == "" || protected[name] || name == current {
+			continue
+		}
+		absorbed, err := r.BranchAbsorbedIntoBase(name, base)
+		if err != nil {
+			return nil, err
+		}
+		if absorbed {
+			branches = append(branches, name)
+		}
+	}
+	return branches, nil
+}
+
+// BranchAbsorbedIntoBase reports whether branch has commits not in base but all
+// of its patches already exist in base (git cherry shows no "+" lines).
+func (r *Repo) BranchAbsorbedIntoBase(branch, base string) (bool, error) {
+	resolved, err := r.mergedRef(base)
+	if err != nil {
+		return false, err
+	}
+
+	ahead, err := r.run("rev-list", "--count", fmt.Sprintf("%s..%s", resolved, branch))
+	if err != nil {
+		return false, err
+	}
+	if ahead == "0" {
+		return false, nil
+	}
+
+	out, err := r.run("cherry", resolved, branch)
+	if err != nil {
+		return false, err
+	}
+	for _, line := range splitLines(out) {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "+") {
+			return false, nil
+		}
+	}
+	return strings.TrimSpace(out) != "", nil
 }
 
 func (r *Repo) MergedLocalBranches(base string) ([]string, error) {
@@ -107,6 +191,59 @@ func (r *Repo) MergedLocalBranches(base string) ([]string, error) {
 		branches = append(branches, name)
 	}
 	return branches, nil
+}
+
+// RemotePruneCandidates lists remote branches to delete during sync --prune:
+// merged into base and/or patch-absorbed into base (squash/rebase).
+func (r *Repo) RemotePruneCandidates(base string) ([]string, error) {
+	merged, err := r.MergedRemoteBranches(base)
+	if err != nil {
+		return nil, err
+	}
+	absorbed, err := r.RemoteBranchesAbsorbedIntoBase(base)
+	if err != nil {
+		return nil, err
+	}
+	return uniqueStrings(append(merged, absorbed...)), nil
+}
+
+// RemoteBranchesAbsorbedIntoBase returns origin branches whose patches are
+// already in base but are not listed by git branch -r --merged.
+func (r *Repo) RemoteBranchesAbsorbedIntoBase(base string) ([]string, error) {
+	out, err := r.run("branch", "-r", "--format=%(refname:short)")
+	if err != nil {
+		return nil, err
+	}
+
+	protected := protectedBranches(base)
+	for k := range protected {
+		protected["origin/"+k] = true
+	}
+	protected["origin/HEAD"] = true
+	protected["origin"] = true
+
+	var branches []string
+	for _, name := range splitLines(out) {
+		name = strings.TrimSpace(name)
+		if name == "" || protected[name] || strings.Contains(name, "->") {
+			continue
+		}
+		if !strings.HasPrefix(name, "origin/") {
+			continue
+		}
+		short := strings.TrimPrefix(name, "origin/")
+		if short == "" || protected[short] {
+			continue
+		}
+		absorbed, err := r.BranchAbsorbedIntoBase(name, base)
+		if err != nil {
+			return nil, err
+		}
+		if absorbed {
+			branches = append(branches, short)
+		}
+	}
+	return uniqueStrings(branches), nil
 }
 
 func (r *Repo) MergedRemoteBranches(base string) ([]string, error) {
@@ -219,7 +356,12 @@ func parseBranchVVLine(line string) (name, tracking string, ok bool) {
 }
 
 func isGoneUpstream(tracking string) bool {
-	return strings.Contains(tracking, ": gone")
+	return isGoneUpstreamTrack(tracking)
+}
+
+func isGoneUpstreamTrack(track string) bool {
+	track = strings.TrimSpace(track)
+	return strings.Contains(track, "gone")
 }
 
 func splitLines(s string) []string {

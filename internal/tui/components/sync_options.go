@@ -54,7 +54,7 @@ func SyncModeCatalog() []SyncModeOption {
 			Label:       "Sync + full prune",
 			Flag:        "--prune",
 			Summary:     "Sync + clean local and remote",
-			Description: "After sync, removes local and remote branches merged into base, plus local branches whose upstream was deleted on the remote. Divergent branches prompt before -D.",
+			Description: "After sync, removes local and remote branches merged into base, with upstream gone, or already absorbed via squash/rebase. Divergent branches prompt before -D.",
 			Prune:       true,
 			PruneRemote: false,
 		},
@@ -138,10 +138,12 @@ func syncCommandPreview(mode SyncModeOption, base string) []string {
 	}
 	if mode.Prune || mode.PruneRemote {
 		cmds = append(cmds, "git branch --merged "+base+" …")
+		cmds = append(cmds, "git cherry "+base+" <branch> …")
 	}
 	if mode.Prune {
 		cmds = append(cmds, "git branch -d/-D <merged-local> …")
 		cmds = append(cmds, "git branch -D <gone-upstream> …")
+		cmds = append(cmds, "git branch -D <squash-absorbed> …")
 	}
 	if mode.Prune || mode.PruneRemote {
 		cmds = append(cmds, "git push origin --delete <merged-remote> …")

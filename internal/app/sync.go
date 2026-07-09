@@ -90,7 +90,7 @@ func RunSync(opts SyncOptions) error {
 	}
 
 	var local, remote []string
-	if err := prog.Step("Finding merged branches", func() error {
+	if err := prog.Step("Finding branches to prune", func() error {
 		var err error
 		if opts.pruneLocal() {
 			local, err = repo.LocalPruneCandidates(base)
@@ -99,7 +99,7 @@ func RunSync(opts SyncOptions) error {
 			}
 		}
 		if opts.pruneRemote() {
-			remote, err = repo.MergedRemoteBranches(base)
+			remote, err = repo.RemotePruneCandidates(base)
 			if err != nil {
 				return err
 			}
@@ -121,7 +121,7 @@ func RunSync(opts SyncOptions) error {
 
 	localRemoved := 0
 	for _, name := range local {
-		removed, err := pruneLocal(prog, repo, name, opts.DryRun)
+		removed, err := pruneLocal(prog, repo, name, base, opts.DryRun)
 		if err != nil {
 			return err
 		}
@@ -161,7 +161,7 @@ func (o SyncOptions) pruneRemote() bool {
 	return o.Prune || o.PruneRemote
 }
 
-func pruneLocal(prog Progress, repo *gitpkg.Repo, name string, dryRun bool) (bool, error) {
+func pruneLocal(prog Progress, repo *gitpkg.Repo, name, base string, dryRun bool) (bool, error) {
 	issue, err := repo.LocalBranchPruneIssue(name)
 	if err != nil {
 		return false, err
@@ -201,6 +201,20 @@ func pruneLocal(prog Progress, repo *gitpkg.Repo, name string, dryRun bool) (boo
 			}
 			if action == PruneBranchKeep {
 				prog.Info("Mantida: " + name)
+				return false, nil
+			}
+			force = true
+		}
+	}
+
+	if !force {
+		absorbed, err := repo.BranchAbsorbedIntoBase(name, base)
+		if err != nil {
+			return false, err
+		}
+		if absorbed {
+			if dryRun {
+				prog.Info(name + ": alterações já estão na base (squash/rebase) — usaria git branch -D")
 				return false, nil
 			}
 			force = true
