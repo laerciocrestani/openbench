@@ -125,7 +125,7 @@ func main() {
 	syncCmd := &cobra.Command{
 		Use:   "sync",
 		Short: "Sincroniza com origin (pull da branch base)",
-		Long:  "Atualiza a branch base com git fetch + pull. Use --prune para remover branches mergeadas (local e GitHub) ou --prune-remote só no GitHub.",
+		Long:  "Atualiza a branch base com fetch + pull. --prune remove branches mergeadas/absorvidas (remoto primeiro, depois local). --prune-remote só no GitHub.",
 		RunE:  runSync,
 	}
 	syncCmd.Flags().BoolVar(&pruneBranches, "prune", false, "remove branches mergeadas no local e no GitHub")

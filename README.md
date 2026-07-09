@@ -413,8 +413,8 @@ gitai                 TUI dashboard or CLI overview (default)
 |---------|--------------|-----------|-----------|----------|
 | `gitai` | Repository overview | no | read-only | no |
 | `gitai sync` | Sync base branch with origin | no | `fetch`, `pull` | no |
-| `gitai sync --prune` | Sync + remove merged branches (local and GitHub) | no | `fetch`, `pull`, `branch -d`, `push --delete` | no |
-| `gitai sync --prune-remote` | Sync + remove merged branches on GitHub only | no | `fetch`, `pull`, `push --delete` | no |
+| `gitai sync --prune` | Sync + remove merged/absorbed branches (remote first, then local) | no | `fetch`, `pull`, `push --delete`, `fetch`, `branch -d/-D` | no |
+| `gitai sync --prune-remote` | Sync + remove merged/absorbed branches on GitHub only | no | `fetch`, `pull`, `push --delete`, `fetch` | no |
 | `gitai version` | Show version, commit, and commit count | no | read-only | no |
 | `gitai report` | AI usage/cost report | no | read-only | no |
 | `gitai pricing update` | Update Gemini price table | no | no | no |

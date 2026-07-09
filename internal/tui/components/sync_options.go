@@ -45,7 +45,7 @@ func SyncModeCatalog() []SyncModeOption {
 			Label:       "Sync + remote prune",
 			Flag:        "--prune-remote",
 			Summary:     "Sync + clean branches on GitHub",
-			Description: "After sync, removes remote branches already merged into base (git push origin --delete). Keeps local branches.",
+			Description: "Phase 1: fetch + pull base. Phase 2: find merged/absorbed remotes. Phase 3: push --delete, then fetch --prune. Keeps local branches.",
 			Prune:       false,
 			PruneRemote: true,
 		},
@@ -54,7 +54,7 @@ func SyncModeCatalog() []SyncModeOption {
 			Label:       "Sync + full prune",
 			Flag:        "--prune",
 			Summary:     "Sync + clean local and remote",
-			Description: "After sync, removes local and remote branches merged into base, with upstream gone, or already absorbed via squash/rebase. Divergent branches prompt before -D.",
+			Description: "Phase 1: fetch + pull base. Phase 2: find candidates (--merged, cherry, gone). Phase 3: delete remote, fetch --prune, then branch -d/-D locally. Divergent branches prompt before -D.",
 			Prune:       true,
 			PruneRemote: false,
 		},
@@ -132,21 +132,25 @@ func syncCommandPreview(mode SyncModeOption, base string) []string {
 		base = "main"
 	}
 	cmds := []string{
-		"git fetch origin --prune",
-		"git checkout " + base,
-		"git pull --ff-only origin " + base,
+		"[1] git fetch origin --prune",
+		"[1] git checkout " + base,
+		"[1] git pull --ff-only origin " + base,
 	}
 	if mode.Prune || mode.PruneRemote {
-		cmds = append(cmds, "git branch --merged "+base+" …")
-		cmds = append(cmds, "git cherry "+base+" <branch> …")
+		cmds = append(cmds,
+			"[2] git branch --merged "+base+" …",
+			"[2] git cherry "+base+" <branch> …",
+		)
+	}
+	if mode.Prune || mode.PruneRemote {
+		cmds = append(cmds, "[3] git push origin --delete <branch> …")
+		cmds = append(cmds, "[3] git fetch origin --prune")
 	}
 	if mode.Prune {
-		cmds = append(cmds, "git branch -d/-D <merged-local> …")
-		cmds = append(cmds, "git branch -D <gone-upstream> …")
-		cmds = append(cmds, "git branch -D <squash-absorbed> …")
-	}
-	if mode.Prune || mode.PruneRemote {
-		cmds = append(cmds, "git push origin --delete <merged-remote> …")
+		cmds = append(cmds,
+			"[3] git branch -d <merged> …",
+			"[3] git branch -D <squash/gone> …",
+		)
 	}
 	return cmds
 }

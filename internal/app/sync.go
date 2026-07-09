@@ -89,23 +89,8 @@ func RunSync(opts SyncOptions) error {
 		return nil
 	}
 
-	var local, remote []string
-	if err := prog.Step("Finding branches to prune", func() error {
-		var err error
-		if opts.pruneLocal() {
-			local, err = repo.LocalPruneCandidates(base)
-			if err != nil {
-				return err
-			}
-		}
-		if opts.pruneRemote() {
-			remote, err = repo.RemotePruneCandidates(base)
-			if err != nil {
-				return err
-			}
-		}
-		return nil
-	}); err != nil {
+	local, remote, err := discoverPruneCandidates(prog, repo, opts, base)
+	if err != nil {
 		return err
 	}
 
@@ -119,23 +104,27 @@ func RunSync(opts SyncOptions) error {
 		sess.Section("Prune")
 	}
 
-	localRemoved := 0
-	for _, name := range local {
-		removed, err := pruneLocal(prog, repo, name, base, opts.DryRun)
-		if err != nil {
+	remoteRemoved, err := pruneRemoteBranches(prog, repo, remote, opts.DryRun)
+	if err != nil {
+		return err
+	}
+
+	if remoteRemoved > 0 || (opts.DryRun && len(remote) > 0) {
+		if err := refreshOriginAfterRemotePrune(prog, repo, opts.DryRun); err != nil {
 			return err
-		}
-		if removed {
-			localRemoved++
 		}
 	}
 
-	remoteRemoved := 0
-	for _, name := range remote {
-		if err := pruneRemote(prog, repo, name, opts.DryRun); err != nil {
+	if opts.pruneLocal() && remoteRemoved > 0 {
+		local, err = repo.LocalPruneCandidates(base)
+		if err != nil {
 			return err
 		}
-		remoteRemoved++
+	}
+
+	localRemoved, err := pruneLocalBranches(prog, repo, local, base, opts.DryRun)
+	if err != nil {
+		return err
 	}
 
 	msg := "Synced"
@@ -147,6 +136,60 @@ func RunSync(opts SyncOptions) error {
 	}
 	prog.Success(msg)
 	return nil
+}
+
+func discoverPruneCandidates(prog Progress, repo *gitpkg.Repo, opts SyncOptions, base string) (local, remote []string, err error) {
+	err = prog.Step("Finding branches to prune", func() error {
+		if opts.pruneLocal() {
+			local, err = repo.LocalPruneCandidates(base)
+			if err != nil {
+				return err
+			}
+		}
+		if opts.pruneRemote() {
+			remote, err = repo.RemotePruneCandidates(base)
+			if err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	return local, remote, err
+}
+
+func refreshOriginAfterRemotePrune(prog Progress, repo *gitpkg.Repo, dryRun bool) error {
+	return prog.Step("Refreshing origin", func() error {
+		if dryRun {
+			prog.Detail("git fetch origin --prune")
+			return nil
+		}
+		return repo.FetchPrune()
+	})
+}
+
+func pruneRemoteBranches(prog Progress, repo *gitpkg.Repo, names []string, dryRun bool) (int, error) {
+	removed := 0
+	for _, name := range names {
+		if err := pruneRemote(prog, repo, name, dryRun); err != nil {
+			return removed, err
+		}
+		removed++
+	}
+	return removed, nil
+}
+
+func pruneLocalBranches(prog Progress, repo *gitpkg.Repo, names []string, base string, dryRun bool) (int, error) {
+	removed := 0
+	for _, name := range names {
+		ok, err := pruneLocal(prog, repo, name, base, dryRun)
+		if err != nil {
+			return removed, err
+		}
+		if ok {
+			removed++
+		}
+	}
+	return removed, nil
 }
 
 func (o SyncOptions) shouldPrune() bool {
