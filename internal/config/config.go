@@ -180,6 +180,11 @@ func (c *Config) Validate() error {
 	if strings.TrimSpace(c.APIKey) == "" {
 		return fmt.Errorf("api_key não configurada. Defina em config.yaml ou %s", EnvAPIKey)
 	}
+	if c.Provider == ProviderGemini && !isValidGeminiAPIKey(c.APIKey) {
+		return fmt.Errorf(
+			"chave Gemini inválida — crie uma em https://aistudio.google.com/apikey (formato AIza... ou AQ....)",
+		)
+	}
 	if strings.TrimSpace(c.Model) == "" {
 		return fmt.Errorf("model não configurado")
 	}
@@ -224,4 +229,9 @@ func (c Config) Display() string {
 		return fmt.Sprintf("%+v", c)
 	}
 	return string(data)
+}
+
+func isValidGeminiAPIKey(key string) bool {
+	key = strings.TrimSpace(key)
+	return strings.HasPrefix(key, "AIza") || strings.HasPrefix(key, "AQ.")
 }

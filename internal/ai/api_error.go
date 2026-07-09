@@ -44,7 +44,7 @@ func statusHint(code int) string {
 	case http.StatusUnauthorized, http.StatusForbidden:
 		return "chave API inválida ou sem permissão — verifique com `gitai config`"
 	case http.StatusNotFound:
-		return "modelo não encontrado — verifique o nome em `gitai config`"
+		return "modelo não encontrado — confira o nome em `gitai config`"
 	case http.StatusBadGateway, http.StatusGatewayTimeout:
 		return "serviço temporariamente indisponível — tente novamente em instantes"
 	case http.StatusInternalServerError:

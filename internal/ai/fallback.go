@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"strings"
 
 	"github.com/laerciocrestani/gitai/internal/config"
@@ -56,7 +57,7 @@ func withModelFallback(
 	primaryErr := err
 
 	fallback := resolveGeminiModel(strings.TrimSpace(cfg.FallbackModel))
-	if fallback == "" || fallback == primaryModel || !isRetryableError(err) {
+	if fallback == "" || fallback == primaryModel || !shouldTryModelFallback(err) {
 		return "", err
 	}
 
@@ -71,4 +72,15 @@ func withModelFallback(
 		}
 	}
 	return result, nil
+}
+
+func shouldTryModelFallback(err error) bool {
+	if isRetryableError(err) {
+		return true
+	}
+	var apiErr *APIError
+	if errors.As(err, &apiErr) {
+		return apiErr.StatusCode == http.StatusNotFound
+	}
+	return false
 }

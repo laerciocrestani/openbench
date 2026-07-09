@@ -96,9 +96,8 @@ func (c *geminiClient) generate(ctx context.Context, prompt, label string) (stri
 func (c *geminiClient) generateOnce(ctx context.Context, prompt, label, model string) (string, error) {
 	model = resolveGeminiModel(model)
 	url := fmt.Sprintf(
-		"https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent?key=%s",
+		"https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent",
 		model,
-		c.cfg.APIKey,
 	)
 
 	reqBody := geminiRequest{
@@ -117,6 +116,7 @@ func (c *geminiClient) generateOnce(ctx context.Context, prompt, label, model st
 		return "", err
 	}
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("x-goog-api-key", c.cfg.APIKey)
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
