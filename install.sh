@@ -13,6 +13,15 @@
 #
 set -euo pipefail
 
+# ./install.sh reaplica o profile na sessão do instalador.
+# Para instalar no shell interativo atual (sem subshell), prefira: source ./install.sh
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]] && [[ -z "${OPENBENCH_INSTALL_SOURCED:-}" ]]; then
+  export OPENBENCH_INSTALL_SOURCED=1
+  # shellcheck disable=SC1090
+  source "${BASH_SOURCE[0]}"
+  exit $?
+fi
+
 readonly OB_REPO_URL="${OB_REPO_URL:-https://github.com/laerciocrestani/openbench.git}"
 readonly OB_INSTALL_DIR="${OB_INSTALL_DIR:-${HOME}/.config/openbench/repository}"
 readonly GO_VERSION="${GO_VERSION:-1.25.0}"
@@ -144,7 +153,7 @@ append_path_block() {
   } >>"$rc"
 
   ok "PATH gravado em ${rc}"
-  warn "Abra um novo terminal ou rode: source ${rc}"
+  reload_shell_profile
 }
 
 resolve_openbench_bin() {
@@ -173,8 +182,7 @@ prompt_ob_alias() {
     return 0
   fi
   if [[ ! -t 0 ]]; then
-    warn "Terminal não interativo — alias ob não criado (use --no-alias para suprimir)"
-    CREATE_ALIAS=0
+    ok "Terminal não interativo — alias ob será criado automaticamente"
     return 0
   fi
 
@@ -219,7 +227,30 @@ append_ob_alias_block() {
   } >>"$rc"
 
   ok "Alias ob gravado em ${rc}"
-  warn "Após source ${rc}, use: ob --help"
+  reload_shell_profile
+}
+
+reload_shell_profile() {
+  local rc bin old_opts
+  rc="$(shell_rc_file)"
+  [[ -n "$rc" && -f "$rc" ]] || return 0
+
+  export_paths_for_session
+
+  old_opts="$-"
+  set +eu
+  # shellcheck disable=SC1090
+  source "$rc" 2>/dev/null || true
+  [[ "$old_opts" == *e* ]] && set -e
+  [[ "$old_opts" == *u* ]] && set -u
+
+  export_paths_for_session
+
+  if bin="$(resolve_openbench_bin 2>/dev/null)"; then
+    alias ob="$bin" 2>/dev/null || true
+  fi
+
+  hash -r 2>/dev/null || true
 }
 
 export_paths_for_session() {
@@ -317,11 +348,9 @@ step_repository() {
 step_build_install() {
   log "4/7 Compilando e instalando openbench"
   export_paths_for_session
-  (
-    cd "$REPO_ROOT"
-    go run ./cmd/ob install
-  )
-  ok "Binário instalado como openbench"
+  cd "$REPO_ROOT"
+  go run ./cmd/ob install
+  ok "Binário instalado como openbench e ob"
 }
 
 step_shell_path() {
@@ -339,7 +368,7 @@ step_ob_alias() {
 
 step_config() {
   log "7/7 Configuração inicial"
-  export_paths_for_session
+  reload_shell_profile
 
   local ob_bin
   if command -v ob >/dev/null 2>&1; then
@@ -368,22 +397,18 @@ step_config() {
 }
 
 finish() {
-  export_paths_for_session
+  reload_shell_profile
   echo ""
   ok "Instalação completa!"
   echo ""
   echo "  openbench          Binário principal"
-  echo "  ob                 Alias no shell (se aceito na instalação)"
+  echo "  ob                 Atalho (binário ou alias)"
   echo "  ob docker up       Subir ambiente Docker Compose"
   echo "  ob commit          Commit com IA"
   echo "  ob pr              Pull Request com IA"
   echo "  ob config show     Ver configuração"
   echo "  ob update          Atualizar binário"
   echo ""
-  if ! command -v ob >/dev/null 2>&1 && ! command -v openbench >/dev/null 2>&1; then
-    warn "Os comandos ob/openbench podem não estar no PATH desta sessão."
-    warn "Rode: source $(shell_rc_file)  (ou abra um novo terminal)"
-  fi
 }
 
 main() {

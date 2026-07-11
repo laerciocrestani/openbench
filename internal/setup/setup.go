@@ -56,13 +56,30 @@ func Install() error {
 			return fmt.Errorf("instalação falhou — binário não encontrado em %s", GoBinDir())
 		}
 		sess.Detail(bin)
+		if ob, err := exec.LookPath(obBinaryName()); err == nil {
+			sess.Detail(ob)
+		}
 		return nil
 	}); err != nil {
 		return err
 	}
 
 	if err := sess.Step("Configuring PATH", func() error {
-		return ensurePath(sess)
+		if err := ensurePath(sess); err != nil {
+			return err
+		}
+		applySessionPath(sess)
+		return nil
+	}); err != nil {
+		return err
+	}
+
+	if err := sess.Step("Configuring ob alias", func() error {
+		if err := ensureObAlias(sess, bin); err != nil {
+			return err
+		}
+		applySessionPath(sess)
+		return nil
 	}); err != nil {
 		return err
 	}
@@ -325,8 +342,27 @@ func ensurePath(sess *ui.Session) error {
 	}
 
 	sess.Detail("Added to " + shellRC)
-	sess.Warn("Run: source " + shellRC)
+	applySessionPath(sess)
 	return nil
+}
+
+func applySessionPath(sess *ui.Session) {
+	goBin := GoBinDir()
+	pathEnv := os.Getenv("PATH")
+	if pathContainsIn(pathEnv, goBin) {
+		return
+	}
+	_ = os.Setenv("PATH", goBin+string(os.PathListSeparator)+pathEnv)
+	sess.Detail("Session PATH updated")
+}
+
+func pathContainsIn(pathEnv, dir string) bool {
+	for _, part := range filepath.SplitList(pathEnv) {
+		if part == dir {
+			return true
+		}
+	}
+	return false
 }
 
 func goInstall(root string) error {
@@ -335,14 +371,81 @@ func goInstall(root string) error {
 		return err
 	}
 
-	out := filepath.Join(GoBinDir(), binaryName())
-	args := []string{"install", "-ldflags", info.LDFlags(), "-o", out, "./cmd/ob"}
+	binDir := GoBinDir()
+	if err := os.MkdirAll(binDir, 0o755); err != nil {
+		return err
+	}
+
+	out := filepath.Join(binDir, binaryName())
+	args := []string{"build", "-ldflags", info.LDFlags(), "-o", out, "./cmd/ob"}
 
 	cmd := exec.Command("go", args...)
 	cmd.Dir = root
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-	return cmd.Run()
+	if err := cmd.Run(); err != nil {
+		return err
+	}
+	return linkObBinary(out)
+}
+
+func linkObBinary(openbenchPath string) error {
+	obName := obBinaryName()
+	if obName == binaryName() {
+		return nil
+	}
+
+	obPath := filepath.Join(filepath.Dir(openbenchPath), obName)
+	_ = os.Remove(obPath)
+
+	if err := os.Symlink(filepath.Base(openbenchPath), obPath); err == nil {
+		return nil
+	}
+
+	data, err := os.ReadFile(openbenchPath)
+	if err != nil {
+		return fmt.Errorf("criar atalho ob: %w", err)
+	}
+	return os.WriteFile(obPath, data, 0o755)
+}
+
+func ensureObAlias(sess *ui.Session, bin string) error {
+	if runtime.GOOS == "windows" {
+		sess.Detail("Alias ob não necessário no Windows (use o binário ob.exe)")
+		return nil
+	}
+
+	shellRC := shellRCFile()
+	if shellRC == "" {
+		sess.Warn("Could not detect ~/.zshrc or ~/.bashrc")
+		sess.Detail("ob já está em " + filepath.Join(GoBinDir(), obBinaryName()))
+		return nil
+	}
+
+	data, err := os.ReadFile(shellRC)
+	if err != nil && !os.IsNotExist(err) {
+		return err
+	}
+
+	const marker = "# openbench alias (ob)"
+	if strings.Contains(string(data), marker) {
+		sess.Detail("Alias ob already configured in " + shellRC)
+		return nil
+	}
+
+	f, err := os.OpenFile(shellRC, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0o644)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	block := fmt.Sprintf("\n%s\nalias ob='%s'\n", marker, bin)
+	if _, err := f.WriteString(block); err != nil {
+		return err
+	}
+
+	sess.Detail("Alias ob added to " + shellRC)
+	return nil
 }
 
 func requireGo(sess *ui.Session) error {
@@ -424,5 +527,12 @@ func binaryName() string {
 		return "openbench.exe"
 	}
 	return "openbench"
+}
+
+func obBinaryName() string {
+	if runtime.GOOS == "windows" {
+		return "ob.exe"
+	}
+	return "ob"
 }
 
