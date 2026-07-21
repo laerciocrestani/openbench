@@ -1,39 +1,33 @@
 package desktop
 
 import (
+	"bufio"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/fsnotify/fsnotify"
 )
 
-const repoWatchDebounce = 400 * time.Millisecond
-
-var skipWatchDirs = map[string]bool{
-	".git":         true,
-	"node_modules": true,
-	"vendor":       true,
-	".cache":       true,
-	"dist":         true,
-	"build":        true,
-	"target":       true,
-	".next":        true,
-	".turbo":       true,
-	"coverage":     true,
-}
+const (
+	repoWatchDebounce     = 400 * time.Millisecond
+	repoWatchPollInterval = 2 * time.Second
+)
 
 // RepoWatchCallback is invoked (debounced) when the working tree may have changed.
 type RepoWatchCallback func()
 
-// RepoWatcher watches the project tree for filesystem changes.
+// RepoWatcher watches git metadata (not the full tree) and polls lightly.
+// Full-tree fsnotify is unsafe on macOS: kqueue opens one FD per file in each
+// watched directory and large repos hit "too many open files".
 type RepoWatcher struct {
 	done chan struct{}
 	once sync.Once
 }
 
-// StartRepoWatcher watches root and calls onChange after debounce.
+// StartRepoWatcher watches git metadata under root and polls as a fallback.
 // Caller must Close when done.
 func StartRepoWatcher(root string, onChange RepoWatchCallback) (*RepoWatcher, error) {
 	root = filepath.Clean(root)
@@ -53,12 +47,14 @@ func StartRepoWatcher(root string, onChange RepoWatchCallback) (*RepoWatcher, er
 		return nil, err
 	}
 
-	rw := &RepoWatcher{done: make(chan struct{})}
-	if err := addWatchTree(watcher, root); err != nil {
-		watcher.Close()
-		return nil, err
+	for _, p := range gitWatchPaths(root) {
+		if err := watcher.Add(p); err != nil {
+			// Partial watch is fine; poll covers the rest.
+			continue
+		}
 	}
 
+	rw := &RepoWatcher{done: make(chan struct{})}
 	go rw.loop(watcher, onChange)
 	return rw, nil
 }
@@ -91,6 +87,9 @@ func (rw *RepoWatcher) loop(watcher *fsnotify.Watcher, onChange RepoWatchCallbac
 		})
 	}
 
+	ticker := time.NewTicker(repoWatchPollInterval)
+	defer ticker.Stop()
+
 	for {
 		select {
 		case <-rw.done:
@@ -98,6 +97,9 @@ func (rw *RepoWatcher) loop(watcher *fsnotify.Watcher, onChange RepoWatchCallbac
 				timer.Stop()
 			}
 			return
+
+		case <-ticker.C:
+			resetDebounce()
 
 		case _, ok := <-watcher.Errors:
 			if !ok {
@@ -111,32 +113,75 @@ func (rw *RepoWatcher) loop(watcher *fsnotify.Watcher, onChange RepoWatchCallbac
 			if event.Has(fsnotify.Chmod) && !event.Has(fsnotify.Write|fsnotify.Create|fsnotify.Remove|fsnotify.Rename) {
 				continue
 			}
-			if event.Op&fsnotify.Create != 0 {
-				if info, err := os.Stat(event.Name); err == nil && info.IsDir() && !shouldSkipWatchDir(info.Name()) {
-					_ = addWatchTree(watcher, event.Name)
-				}
-			}
 			resetDebounce()
 		}
 	}
 }
 
-func addWatchTree(watcher *fsnotify.Watcher, root string) error {
-	return filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
-		if err != nil {
-			return nil
-		}
-		if !d.IsDir() {
-			return nil
-		}
-		if path != root && shouldSkipWatchDir(d.Name()) {
-			return filepath.SkipDir
-		}
-		_ = watcher.Add(path)
+// gitWatchPaths returns a small set of git metadata paths (few FDs).
+func gitWatchPaths(root string) []string {
+	gitDir, err := resolveGitDir(root)
+	if err != nil || gitDir == "" {
 		return nil
-	})
+	}
+
+	candidates := []string{
+		filepath.Join(gitDir, "HEAD"),
+		filepath.Join(gitDir, "index"),
+		filepath.Join(gitDir, "COMMIT_EDITMSG"),
+		filepath.Join(gitDir, "packed-refs"),
+		filepath.Join(gitDir, "refs", "heads"),
+		filepath.Join(gitDir, "refs", "tags"),
+	}
+
+	out := make([]string, 0, len(candidates))
+	seen := map[string]bool{}
+	for _, p := range candidates {
+		if seen[p] {
+			continue
+		}
+		if _, err := os.Stat(p); err != nil {
+			continue
+		}
+		seen[p] = true
+		out = append(out, p)
+	}
+	return out
 }
 
-func shouldSkipWatchDir(name string) bool {
-	return skipWatchDirs[name]
+func resolveGitDir(root string) (string, error) {
+	gitPath := filepath.Join(root, ".git")
+	fi, err := os.Lstat(gitPath)
+	if err != nil {
+		return "", err
+	}
+	if fi.IsDir() {
+		return gitPath, nil
+	}
+	// Worktree / submodule: ".git" is a file with "gitdir: <path>".
+	f, err := os.Open(gitPath)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+
+	sc := bufio.NewScanner(f)
+	for sc.Scan() {
+		line := strings.TrimSpace(sc.Text())
+		if len(line) < 8 {
+			continue
+		}
+		if !strings.EqualFold(line[:7], "gitdir:") {
+			continue
+		}
+		dir := strings.TrimSpace(line[7:])
+		if dir == "" {
+			continue
+		}
+		if !filepath.IsAbs(dir) {
+			dir = filepath.Join(root, dir)
+		}
+		return filepath.Clean(dir), nil
+	}
+	return "", os.ErrNotExist
 }

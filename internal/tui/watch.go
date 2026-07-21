@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"bufio"
 	"bytes"
 	"os"
 	"os/exec"
@@ -13,15 +14,8 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-var skipWatchDirs = map[string]bool{
-	".git":         true,
-	"node_modules": true,
-	"vendor":       true,
-	".cache":       true,
-	"dist":         true,
-	"build":        true,
-	"target":       true,
-}
+// Watch git metadata only (+ light poll). Recursive directory watches exhaust
+// FDs on macOS kqueue (one FD per file in each watched dir).
 
 type repoWatcher struct {
 	done chan struct{}
@@ -34,13 +28,11 @@ func startRepoWatcher(p *tea.Program, root string) (*repoWatcher, error) {
 		return nil, err
 	}
 
-	rw := &repoWatcher{done: make(chan struct{})}
-
-	if err := addWatchTree(watcher, root); err != nil {
-		watcher.Close()
-		return nil, err
+	for _, path := range gitWatchPaths(root) {
+		_ = watcher.Add(path)
 	}
 
+	rw := &repoWatcher{done: make(chan struct{})}
 	go rw.loop(p, watcher)
 	return rw, nil
 }
@@ -68,6 +60,9 @@ func (rw *repoWatcher) loop(p *tea.Program, watcher *fsnotify.Watcher) {
 		})
 	}
 
+	ticker := time.NewTicker(2 * time.Second)
+	defer ticker.Stop()
+
 	for {
 		select {
 		case <-rw.done:
@@ -75,6 +70,9 @@ func (rw *repoWatcher) loop(p *tea.Program, watcher *fsnotify.Watcher) {
 				timer.Stop()
 			}
 			return
+
+		case <-ticker.C:
+			resetDebounce()
 
 		case _, ok := <-watcher.Errors:
 			if !ok {
@@ -88,36 +86,62 @@ func (rw *repoWatcher) loop(p *tea.Program, watcher *fsnotify.Watcher) {
 			if event.Has(fsnotify.Chmod) && !event.Has(fsnotify.Write|fsnotify.Create|fsnotify.Remove|fsnotify.Rename) {
 				continue
 			}
-			if event.Op&fsnotify.Create != 0 {
-				if info, err := os.Stat(event.Name); err == nil && info.IsDir() && !shouldSkipWatchDir(info.Name()) {
-					_ = addWatchTree(watcher, event.Name)
-				}
-			}
 			resetDebounce()
 		}
 	}
 }
 
-func addWatchTree(watcher *fsnotify.Watcher, root string) error {
-	return filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
-		if err != nil {
-			return nil
-		}
-		if !d.IsDir() {
-			return nil
-		}
-		if path != root && shouldSkipWatchDir(d.Name()) {
-			return filepath.SkipDir
-		}
-		if err := watcher.Add(path); err != nil {
-			return nil
-		}
+func gitWatchPaths(root string) []string {
+	gitDir, err := resolveGitDir(root)
+	if err != nil || gitDir == "" {
 		return nil
-	})
+	}
+	candidates := []string{
+		filepath.Join(gitDir, "HEAD"),
+		filepath.Join(gitDir, "index"),
+		filepath.Join(gitDir, "COMMIT_EDITMSG"),
+		filepath.Join(gitDir, "packed-refs"),
+		filepath.Join(gitDir, "refs", "heads"),
+	}
+	out := make([]string, 0, len(candidates))
+	for _, p := range candidates {
+		if _, err := os.Stat(p); err == nil {
+			out = append(out, p)
+		}
+	}
+	return out
 }
 
-func shouldSkipWatchDir(name string) bool {
-	return skipWatchDirs[name]
+func resolveGitDir(root string) (string, error) {
+	gitPath := filepath.Join(root, ".git")
+	fi, err := os.Lstat(gitPath)
+	if err != nil {
+		return "", err
+	}
+	if fi.IsDir() {
+		return gitPath, nil
+	}
+	f, err := os.Open(gitPath)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+	sc := bufio.NewScanner(f)
+	for sc.Scan() {
+		line := strings.TrimSpace(sc.Text())
+		if len(line) < 8 || !strings.EqualFold(line[:7], "gitdir:") {
+			continue
+		}
+		dir := strings.TrimSpace(line[7:])
+		if dir == "" {
+			continue
+		}
+		if !filepath.IsAbs(dir) {
+			dir = filepath.Join(root, dir)
+		}
+		return filepath.Clean(dir), nil
+	}
+	return "", os.ErrNotExist
 }
 
 func repoRoot() (string, error) {
