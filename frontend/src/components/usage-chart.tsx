@@ -198,7 +198,7 @@ export function UsageChartPanel({ open }: { open: boolean }) {
                   </Badge>
                   {report?.hasCost && (
                     <Badge variant="outline" className="font-normal">
-                      {formatCost(report.totalCost)} USD
+                      Total {formatCost(report.totalCost)} USD
                     </Badge>
                   )}
                 </div>
@@ -222,7 +222,53 @@ export function UsageChartPanel({ open }: { open: boolean }) {
                 ))}
               </div>
             </CardHeader>
-            <CardContent className="px-2 sm:p-6">
+            <CardContent className="space-y-4 px-2 pt-4 sm:px-6">
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="rounded-lg border bg-muted/30 px-4 py-3">
+                  <p className="text-xs font-medium text-muted-foreground">Chat IA</p>
+                  <p className="mt-1 text-lg font-semibold tabular-nums">
+                    {report?.chat?.hasCost
+                      ? formatCost(report.chat.cost)
+                      : report?.chat?.calls
+                        ? "—"
+                        : formatCost(0)}
+                    {report?.chat?.hasCost ? (
+                      <span className="ml-1 text-xs font-normal text-muted-foreground">
+                        USD
+                      </span>
+                    ) : null}
+                  </p>
+                  <p className="mt-1 text-xs text-muted-foreground tabular-nums">
+                    {report?.chat?.calls ?? 0} chamada(s) ·{" "}
+                    {formatTokens((report?.chat?.input ?? 0) + (report?.chat?.output ?? 0))}{" "}
+                    tokens
+                  </p>
+                </div>
+                <div className="rounded-lg border bg-muted/30 px-4 py-3">
+                  <p className="text-xs font-medium text-muted-foreground">
+                    Commits, PRs e outros
+                  </p>
+                  <p className="mt-1 text-lg font-semibold tabular-nums">
+                    {report?.other?.hasCost
+                      ? formatCost(report.other.cost)
+                      : report?.other?.calls
+                        ? "—"
+                        : formatCost(0)}
+                    {report?.other?.hasCost ? (
+                      <span className="ml-1 text-xs font-normal text-muted-foreground">
+                        USD
+                      </span>
+                    ) : null}
+                  </p>
+                  <p className="mt-1 text-xs text-muted-foreground tabular-nums">
+                    {report?.other?.calls ?? 0} chamada(s) ·{" "}
+                    {formatTokens(
+                      (report?.other?.input ?? 0) + (report?.other?.output ?? 0),
+                    )}{" "}
+                    tokens
+                  </p>
+                </div>
+              </div>
               {chartData.length === 0 || (report?.calls ?? 0) === 0 ? (
                 <p className="py-12 text-center text-sm text-muted-foreground">
                   Nenhum uso registrado neste período.

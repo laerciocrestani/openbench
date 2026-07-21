@@ -20,8 +20,10 @@ const (
 type Config struct {
 	Provider             Provider `yaml:"provider"`
 	APIKey               string   `yaml:"api_key"`
-	Model                string   `yaml:"model"`
+	Model                string   `yaml:"model"` // Git IA (commit/PR) — primary
 	FallbackModel        string   `yaml:"fallback_model,omitempty"`
+	ChatModel            string   `yaml:"chat_model,omitempty"`
+	ChatFallbackModel    string   `yaml:"chat_fallback_model,omitempty"`
 	Language             string   `yaml:"language"`
 	BaseBranch           string   `yaml:"base_branch"`
 	CoAuthor             string   `yaml:"co_author"`
@@ -129,6 +131,38 @@ func (c *Config) normalize() {
 	}
 	if c.MaxDiffBytes <= 0 {
 		c.MaxDiffBytes = 120000
+	}
+}
+
+// EffectiveChatModel returns the chat primary model, falling back to git model.
+func (c *Config) EffectiveChatModel() string {
+	if c == nil {
+		return ""
+	}
+	if m := strings.TrimSpace(c.ChatModel); m != "" {
+		return m
+	}
+	return strings.TrimSpace(c.Model)
+}
+
+// EffectiveChatFallback returns the chat fallback model (may be empty).
+func (c *Config) EffectiveChatFallback() string {
+	if c == nil {
+		return ""
+	}
+	return strings.TrimSpace(c.ChatFallbackModel)
+}
+
+// ApplyChatModels sets Model/FallbackModel from chat-specific fields for a chat request.
+func (c *Config) ApplyChatModels() {
+	if c == nil {
+		return
+	}
+	if m := c.EffectiveChatModel(); m != "" {
+		c.Model = m
+	}
+	if fb := c.EffectiveChatFallback(); fb != "" {
+		c.FallbackModel = fb
 	}
 }
 

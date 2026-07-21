@@ -131,3 +131,9 @@
     @apply h-full overflow-hidden;
     }
 }
+
+/* Sidebar width drag: shadcn applies transition-[width] 200ms — kill it while resizing. */
+[data-slot="sidebar-wrapper"][data-resizing="true"] [data-slot="sidebar-gap"],
+[data-slot="sidebar-wrapper"][data-resizing="true"] [data-slot="sidebar-container"] {
+  transition: none !important;
+}

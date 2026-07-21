@@ -286,6 +286,11 @@ func modelSuggestions(p Provider) []string {
 	}
 }
 
+// ModelSuggestions returns common model IDs for the given provider.
+func ModelSuggestions(p Provider) []string {
+	return append([]string(nil), modelSuggestions(p)...)
+}
+
 func fallbackSuggestions(p Provider, primary string) []string {
 	var opts []string
 	switch p {

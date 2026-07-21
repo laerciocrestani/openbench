@@ -21,20 +21,20 @@ function decodeBase64(b64: string): string {
 }
 
 function sessionKey(projectPath: string | null, session: TerminalSessionSpec): string {
-  if (!projectPath) return ""
+  const root = projectPath || "~"
   if (session.kind === "docker") {
-    return `docker:${projectPath}:${session.service}:${session.presetId ?? ""}`
+    return `docker:${root}:${session.service}:${session.presetId ?? ""}`
   }
-  return `host:${projectPath}`
+  return `host:${root}`
 }
 
 function sessionLabel(session: TerminalSessionSpec, projectPath: string | null): string {
-  if (!projectPath) return "sem projeto"
   if (session.kind === "docker") {
+    if (!projectPath) return "docker (sem projeto)"
     const extra = session.presetId ? ` · ${session.presetId}` : ""
     return `docker:${session.service}${extra}`
   }
-  return projectPath
+  return projectPath || "~"
 }
 
 export function TerminalPanel({
@@ -134,7 +134,10 @@ export function TerminalPanel({
   }, [])
 
   useEffect(() => {
-    if (!visible || !projectPath || !termRef.current || !fitRef.current) return
+    if (!visible || !termRef.current || !fitRef.current) return
+    // Docker shell still requires an open project.
+    if (session.kind === "docker" && !projectPath) return
+
     const key = sessionKey(projectPath, session)
     if (startedFor.current === key) {
       fitRef.current.fit()
@@ -171,7 +174,8 @@ export function TerminalPanel({
   }, [visible, projectPath, session])
 
   const restart = async () => {
-    if (!projectPath || !fitRef.current || !termRef.current) return
+    if (!fitRef.current || !termRef.current) return
+    if (session.kind === "docker" && !projectPath) return
     fitRef.current.fit()
     const dims = fitRef.current.proposeDimensions()
     termRef.current.reset()
@@ -209,7 +213,7 @@ export function TerminalPanel({
           <Button
             variant="ghost"
             size="xs"
-            title="Voltar ao shell do projeto"
+            title="Voltar ao shell do host"
             onClick={onResetToHost}
           >
             host
@@ -219,7 +223,7 @@ export function TerminalPanel({
           variant="ghost"
           size="icon-xs"
           title="Reiniciar sessão"
-          disabled={!projectPath}
+          disabled={session.kind === "docker" && !projectPath}
           onClick={() => void restart()}
         >
           <RotateCcw />
@@ -233,10 +237,10 @@ export function TerminalPanel({
         onFocus={() => termRef.current?.focus()}
       />
 
-      {!projectPath && (
+      {session.kind === "docker" && !projectPath && (
         <div className="absolute inset-0 top-10 flex flex-col items-center justify-center gap-2 bg-[#0c0c0c]/95 p-6 text-center text-sm text-muted-foreground">
           <TerminalSquare className="size-8 opacity-40" />
-          <p>Abra um projeto para iniciar o shell no root do repositório.</p>
+          <p>Abra um projeto para usar o shell no container Docker.</p>
         </div>
       )}
     </div>

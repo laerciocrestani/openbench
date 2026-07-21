@@ -17,6 +17,7 @@ var appIcon []byte
 func init() {
 	application.RegisterEvent[string]("tray:action")
 	application.RegisterEvent[desktop.ProjectStatus]("project:status")
+	application.RegisterEvent[desktop.Dashboard]("project:dashboard")
 	application.RegisterEvent[string]("update:available")
 	application.RegisterEvent[string]("terminal:data")
 	application.RegisterEvent[string]("terminal:exit")

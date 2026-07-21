@@ -127,6 +127,10 @@ func SaveAIConfig(provider, apiKey, model string) error {
 	}
 	if model != "" {
 		cfg.Model = model
+		// Onboarding sets a single model — use it for chat too when unset.
+		if strings.TrimSpace(cfg.ChatModel) == "" {
+			cfg.ChatModel = model
+		}
 	}
 
 	if strings.TrimSpace(cfg.APIKey) == "" {

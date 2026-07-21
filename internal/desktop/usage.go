@@ -11,17 +11,30 @@ import (
 
 // UsageReportView is the JSON-friendly usage report for the desktop chart UI.
 type UsageReportView struct {
-	PeriodKey   string             `json:"periodKey"`
-	PeriodLabel string             `json:"periodLabel"`
-	Calls       int                `json:"calls"`
-	TotalInput  int                `json:"totalInput"`
-	TotalOutput int                `json:"totalOutput"`
-	TotalCost   float64            `json:"totalCost"`
-	HasCost     bool               `json:"hasCost"`
-	Granularity string             `json:"granularity"` // "hour" | "day"
-	Series      []UsagePointView   `json:"series"`
-	ByModel     []UsageGroupView   `json:"byModel"`
-	ByProject   []UsageGroupView   `json:"byProject"`
+	PeriodKey   string           `json:"periodKey"`
+	PeriodLabel string           `json:"periodLabel"`
+	Calls       int              `json:"calls"`
+	TotalInput  int              `json:"totalInput"`
+	TotalOutput int              `json:"totalOutput"`
+	TotalCost   float64          `json:"totalCost"`
+	HasCost     bool             `json:"hasCost"`
+	Granularity string           `json:"granularity"` // "hour" | "day"
+	Series      []UsagePointView `json:"series"`
+	ByModel     []UsageGroupView `json:"byModel"`
+	ByProject   []UsageGroupView `json:"byProject"`
+	// Chat aggregates ledger rows with command=chat.
+	Chat UsageBucketView `json:"chat"`
+	// Other aggregates commit/push/pr/doctor and any non-chat command.
+	Other UsageBucketView `json:"other"`
+}
+
+// UsageBucketView is a cost/token slice (chat vs commits/PRs/etc).
+type UsageBucketView struct {
+	Calls   int     `json:"calls"`
+	Input   int     `json:"input"`
+	Output  int     `json:"output"`
+	Cost    float64 `json:"cost"`
+	HasCost bool    `json:"hasCost"`
 }
 
 // UsagePointView is one bar on the token usage chart.
@@ -76,6 +89,7 @@ func LoadUsageReport(periodKey string) (*UsageReportView, error) {
 		ByModel:     make([]UsageGroupView, 0, len(report.ByModel)),
 		ByProject:   make([]UsageGroupView, 0, len(report.ByProject)),
 	}
+	view.Chat, view.Other = splitUsageByCommand(report.Entries)
 	if hourly {
 		view.Granularity = "hour"
 	}
@@ -115,6 +129,23 @@ func LoadUsageReport(periodKey string) (*UsageReportView, error) {
 	}
 
 	return view, nil
+}
+
+func splitUsageByCommand(entries []usage.Entry) (chat, other UsageBucketView) {
+	for _, e := range entries {
+		b := &other
+		if strings.EqualFold(strings.TrimSpace(e.Command), "chat") {
+			b = &chat
+		}
+		b.Calls++
+		b.Input += e.InputTokens
+		b.Output += e.OutputTokens
+		if e.CostUSD != nil {
+			b.Cost += *e.CostUSD
+			b.HasCost = true
+		}
+	}
+	return chat, other
 }
 
 func normalizeUsagePeriod(key string) string {

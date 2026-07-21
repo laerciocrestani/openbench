@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 
 	"github.com/laerciocrestani/openbench/internal/desktop"
@@ -18,6 +19,9 @@ type AppService struct {
 	trayRefresh func()
 	hub         *desktop.StatusHub
 	term        *desktop.TerminalSession
+	chatCancel  context.CancelFunc
+	pendingTool *pendingChatTool
+	repoWatch   *desktop.RepoWatcher
 }
 
 func (s *AppService) setApp(app *application.App) {
@@ -50,11 +54,22 @@ func (s *AppService) setProjectPath(path string) {
 	if s.hub != nil {
 		s.hub.SetActive(path)
 	}
-	// Restart shell when project changes (including close).
-	if !desktop.SamePath(prev, path) {
+	changed := !desktop.SamePath(prev, path)
+	// Restart shell / chat / watcher when project changes (including close).
+	if changed {
 		s.stopTerminalLocked()
+		s.stopRepoWatchLocked()
+		if s.chatCancel != nil {
+			s.chatCancel()
+			s.chatCancel = nil
+		}
+		s.clearPendingToolLocked()
 	}
 	s.mu.Unlock()
+
+	if changed && strings.TrimSpace(path) != "" {
+		s.startRepoWatch(path)
+	}
 }
 
 func (s *AppService) syncHubFromPrefs() {
@@ -132,7 +147,6 @@ func (s *AppService) SetPinnedAlias(path, alias string) error {
 	s.refreshTray()
 	return nil
 }
-
 
 // ListProjectStatuses returns cached statuses for pinned projects.
 func (s *AppService) ListProjectStatuses() []desktop.ProjectStatus {
@@ -459,6 +473,36 @@ func (s *AppService) DockerRunPreset(service, presetID string) (*desktop.DockerE
 // DockerExecCommand runs an arbitrary one-shot command in a service.
 func (s *AppService) DockerExecCommand(service, command string) (*desktop.DockerExecResult, error) {
 	return desktop.RunDockerExecCommand(s.currentPath(), service, command)
+}
+
+// ListGlobalDocker returns all daemon containers for the home panel (no project required).
+func (s *AppService) ListGlobalDocker() desktop.GlobalDockerView {
+	return desktop.LoadGlobalDocker()
+}
+
+// GlobalDockerStart starts a container by ID/name (home panel).
+func (s *AppService) GlobalDockerStart(idOrName string) (*desktop.GlobalDockerActionResult, error) {
+	return desktop.GlobalDockerStart(idOrName)
+}
+
+// GlobalDockerStop stops a container by ID/name (home panel).
+func (s *AppService) GlobalDockerStop(idOrName string) (*desktop.GlobalDockerActionResult, error) {
+	return desktop.GlobalDockerStop(idOrName)
+}
+
+// GlobalDockerRecreate force-recreates a compose service for the container (home panel).
+func (s *AppService) GlobalDockerRecreate(idOrName string) (*desktop.GlobalDockerActionResult, error) {
+	return desktop.GlobalDockerRecreate(idOrName)
+}
+
+// GlobalDockerUp runs compose up -d for a compose file (home panel).
+func (s *AppService) GlobalDockerUp(composeFile string, build bool) (*desktop.GlobalDockerActionResult, error) {
+	return desktop.GlobalDockerUp(composeFile, build)
+}
+
+// GlobalDockerDown runs compose down for a compose file (home panel).
+func (s *AppService) GlobalDockerDown(composeFile string) (*desktop.GlobalDockerActionResult, error) {
+	return desktop.GlobalDockerDown(composeFile)
 }
 
 func (s *AppService) afterDocker(res *desktop.DockerActionResult) {

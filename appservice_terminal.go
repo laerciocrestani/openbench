@@ -2,16 +2,22 @@ package main
 
 import (
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/laerciocrestani/openbench/internal/desktop"
 )
 
-// TerminalStart opens (or restarts) an interactive shell session in the project root.
+// TerminalStart opens (or restarts) an interactive shell session.
+// Uses the open project root when available; otherwise the user home directory.
 func (s *AppService) TerminalStart(cols, rows uint16) error {
-	cwd := s.currentPath()
+	cwd := strings.TrimSpace(s.currentPath())
 	if cwd == "" {
-		return fmt.Errorf("abra um projeto para usar o terminal")
+		home, err := os.UserHomeDir()
+		if err != nil || strings.TrimSpace(home) == "" {
+			return fmt.Errorf("não foi possível resolver o diretório home do usuário")
+		}
+		cwd = home
 	}
 
 	s.mu.Lock()
@@ -117,7 +123,7 @@ func (s *AppService) TerminalStop() {
 	}
 }
 
-// TerminalRestart forces a new host shell in the current project root.
+// TerminalRestart forces a new host shell (project root or user home).
 func (s *AppService) TerminalRestart(cols, rows uint16) error {
 	s.mu.Lock()
 	if s.term != nil {

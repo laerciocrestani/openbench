@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 
 import { AppService } from "../bindings/github.com/laerciocrestani/openbench"
 import type { UpdateCheckResult } from "../bindings/github.com/laerciocrestani/openbench"
@@ -73,14 +73,17 @@ import {
   SidebarHeader,
   SidebarInset,
   SidebarProvider,
-  SidebarRail,
   SidebarTrigger,
 } from "@/components/ui/sidebar"
 import { DockerEnvironmentSheet } from "@/components/docker-environment-sheet"
+import { DockerGlobalPanel } from "@/components/docker-global-panel"
+import { ProjectChatPanel } from "@/components/project-chat-panel"
 import {
   TerminalPanel,
   type TerminalSessionSpec,
 } from "@/components/terminal-panel"
+import { TerminalChatSplit } from "@/components/terminal-chat-split"
+import { SidebarWidthRail, useSidebarWidth } from "@/components/sidebar-width-resize"
 import { UsageChartPanel } from "@/components/usage-chart"
 import {
   BRANCH_TEMPLATES,
@@ -723,69 +726,67 @@ function Welcome({
   onUnpin: (path: string) => void
 }) {
   const pinnedPaths = new Set(pinned.map((p) => p.path))
-  const recentOnly = recent.filter((p) => !pinnedPaths.has(p)).slice(0, 5)
+  const recentOnly = recent.filter((p) => !pinnedPaths.has(p)).slice(0, 8)
 
   return (
-    <div className="mx-auto flex w-full max-w-xl flex-col gap-6 py-10">
-      <div className="flex flex-col items-center gap-2 text-center">
-        <div className="flex size-12 items-center justify-center rounded-xl bg-primary/10">
-          <FolderOpen className="size-6 text-primary" />
-        </div>
-        <h1 className="font-heading text-xl font-medium">openbench</h1>
-        <p className="text-sm text-muted-foreground">
-          Abra um repositório Git para ver o dashboard.
-        </p>
-      </div>
-
-      <Button size="lg" onClick={onOpenDialog} disabled={busy}>
-        {busy ? <Loader2 className="animate-spin" /> : <FolderOpen />}
-        Abrir projeto…
-      </Button>
-
-      {pinned.length > 0 && (
+    <div className="grid h-full min-h-0 grid-cols-1 gap-4 lg:grid-cols-2">
+      <div className="flex min-h-0 flex-col gap-4 overflow-y-auto rounded-xl border bg-card p-5">
         <div className="flex flex-col gap-2">
-          <h2 className="text-sm font-medium text-muted-foreground">Fixados</h2>
-          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-            {pinned.map((p) => (
-              <div key={p.path} className="group relative">
-                <button
-                  type="button"
-                  className="flex w-full items-center gap-2 rounded-xl border bg-card px-4 py-3 text-left transition-colors hover:bg-muted/50"
-                  onClick={() => onOpenPath(p.path)}
-                  title={p.path}
-                  disabled={busy}
-                >
-                  <Pin className="size-3.5 shrink-0 text-primary" />
-                  <span className="truncate font-medium">
-                    {p.alias || projectDisplayName(p.path)}
-                  </span>
-                </button>
-                <Button
-                  variant="ghost"
-                  size="icon-xs"
-                  className="absolute top-2 right-2 opacity-0 group-hover:opacity-100"
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    onUnpin(p.path)
-                  }}
-                  title="Desafixar"
-                  disabled={busy}
-                >
-                  <PinOff />
-                </Button>
-              </div>
-            ))}
+          <div className="flex size-10 items-center justify-center rounded-xl bg-primary/10">
+            <FolderOpen className="size-5 text-primary" />
           </div>
+          <h1 className="font-heading text-lg font-medium">openbench</h1>
+          <p className="text-sm text-muted-foreground">
+            Abra um repositório Git para ver o dashboard.
+          </p>
         </div>
-      )}
 
-      {recentOnly.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-sm">Recentes</CardTitle>
-          </CardHeader>
-          <CardContent className="p-0">
-            <div className="flex flex-col">
+        <Button size="lg" className="w-full sm:w-auto" onClick={onOpenDialog} disabled={busy}>
+          {busy ? <Loader2 className="animate-spin" /> : <FolderOpen />}
+          Abrir projeto…
+        </Button>
+
+        {pinned.length > 0 && (
+          <div className="flex flex-col gap-2">
+            <h2 className="text-sm font-medium text-muted-foreground">Fixados</h2>
+            <div className="grid grid-cols-1 gap-2">
+              {pinned.map((p) => (
+                <div key={p.path} className="group relative">
+                  <button
+                    type="button"
+                    className="flex w-full items-center gap-2 rounded-xl border bg-background px-4 py-3 text-left transition-colors hover:bg-muted/50"
+                    onClick={() => onOpenPath(p.path)}
+                    title={p.path}
+                    disabled={busy}
+                  >
+                    <Pin className="size-3.5 shrink-0 text-primary" />
+                    <span className="truncate font-medium">
+                      {p.alias || projectDisplayName(p.path)}
+                    </span>
+                  </button>
+                  <Button
+                    variant="ghost"
+                    size="icon-xs"
+                    className="absolute top-2 right-2 opacity-0 group-hover:opacity-100"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      onUnpin(p.path)
+                    }}
+                    title="Desafixar"
+                    disabled={busy}
+                  >
+                    <PinOff />
+                  </Button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {recentOnly.length > 0 && (
+          <div className="flex min-h-0 flex-1 flex-col gap-2">
+            <h2 className="text-sm font-medium text-muted-foreground">Recentes</h2>
+            <div className="flex flex-col overflow-hidden rounded-xl border">
               {recentOnly.map((p) => (
                 <div
                   key={p}
@@ -793,7 +794,7 @@ function Welcome({
                 >
                   <button
                     type="button"
-                    className="flex min-w-0 flex-1 items-center gap-2 px-2 py-2 text-left text-xs hover:bg-muted"
+                    className="flex min-w-0 flex-1 items-center gap-2 px-2 py-2.5 text-left text-xs hover:bg-muted"
                     onClick={() => onOpenPath(p)}
                     disabled={busy}
                   >
@@ -815,9 +816,13 @@ function Welcome({
                 </div>
               ))}
             </div>
-          </CardContent>
-        </Card>
-      )}
+          </div>
+        )}
+      </div>
+
+      <div className="min-h-[22rem] lg:min-h-0">
+        <DockerGlobalPanel active />
+      </div>
     </div>
   )
 }
@@ -907,7 +912,19 @@ function App() {
   const [updateBusy, setUpdateBusy] = useState(false)
   const [aliasDrafts, setAliasDrafts] = useState<Record<string, string>>({})
 
-  // Terminal sidebar (open by default)
+  // Settings — IA tab
+  const [aiProvider, setAiProvider] = useState("openrouter")
+  const [aiApiKey, setAiApiKey] = useState("")
+  const [aiKeyMasked, setAiKeyMasked] = useState("")
+  const [aiGitModel, setAiGitModel] = useState("")
+  const [aiGitFallback, setAiGitFallback] = useState("")
+  const [aiChatModel, setAiChatModel] = useState("")
+  const [aiChatFallback, setAiChatFallback] = useState("")
+  const [aiSuggestions, setAiSuggestions] = useState<string[]>([])
+  const [aiConfigPath, setAiConfigPath] = useState("")
+  const [aiBusy, setAiBusy] = useState(false)
+
+  // Terminal sidebar — always available (home → user home dir; project → repo root)
   const [terminalOpen, setTerminalOpen] = useState(true)
 
   /* --------------------------- data loaders --------------------------- */
@@ -939,6 +956,8 @@ function App() {
       const d = await AppService.OpenProjectDialog()
       if (d) {
         setDash(d)
+        setTerminalOpen(true)
+        setTermSession({ kind: "host" })
         await refreshStatuses()
         await reloadPrefs()
       }
@@ -956,6 +975,8 @@ function App() {
       const d = await AppService.OpenProject(path)
       if (d) {
         setDash(d)
+        setTerminalOpen(true)
+        setTermSession({ kind: "host" })
         await refreshStatuses()
         await reloadPrefs()
       }
@@ -971,7 +992,11 @@ function App() {
     setError(null)
     try {
       const d = await AppService.SwitchProject(path)
-      if (d) setDash(d)
+      if (d) {
+        setDash(d)
+        setTerminalOpen(true)
+        setTermSession({ kind: "host" })
+      }
       await refreshStatuses()
       await reloadPrefs()
     } catch (e) {
@@ -1022,6 +1047,7 @@ function App() {
     try {
       await AppService.CloseProject()
       setDash(null)
+      setTermSession({ kind: "host" })
       await refreshStatuses()
       await reloadPrefs()
     } catch (e) {
@@ -1400,12 +1426,57 @@ function App() {
   const openSettings = async () => {
     setSettingsOpen(true)
     setUpdateResult(null)
+    setAiApiKey("")
     await reloadPrefs()
     try {
       const pp = await AppService.PrefsPathString()
       setPrefsPath(pp)
     } catch {
       /* ignore */
+    }
+    try {
+      const ai = await AppService.GetAIConfig()
+      if (ai) {
+        setAiProvider(ai.provider || "openrouter")
+        setAiKeyMasked(ai.apiKeyMasked || "")
+        setAiGitModel(ai.gitModel || "")
+        setAiGitFallback(ai.gitFallback || "")
+        setAiChatModel(ai.chatModel || "")
+        setAiChatFallback(ai.chatFallback || "")
+        setAiSuggestions(ai.modelSuggestions ?? [])
+        setAiConfigPath(ai.configPath || "")
+      }
+    } catch (e) {
+      setError(errText(e))
+    }
+  }
+
+  const saveAISettings = async () => {
+    setAiBusy(true)
+    setError(null)
+    try {
+      await AppService.SaveAISettings(
+        aiProvider,
+        aiApiKey,
+        aiGitModel,
+        aiGitFallback,
+        aiChatModel,
+        aiChatFallback,
+      )
+      setAiApiKey("")
+      const ai = await AppService.GetAIConfig()
+      if (ai) {
+        setAiKeyMasked(ai.apiKeyMasked || "")
+        setAiGitModel(ai.gitModel || "")
+        setAiGitFallback(ai.gitFallback || "")
+        setAiChatModel(ai.chatModel || "")
+        setAiChatFallback(ai.chatFallback || "")
+        setAiSuggestions(ai.modelSuggestions ?? [])
+      }
+    } catch (e) {
+      setError(errText(e))
+    } finally {
+      setAiBusy(false)
     }
   }
 
@@ -1594,9 +1665,19 @@ function App() {
       void actionsRef.current.refreshStatuses()
     })
 
+    const offDashboard = Events.On("project:dashboard", (ev) => {
+      const raw = ev?.data ?? ev
+      const d = raw as Dashboard | null
+      if (d && typeof d === "object" && "path" in d) {
+        setDash(d)
+        void actionsRef.current.refreshStatuses()
+      }
+    })
+
     return () => {
       offTray()
       offStatus()
+      offDashboard()
     }
   }, [])
 
@@ -1604,6 +1685,7 @@ function App() {
 
   const recent = prefs?.recent ?? []
   const dockerVisible = dash?.docker?.visible ?? false
+  const { widthPx, commitWidth, style: sidebarWidthStyle } = useSidebarWidth()
 
   return (
     <SidebarProvider
@@ -1611,7 +1693,7 @@ function App() {
       onOpenChange={setTerminalOpen}
       defaultOpen
       className="h-svh max-h-svh min-h-0 overflow-hidden"
-      style={{ "--sidebar-width": "28rem" } as CSSProperties}
+      style={sidebarWidthStyle}
     >
       <SidebarInset className="flex h-svh max-h-svh min-h-0 flex-col overflow-hidden bg-background text-foreground">
       {/* Header (draggable) */}
@@ -1658,7 +1740,13 @@ function App() {
       </header>
 
       {/* Body — altura travada no viewport; scroll externo só se o chrome não couber */}
-      <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-4">
+      <div
+        className={
+          dash
+            ? "flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-4"
+            : "flex min-h-0 flex-1 flex-col gap-4 overflow-hidden p-4"
+        }
+      >
         {error && (
           <Alert variant="destructive" className="shrink-0">
             <AlertDescription className="flex items-center justify-between gap-3">
@@ -2567,6 +2655,9 @@ function App() {
               <TabsTrigger value="geral" className="flex-1">
                 Geral
               </TabsTrigger>
+              <TabsTrigger value="ia" className="flex-1">
+                IA
+              </TabsTrigger>
               <TabsTrigger value="atualizacoes" className="flex-1">
                 Atualizações
               </TabsTrigger>
@@ -2667,6 +2758,127 @@ function App() {
                   </p>
                 </>
               )}
+            </TabsContent>
+
+            <TabsContent value="ia" className="flex max-h-[min(70vh,32rem)] flex-col gap-4 overflow-y-auto pt-1">
+              <section className="flex flex-col gap-2">
+                <h3 className="text-xs font-medium text-muted-foreground uppercase">
+                  Conta
+                </h3>
+                <div className="flex flex-col gap-1.5">
+                  <Label htmlFor="ai-provider">Provider</Label>
+                  <Select
+                    value={aiProvider}
+                    onValueChange={(v) => setAiProvider(String(v ?? "openrouter"))}
+                  >
+                    <SelectTrigger id="ai-provider" className="w-full">
+                      <SelectValue>{aiProvider}</SelectValue>
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="openrouter">openrouter</SelectItem>
+                      <SelectItem value="openai">openai</SelectItem>
+                      <SelectItem value="gemini">gemini</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <Label htmlFor="ai-key">API Key</Label>
+                  <Input
+                    id="ai-key"
+                    type="password"
+                    value={aiApiKey}
+                    onChange={(e) => setAiApiKey(e.target.value)}
+                    placeholder={aiKeyMasked || "sk-… / AIza…"}
+                  />
+                  <p className="text-[11px] text-muted-foreground">
+                    Deixe em branco para manter a chave atual
+                    {aiKeyMasked ? ` (${aiKeyMasked})` : ""}.
+                  </p>
+                </div>
+              </section>
+
+              <Separator />
+
+              <section className="flex flex-col gap-2">
+                <h3 className="text-xs font-medium text-muted-foreground uppercase">
+                  Chat IA
+                </h3>
+                <p className="text-[11px] text-muted-foreground">
+                  Modelos usados no painel de chat do projeto.
+                </p>
+                <div className="flex flex-col gap-1.5">
+                  <Label htmlFor="ai-chat-model">Modelo primário</Label>
+                  <Input
+                    id="ai-chat-model"
+                    value={aiChatModel}
+                    onChange={(e) => setAiChatModel(e.target.value)}
+                    list="ai-model-suggestions"
+                    placeholder="ex.: gemini-2.5-flash-lite"
+                    className="font-mono text-xs"
+                  />
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <Label htmlFor="ai-chat-fallback">Fallback</Label>
+                  <Input
+                    id="ai-chat-fallback"
+                    value={aiChatFallback}
+                    onChange={(e) => setAiChatFallback(e.target.value)}
+                    list="ai-model-suggestions"
+                    placeholder="opcional"
+                    className="font-mono text-xs"
+                  />
+                </div>
+              </section>
+
+              <Separator />
+
+              <section className="flex flex-col gap-2">
+                <h3 className="text-xs font-medium text-muted-foreground uppercase">
+                  Git IA
+                </h3>
+                <p className="text-[11px] text-muted-foreground">
+                  Modelos usados em commits e Pull Requests.
+                </p>
+                <div className="flex flex-col gap-1.5">
+                  <Label htmlFor="ai-git-model">Modelo primário</Label>
+                  <Input
+                    id="ai-git-model"
+                    value={aiGitModel}
+                    onChange={(e) => setAiGitModel(e.target.value)}
+                    list="ai-model-suggestions"
+                    placeholder="ex.: gemini-2.5-flash-lite"
+                    className="font-mono text-xs"
+                  />
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <Label htmlFor="ai-git-fallback">Fallback</Label>
+                  <Input
+                    id="ai-git-fallback"
+                    value={aiGitFallback}
+                    onChange={(e) => setAiGitFallback(e.target.value)}
+                    list="ai-model-suggestions"
+                    placeholder="opcional"
+                    className="font-mono text-xs"
+                  />
+                </div>
+              </section>
+
+              <datalist id="ai-model-suggestions">
+                {aiSuggestions.map((m) => (
+                  <option key={m} value={m} />
+                ))}
+              </datalist>
+
+              {aiConfigPath && (
+                <p className="font-mono text-[11px] text-muted-foreground">
+                  Config: {aiConfigPath}
+                </p>
+              )}
+
+              <Button onClick={() => void saveAISettings()} disabled={aiBusy}>
+                {aiBusy ? <Loader2 className="animate-spin" /> : null}
+                Salvar IA
+              </Button>
             </TabsContent>
 
             <TabsContent value="atualizacoes" className="flex flex-col gap-3 pt-1">
@@ -2812,18 +3024,30 @@ function App() {
 
       <Sidebar side="right" collapsible="offcanvas" className="border-l">
         <SidebarHeader className="flex flex-row items-center gap-2 border-b px-3 py-2">
-          <span className="text-sm font-medium">Terminal</span>
-          <span className="text-[11px] text-muted-foreground">shell</span>
+          <span className="text-sm font-medium">{dash ? "Terminal + Chat" : "Terminal"}</span>
+          <span className="text-[11px] text-muted-foreground">
+            {dash ? "shell · IA" : "shell"}
+          </span>
         </SidebarHeader>
         <SidebarContent className="overflow-hidden p-0">
-          <TerminalPanel
-            projectPath={dash?.path ?? null}
-            visible={terminalOpen}
-            session={termSession}
-            onResetToHost={() => setTermSession({ kind: "host" })}
+          <TerminalChatSplit
+            showChat={!!dash}
+            terminal={
+              <TerminalPanel
+                projectPath={dash?.path ?? null}
+                visible={terminalOpen}
+                session={termSession}
+                onResetToHost={() => setTermSession({ kind: "host" })}
+              />
+            }
+            chat={
+              dash ? (
+                <ProjectChatPanel projectPath={dash.path} visible={terminalOpen} />
+              ) : null
+            }
           />
         </SidebarContent>
-        <SidebarRail />
+        <SidebarWidthRail widthPx={widthPx} onCommitWidth={commitWidth} />
       </Sidebar>
     </SidebarProvider>
   )
