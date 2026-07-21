@@ -2,6 +2,7 @@ package main
 
 import (
 	"path/filepath"
+	"runtime"
 
 	"github.com/laerciocrestani/openbench/internal/desktop"
 	"github.com/wailsapp/wails/v3/pkg/application"
@@ -9,8 +10,14 @@ import (
 
 func setupSystemTray(app *application.App, window *application.WebviewWindow, svc *AppService) {
 	tray := app.SystemTray.New()
-	tray.SetIcon(appIcon)
+	if runtime.GOOS == "darwin" {
+		// Template icon: macOS paints it white/black to match the menu bar theme.
+		tray.SetTemplateIcon(trayIconTemplate)
+	} else {
+		tray.SetIcon(appIcon)
+	}
 	tray.SetTooltip("openbench")
+	tray.SetLabel("") // icon only — no text beside the tray icon
 
 	tray.OnClick(func() {
 		toggleWindow(window)
@@ -28,7 +35,7 @@ func rebuildTrayMenu(app *application.App, tray *application.SystemTray, window 
 	activePath := svc.currentPath()
 	hasProject := activePath != ""
 
-	// Status line
+	// Status line (menu only — tray stays icon-only)
 	statusLabel := "Nenhum projeto aberto"
 	if hasProject {
 		st := desktop.LoadProjectStatus(activePath, false)
@@ -44,15 +51,10 @@ func rebuildTrayMenu(app *application.App, tray *application.SystemTray, window 
 			statusLabel += " · dirty"
 		}
 		tray.SetTooltip("openbench — " + statusLabel)
-		if len(name) > 18 {
-			tray.SetLabel(name[:16] + "…")
-		} else {
-			tray.SetLabel(name)
-		}
 	} else {
 		tray.SetTooltip("openbench")
-		tray.SetLabel("openbench")
 	}
+	tray.SetLabel("")
 
 	statusItem := menu.Add(statusLabel)
 	statusItem.SetEnabled(false)

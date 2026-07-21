@@ -14,6 +14,11 @@ var assets embed.FS
 //go:embed build/appicon.png
 var appIcon []byte
 
+// Tray template icon: black + alpha (macOS tints it to match the menu bar theme).
+//
+//go:embed build/trayicon-template.png
+var trayIconTemplate []byte
+
 func init() {
 	application.RegisterEvent[string]("tray:action")
 	application.RegisterEvent[desktop.ProjectStatus]("project:status")

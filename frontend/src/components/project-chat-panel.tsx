@@ -15,7 +15,7 @@ import {
   AlertDialogMedia,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
-import { Avatar, AvatarFallback } from "@/components/ui/avatar"
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Bubble, BubbleContent } from "@/components/ui/bubble"
 import { Button } from "@/components/ui/button"
 import {
@@ -395,6 +395,9 @@ export function ProjectChatPanel({
                     <Message align={m.role === "user" ? "end" : "start"}>
                       <MessageAvatar>
                         <Avatar className="size-7">
+                          {m.role === "assistant" ? (
+                            <AvatarImage src="/openbench.png" alt="openbench" />
+                          ) : null}
                           <AvatarFallback className="text-[10px]">
                             {m.role === "user" ? "EU" : "AI"}
                           </AvatarFallback>

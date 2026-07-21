@@ -11,13 +11,18 @@ import (
 	"github.com/laerciocrestani/openbench/internal/version"
 	"github.com/wailsapp/wails/v3/pkg/application"
 	"github.com/wailsapp/wails/v3/pkg/updater"
+	"github.com/wailsapp/wails/v3/pkg/updater/providers/endpoint"
 	"github.com/wailsapp/wails/v3/pkg/updater/providers/github"
 )
 
 //go:embed build/updater/updater.key.pub
 var updaterPublicKey []byte
 
-const githubUpdaterRepo = "laerciocrestani/openbench"
+const (
+	githubUpdaterRepo = "laerciocrestani/openbench"
+	// Signed Wails update manifest published as a GitHub Release asset.
+	updaterManifestURL = "https://github.com/laerciocrestani/openbench/releases/latest/download/manifest.json"
+)
 
 // UpdateCheckResult is returned to the Settings UI and update:prompt dialog.
 type UpdateCheckResult struct {
@@ -38,6 +43,15 @@ func appSemver() string {
 }
 
 func initUpdater(app *application.App) error {
+	// Prefer signed manifest (digest + ed25519ph). Fall back to GitHub asset
+	// matching when the manifest asset is missing (first boot / older releases).
+	ep, err := endpoint.New(endpoint.Config{
+		URL:     updaterManifestURL,
+		Channel: "stable",
+	})
+	if err != nil {
+		return fmt.Errorf("endpoint updater provider: %w", err)
+	}
 	gh, err := github.New(github.Config{
 		Repository: githubUpdaterRepo,
 	})
@@ -47,7 +61,7 @@ func initUpdater(app *application.App) error {
 
 	cfg := updater.Config{
 		CurrentVersion: appSemver(),
-		Providers:      []updater.Provider{gh},
+		Providers:      []updater.Provider{ep, gh},
 		PublicKey:      updaterPublicKey,
 		CheckInterval:  6 * time.Hour,
 	}
