@@ -52,8 +52,8 @@ Publique no GitHub Release (tag **sem** ou **com** `v` — a versão em `updater
 
 ## App
 
-- Checagem automática a cada **6h**.
-- Manual: **Settings → Checar atualização** / **Baixar e instalar** / **Reiniciar agora**.
+- Checagem automática a cada **6h**. Se houver update, aparece um dialog com **Atualizar agora** / **Depois**.
+- Manual: **Settings → Atualizações → Verificar atualizações**.
 
 ## Versão atual do binário
 

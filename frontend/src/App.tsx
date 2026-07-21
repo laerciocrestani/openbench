@@ -910,6 +910,7 @@ function App() {
   // Settings — update check
   const [updateResult, setUpdateResult] = useState<UpdateCheckResult | null>(null)
   const [updateBusy, setUpdateBusy] = useState(false)
+  const [updatePrompt, setUpdatePrompt] = useState<UpdateCheckResult | null>(null)
   const [aliasDrafts, setAliasDrafts] = useState<Record<string, string>>({})
 
   // Settings — IA tab
@@ -1674,10 +1675,19 @@ function App() {
       }
     })
 
+    const offUpdatePrompt = Events.On("update:prompt", (ev) => {
+      const raw = (ev?.data ?? ev) as UpdateCheckResult | null
+      if (raw && typeof raw === "object" && raw.available) {
+        setUpdatePrompt(raw)
+        setUpdateResult(raw)
+      }
+    })
+
     return () => {
       offTray()
       offStatus()
       offDashboard()
+      offUpdatePrompt()
     }
   }, [])
 
@@ -2884,6 +2894,7 @@ function App() {
             <TabsContent value="atualizacoes" className="flex flex-col gap-3 pt-1">
               <p className="text-sm text-muted-foreground">
                 Verifique se há uma versão mais recente do openbench no GitHub Releases.
+                O app também checa automaticamente a cada 6 horas.
               </p>
               <div className="flex flex-wrap items-center gap-2">
                 <Button
@@ -2954,6 +2965,59 @@ function App() {
           <DialogFooter>
             <Button variant="outline" onClick={() => setSettingsOpen(false)}>
               Fechar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Auto-update prompt (check every 6h) */}
+      <Dialog
+        open={updatePrompt != null}
+        onOpenChange={(open) => {
+          if (!open) setUpdatePrompt(null)
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Download className="size-4" />
+              Atualização disponível
+            </DialogTitle>
+          </DialogHeader>
+          <div className="flex flex-col gap-2 text-sm">
+            <p>
+              Nova versão{" "}
+              <span className="font-mono font-medium">
+                {updatePrompt?.latestVersion || "—"}
+              </span>
+              {updatePrompt?.currentVersion
+                ? ` (atual: ${updatePrompt.currentVersion})`
+                : ""}
+              .
+            </p>
+            {updatePrompt?.notes?.trim() ? (
+              <p className="max-h-40 overflow-auto whitespace-pre-wrap text-xs text-muted-foreground">
+                {updatePrompt.notes.trim()}
+              </p>
+            ) : (
+              <p className="text-xs text-muted-foreground">
+                Há uma versão mais recente no GitHub Releases.
+              </p>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setUpdatePrompt(null)} disabled={updateBusy}>
+              Depois
+            </Button>
+            <Button
+              onClick={() => {
+                setUpdatePrompt(null)
+                void installUpdate()
+              }}
+              disabled={updateBusy}
+            >
+              {updateBusy ? <Loader2 className="animate-spin" /> : <Download />}
+              Atualizar agora
             </Button>
           </DialogFooter>
         </DialogContent>

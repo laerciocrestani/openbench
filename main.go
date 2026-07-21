@@ -19,6 +19,7 @@ func init() {
 	application.RegisterEvent[desktop.ProjectStatus]("project:status")
 	application.RegisterEvent[desktop.Dashboard]("project:dashboard")
 	application.RegisterEvent[string]("update:available")
+	application.RegisterEvent[UpdateCheckResult]("update:prompt")
 	application.RegisterEvent[string]("terminal:data")
 	application.RegisterEvent[string]("terminal:exit")
 }

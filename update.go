@@ -19,7 +19,7 @@ var updaterPublicKey []byte
 
 const githubUpdaterRepo = "laerciocrestani/openbench"
 
-// UpdateCheckResult is returned to the Settings UI.
+// UpdateCheckResult is returned to the Settings UI and update:prompt dialog.
 type UpdateCheckResult struct {
 	CurrentVersion string `json:"currentVersion"`
 	LatestVersion  string `json:"latestVersion"`
@@ -61,7 +61,19 @@ func initUpdater(app *application.App) error {
 			return
 		}
 		log.Printf("update available: %s", rel.Version)
+		current := app.Updater.CurrentVersion()
+		if current == "" {
+			current = appSemver()
+		}
 		app.Event.Emit("update:available", rel.Version)
+		app.Event.Emit("update:prompt", UpdateCheckResult{
+			CurrentVersion: current,
+			LatestVersion:  rel.Version,
+			Available:      true,
+			Name:           rel.Name,
+			Notes:          rel.Notes,
+			Message:        fmt.Sprintf("Nova versão disponível: %s", rel.Version),
+		})
 	})
 	app.Event.On(updater.EventError, func(e *application.CustomEvent) {
 		info, ok := e.Data.(updater.ErrorInfo)
