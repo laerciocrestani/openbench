@@ -16,8 +16,7 @@ Guarde a privada no CI/secrets. Se regenerar, atualize a `.pub` e publique um re
 ## Build + package
 
 ```bash
-wails3 build
-wails3 package   # gera artefato por OS
+wails3 package APP_VERSION=0.2.1
 ```
 
 Artefatos esperados (ver docs Wails updater):
@@ -57,4 +56,12 @@ Publique no GitHub Release (tag **sem** ou **com** `v` — a versão em `updater
 
 ## Versão atual do binário
 
-Derivada de `internal/version` (contagem de commits → `v0.1.N`). Para releases, alinhe a tag ao semver desejado ou injete `-ldflags` com a versão de release no pipeline.
+Injetada no build via `-ldflags` (`internal/version.BuildVersion`).
+
+```bash
+wails3 package APP_VERSION=0.2.1
+```
+
+Sem `APP_VERSION`, o Taskfile deriva `0.1.(commits-1)` do git (útil em dev). O app empacotado **não** depende de `.git` em runtime — se a versão não for injetada, cai no fallback `0.1.0` (bug que fazia o updater sempre achar update).
+
+Para releases, alinhe `APP_VERSION`, a tag GitHub (`v0.2.1`) e o `-version` do `wails3 updater manifest`.

@@ -8,7 +8,7 @@ info:
   description: "Desktop app for AI commits, PRs and Docker workflows"
   copyright: "(c) 2026, openbench"
   comments: "openbench desktop"
-  version: "0.1.0"
+  version: "0.2.1"
 
 # Dev mode configuration
 dev_mode:

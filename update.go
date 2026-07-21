@@ -5,7 +5,6 @@ import (
 	_ "embed"
 	"fmt"
 	"log"
-	"strings"
 	"time"
 
 	"github.com/laerciocrestani/openbench/internal/version"
@@ -35,11 +34,7 @@ type UpdateCheckResult struct {
 }
 
 func appSemver() string {
-	info, err := version.Compute(".")
-	if err != nil {
-		return version.DefaultBase
-	}
-	return strings.TrimPrefix(info.Version, "v")
+	return version.Semver()
 }
 
 func initUpdater(app *application.App) error {

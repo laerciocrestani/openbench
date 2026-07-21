@@ -5,6 +5,9 @@ vars:
   BIN_DIR: "bin"
   PACKAGE_MANAGER: '{{.PACKAGE_MANAGER | default "pnpm"}}'
   VITE_PORT: '{{.WAILS_VITE_PORT | default 9245}}'
+  # Desktop release version baked into the binary via -ldflags.
+  # Override: `wails3 package APP_VERSION=0.2.1` or env APP_VERSION.
+  APP_VERSION: '{{.APP_VERSION | default ""}}'
   # Target OS for build/package/run. Defaults to the host OS, and is overridden
   # by `wails3 build GOOS=...` (or the GOOS env var) for cross-compilation. The
   # tasks below dispatch to the matching platform Taskfile via this variable.

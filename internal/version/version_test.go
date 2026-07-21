@@ -42,3 +42,25 @@ func TestParseSemver(t *testing.T) {
 		t.Fatalf("parseSemver failed: %d.%d.%d %v", major, minor, patch, err)
 	}
 }
+
+func TestSemverPrefersBuildVersion(t *testing.T) {
+	prev := BuildVersion
+	t.Cleanup(func() { BuildVersion = prev })
+
+	BuildVersion = ""
+	// Without BuildVersion, Semver falls back to git or DefaultBase — just ensure no panic.
+	_ = Semver()
+
+	BuildVersion = "0.2.1"
+	if got := Semver(); got != "0.2.1" {
+		t.Fatalf("Semver() = %q, want 0.2.1", got)
+	}
+	if got := DisplayCurrent(); got != "v0.2.1" {
+		t.Fatalf("DisplayCurrent() = %q, want v0.2.1", got)
+	}
+
+	BuildVersion = "v0.3.0"
+	if got := Semver(); got != "0.3.0" {
+		t.Fatalf("Semver() = %q, want 0.3.0", got)
+	}
+}

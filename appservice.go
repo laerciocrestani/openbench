@@ -96,11 +96,7 @@ func (s *AppService) Ping() string {
 
 // Version returns the openbench version string.
 func (s *AppService) Version() string {
-	info, err := version.Compute(".")
-	if err != nil {
-		return "v" + version.DefaultBase
-	}
-	return info.Display()
+	return version.DisplayCurrent()
 }
 
 // AppName returns the product name.

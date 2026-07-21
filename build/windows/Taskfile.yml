@@ -57,7 +57,18 @@ tasks:
       - cmd: rm -f *.syso
         platforms: [linux, darwin]
     vars:
-      BUILD_FLAGS: '{{if eq .DEV "true"}}{{if or .EXTRA_TAGS (eq .OBFUSCATED "true")}}-tags {{if eq .OBFUSCATED "true"}}wails_obfuscated{{if .EXTRA_TAGS}},{{end}}{{end}}{{.EXTRA_TAGS}} {{end}}-buildvcs=false -gcflags=all="-l"{{else}}-tags production{{if eq .OBFUSCATED "true"}},wails_obfuscated{{end}}{{if .EXTRA_TAGS}},{{.EXTRA_TAGS}}{{end}} -trimpath -buildvcs=false -ldflags="-w -s -H windowsgui"{{end}}'
+      EFFECTIVE_VERSION:
+        sh: |
+          if [ -n "{{.APP_VERSION}}" ]; then
+            echo "{{.APP_VERSION}}" | sed 's/^v//'
+          elif [ -n "${APP_VERSION:-}" ]; then
+            echo "${APP_VERSION}" | sed 's/^v//'
+          else
+            n=$(git rev-list --count HEAD 2>/dev/null || echo 1)
+            if [ "$n" -lt 1 ]; then n=1; fi
+            echo "0.1.$((n - 1))"
+          fi
+      BUILD_FLAGS: '{{if eq .DEV "true"}}{{if or .EXTRA_TAGS (eq .OBFUSCATED "true")}}-tags {{if eq .OBFUSCATED "true"}}wails_obfuscated{{if .EXTRA_TAGS}},{{end}}{{end}}{{.EXTRA_TAGS}} {{end}}-buildvcs=false -gcflags=all="-l" -ldflags="-X github.com/laerciocrestani/openbench/internal/version.BuildVersion={{.EFFECTIVE_VERSION}}"{{else}}-tags production{{if eq .OBFUSCATED "true"}},wails_obfuscated{{end}}{{if .EXTRA_TAGS}},{{.EXTRA_TAGS}}{{end}} -trimpath -buildvcs=false -ldflags="-w -s -H windowsgui -X github.com/laerciocrestani/openbench/internal/version.BuildVersion={{.EFFECTIVE_VERSION}}"{{end}}'
     env:
       GOOS: windows
       CGO_ENABLED: '{{.CGO_ENABLED | default "0"}}'

@@ -10,6 +10,13 @@ import (
 // DefaultBase é a versão do primeiro commit (v0.1.0).
 const DefaultBase = "0.1.0"
 
+// BuildVersion is injected at link time via -ldflags, e.g.
+//
+//	-X github.com/laerciocrestani/openbench/internal/version.BuildVersion=0.2.1
+//
+// Prefer this over git Compute for packaged desktop builds (no .git nearby).
+var BuildVersion string
+
 type Info struct {
 	Version string
 	Commit  string
@@ -26,10 +33,35 @@ func (i Info) Display() string {
 
 func (i Info) LDFlags() string {
 	flags := fmt.Sprintf("-X github.com/laerciocrestani/openbench/internal/ui.buildVersion=%s", i.Version)
+	flags += fmt.Sprintf(" -X github.com/laerciocrestani/openbench/internal/version.BuildVersion=%s", strings.TrimPrefix(i.Version, "v"))
 	if i.Commit != "" {
 		flags += fmt.Sprintf(" -X github.com/laerciocrestani/openbench/internal/ui.buildCommit=%s", i.Commit)
 	}
 	return flags
+}
+
+// Semver returns the running app version without a "v" prefix (for the updater).
+func Semver() string {
+	if v := strings.TrimSpace(BuildVersion); v != "" {
+		return strings.TrimPrefix(v, "v")
+	}
+	info, err := Compute(".")
+	if err != nil {
+		return DefaultBase
+	}
+	return strings.TrimPrefix(info.Version, "v")
+}
+
+// DisplayCurrent returns a UI-facing version string (with optional commit).
+func DisplayCurrent() string {
+	if v := strings.TrimSpace(BuildVersion); v != "" {
+		return "v" + strings.TrimPrefix(v, "v")
+	}
+	info, err := Compute(".")
+	if err != nil {
+		return "v" + DefaultBase
+	}
+	return info.Display()
 }
 
 // Compute calcula a versão a partir do número de commits (sem tags git).
