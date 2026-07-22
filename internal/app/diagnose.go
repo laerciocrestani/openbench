@@ -367,9 +367,13 @@ func buildHealthRecommendations(snap *gitpkg.HealthSnapshot, issues []healthIssu
 			if snap.IsDirty {
 				add("Salve o work: Commit na branch atual OU git stash push -m \"wip\"")
 			}
-			add("Pull (atualiza a base local sem perder o contexto)")
-			add(fmt.Sprintf("Checkout %s atualizado e crie uma NOVA feature branch", snap.Base))
-			add("Aplique o work na branch nova (stash pop / cherry-pick) e abra outra PR")
+			add(fmt.Sprintf("Atualize a base local %s (fetch)", snap.Base))
+			add(fmt.Sprintf("Crie uma NOVA feature branch a partir de %s atualizado", snap.Base))
+			if snap.IsDirty {
+				add("Aplique o work na branch nova (stash pop / cherry-pick) e abra outra PR")
+			} else {
+				add("Continue o desenvolvimento na branch nova (abra PR quando houver commits)")
+			}
 			add(fmt.Sprintf("Evite push/PR de novo em %s — a PR já foi mergeada", snap.Branch))
 		case "dirty_tree":
 			if !mergedBranch {
