@@ -45,6 +45,7 @@ export type TimelineConfirmAction =
   | { type: "revert"; hash: string; isMerge: boolean; title: string }
   | { type: "reset"; hash: string; mode: "soft" | "mixed" | "hard"; title: string }
   | { type: "delete-branch"; name: string; title: string }
+  | { type: "merge-pr"; number: number; method: "squash" | "merge" | "rebase"; title: string }
 
 type CursorMenu = {
   event: TimelineEventView
@@ -215,6 +216,11 @@ export function TimelinePanel({
           title: `Apagar branch ${pending.name}?`,
           description: `Executa git branch -D ${pending.name}. Não remove a branch remota.`,
         }
+      case "merge-pr":
+        return {
+          title: `Mergear PR #${pending.number}?`,
+          description: `Executa gh pr merge ${pending.number} --${pending.method}. A PR precisa estar mergeável no GitHub.`,
+        }
     }
   }, [pending])
 
@@ -228,11 +234,13 @@ export function TimelinePanel({
 
   const menuEvent = menu?.event
   const isPR = Boolean(menuEvent?.kind.startsWith("pr_"))
+  const isPROpen = menuEvent?.kind === "pr_opened"
   const isMerge = menuEvent?.kind === "merge"
   const isCommitLike = menuEvent?.kind === "commit" || isMerge
   const hash = menuEvent?.hash
   const shortHash = menuEvent?.shortHash
   const url = menuEvent?.url
+  const prNumber = menuEvent?.prNumber ?? 0
   const branches = localBranches(menuEvent?.refs)
 
   return (
@@ -390,6 +398,52 @@ export function TimelinePanel({
                 >
                   <Copy className="size-3.5" />
                   Copiar URL do PR
+                </DropdownMenuItem>
+              </>
+            ) : null}
+
+            {isPROpen && prNumber > 0 ? (
+              <>
+                <DropdownMenuSeparator />
+                <DropdownMenuLabel>Merge PR #{prNumber}</DropdownMenuLabel>
+                <DropdownMenuItem
+                  onClick={() =>
+                    setPending({
+                      type: "merge-pr",
+                      number: prNumber,
+                      method: "squash",
+                      title: menuEvent?.title ?? "",
+                    })
+                  }
+                >
+                  <GitMerge className="size-3.5" />
+                  Merge squash
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={() =>
+                    setPending({
+                      type: "merge-pr",
+                      number: prNumber,
+                      method: "merge",
+                      title: menuEvent?.title ?? "",
+                    })
+                  }
+                >
+                  <GitMerge className="size-3.5" />
+                  Merge commit
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={() =>
+                    setPending({
+                      type: "merge-pr",
+                      number: prNumber,
+                      method: "rebase",
+                      title: menuEvent?.title ?? "",
+                    })
+                  }
+                >
+                  <GitMerge className="size-3.5" />
+                  Merge rebase
                 </DropdownMenuItem>
               </>
             ) : null}

@@ -402,6 +402,20 @@ func (s *AppService) MergePR(method string) (*desktop.PROutcome, error) {
 	return out, nil
 }
 
+// MergeTimelinePR merges a PR by number from the activity timeline.
+func (s *AppService) MergeTimelinePR(number int, method string) (*desktop.HistoryActionResult, error) {
+	res, err := desktop.MergeTimelinePR(s.currentPath(), number, method)
+	if err != nil {
+		return nil, err
+	}
+	if res != nil && res.Dashboard != nil {
+		s.setProjectPath(res.Dashboard.Path)
+	}
+	s.syncHubFromPrefs()
+	s.refreshTray()
+	return res, nil
+}
+
 // ListBranches returns local branches for the open project.
 func (s *AppService) ListBranches() ([]desktop.BranchView, error) {
 	return desktop.ListBranches(s.currentPath())

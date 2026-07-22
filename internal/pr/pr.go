@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -254,21 +255,43 @@ func (c *Client) Ready() error {
 	return err
 }
 
-// Merge merges the current branch PR with the given method: squash|merge|rebase.
-func (c *Client) Merge(method string) (string, error) {
+func mergeFlag(method string) (string, error) {
 	method = strings.ToLower(strings.TrimSpace(method))
-	flag := "--squash"
 	switch method {
 	case "", "squash":
-		flag = "--squash"
+		return "--squash", nil
 	case "merge":
-		flag = "--merge"
+		return "--merge", nil
 	case "rebase":
-		flag = "--rebase"
+		return "--rebase", nil
 	default:
 		return "", fmt.Errorf("método de merge inválido: %s (use squash, merge ou rebase)", method)
 	}
+}
+
+// Merge merges the current branch PR with the given method: squash|merge|rebase.
+func (c *Client) Merge(method string) (string, error) {
+	flag, err := mergeFlag(method)
+	if err != nil {
+		return "", err
+	}
 	out, err := c.run("pr", "merge", flag)
+	if err != nil {
+		return "", err
+	}
+	return out, nil
+}
+
+// MergeNumber merges a PR by number with the given method: squash|merge|rebase.
+func (c *Client) MergeNumber(number int, method string) (string, error) {
+	if number <= 0 {
+		return "", fmt.Errorf("número de PR inválido")
+	}
+	flag, err := mergeFlag(method)
+	if err != nil {
+		return "", err
+	}
+	out, err := c.run("pr", "merge", strconv.Itoa(number), flag)
 	if err != nil {
 		return "", err
 	}
