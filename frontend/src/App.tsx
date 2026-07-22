@@ -2091,6 +2091,17 @@ function App() {
         } else if (action.type === "delete-branch") {
           const res = await AppService.DeleteTimelineBranch(action.name, true)
           if (res?.dashboard) setDash(res.dashboard)
+        } else if (action.type === "merge-pr") {
+          const res = await AppService.MergeTimelinePR(action.number, action.method)
+          if (res?.dashboard) {
+            setDash(res.dashboard)
+          }
+          try {
+            const pr = await AppService.RefreshOpenPR()
+            setDash((prev) => (prev ? { ...prev, openPR: pr ?? undefined } : prev))
+          } catch {
+            /* open PR refresh is best-effort */
+          }
         }
         await refreshTimelineNow()
         await refreshStatuses()

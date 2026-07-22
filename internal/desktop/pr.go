@@ -136,3 +136,26 @@ func MergePR(projectPath, method string) (*PROutcome, error) {
 		Path:  projectPath,
 	}, nil
 }
+
+// MergeTimelinePR merges a PR by number from the activity timeline.
+// method: squash|merge|rebase.
+func MergeTimelinePR(projectPath string, number int, method string) (*HistoryActionResult, error) {
+	if strings.TrimSpace(projectPath) == "" {
+		return nil, fmt.Errorf("no project open")
+	}
+	if number <= 0 {
+		return nil, fmt.Errorf("número de PR inválido")
+	}
+	client, err := prpkg.Open(projectPath)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := client.MergeNumber(number, method); err != nil {
+		return nil, err
+	}
+	dash, _ := LoadDashboard(projectPath)
+	return &HistoryActionResult{
+		Message:   fmt.Sprintf("PR #%d mergeado (%s)", number, strings.TrimSpace(method)),
+		Dashboard: dash,
+	}, nil
+}
