@@ -38,6 +38,10 @@ Regras:
 - marque reset --hard ou branch -D em warnings, nunca como passo casual
 - não invente arquivos ou commits que não aparecem nos fatos
 - risk=low quando working tree limpa e sincronizado
+- se a PR estiver MERGED: NÃO sugira push/PR de novo na mesma branch; oriente salvar o work (commit/stash), atualizar a base (Pull/Sync) e criar uma NOVA feature branch a partir da base
+- se o ÚNICO problema for working tree dirty numa feature branch (PR não MERGED): NÃO sugira stash push/pop; oriente Commit → push → abrir/atualizar PR
+- stash só quando for necessário limpar a tree para outra operação (pull/rebase/troca de branch), nunca como passo principal isolado
+- se houver "Open PR" (state=OPEN), aí sim commit/push/atualização da PR atual fazem sentido
 
 Fatos do repositório:
 `)

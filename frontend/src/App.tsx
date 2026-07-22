@@ -9,6 +9,9 @@ import type {
   CommitContextIndex,
   CommitPreview,
   Dashboard,
+  DoctorFixPlanView,
+  DoctorFixStepView,
+  DoctorView,
   FileDiffView,
   OnboardingStatus,
   Prefs,
@@ -71,6 +74,8 @@ import {
 import { useTheme } from "@/components/theme-provider"
 import { DockerEnvironmentSheet } from "@/components/docker-environment-sheet"
 import { DockerGlobalPanel } from "@/components/docker-global-panel"
+import { DoctorDialog } from "@/components/DoctorDialog"
+import { DoctorFixDialog } from "@/components/DoctorFixDialog"
 import { FloatingChat } from "@/components/floating-chat"
 import {
   TerminalPanel,
@@ -90,6 +95,8 @@ import { ActivitySidebar, useActivitySidebar } from "@/components/activity-sideb
 import {
   ArrowDown,
   ArrowDownUp,
+  ArrowUp,
+  CheckCircle2,
   ChartColumn,
   ChevronDown,
   ChevronLeft,
@@ -103,6 +110,7 @@ import {
   GitCommit,
   GitMerge,
   GitPullRequest,
+  Layers,
   Loader2,
   MessageSquare,
   PanelLeft,
@@ -113,6 +121,7 @@ import {
   RefreshCw,
   Settings,
   Square,
+  Stethoscope,
   Terminal,
   X,
 } from "lucide-react"
@@ -641,11 +650,80 @@ function pullNeedsAttention(dash: Dashboard): boolean {
   return dash.behind > 0 || dash.baseBehind > 0
 }
 
+type NextToolbarStep = "commit" | "push" | "pull" | "pr" | "merge" | null
+
+function prMergeBlocked(dash: Dashboard | null): string | undefined {
+  const pr = dash?.openPR
+  if (!pr?.url) return "Nenhuma PR aberta nesta branch"
+  if (pr.isDraft) return "Marque Ready for review antes de mergear"
+  if (String(pr.mergeable || "").toUpperCase() === "CONFLICTING") return "PR com conflitos"
+  if ((pr.checksFail ?? 0) > 0) return "Checks falhando"
+  return undefined
+}
+
+/**
+ * LoadDashboard skips open PR (slow gh). Keep the last known PR/docker while the
+ * same branch is open so toolbar next-step doesn't flicker to "Pull Request".
+ */
+function mergeFastDashboard(prev: Dashboard | null, next: Dashboard): Dashboard {
+  if (!prev || prev.path !== next.path) return next
+  const sameBranch = prev.branch === next.branch && !next.detached
+  const dockerStub =
+    next.hasDocker &&
+    (!next.docker || next.docker.summary === "carregando…" || next.docker.total === 0)
+  return {
+    ...next,
+    openPR: next.openPR ?? (sameBranch ? prev.openPR : undefined),
+    docker: dockerStub && prev.docker?.total ? prev.docker : next.docker,
+  }
+}
+
+/** Single recommended toolbar action based on repo state. */
+function nextToolbarStep(dash: Dashboard | null, openPRReady = true): NextToolbarStep {
+  if (!dash || dash.detached) return null
+  if (dash.dirty) return "commit"
+  const pushCount = dash.hasUpstream ? dash.ahead : dash.commitsAheadOfBase
+  if (pushCount > 0) return "push"
+  if (dash.behind > 0) return "pull"
+  if (
+    !isOnBase(dash) &&
+    dash.commitsAheadOfBase > 0 &&
+    dash.hasBranchDiff &&
+    dash.hasUpstream &&
+    dash.ahead === 0 &&
+    !dash.openPR?.url
+  ) {
+    // Don't pulse "abrir PR" until gh confirms there is no open PR.
+    if (!openPRReady) return null
+    return "pr"
+  }
+  if (dash.openPR?.url && !prMergeBlocked(dash)) {
+    return "merge"
+  }
+  return null
+}
+
+function nextStepTitle(step: NextToolbarStep): string {
+  switch (step) {
+    case "commit":
+      return "Próximo passo: Commit"
+    case "push":
+      return "Próximo passo: Push"
+    case "pull":
+      return "Próximo passo: Pull"
+    case "pr":
+      return "Próximo passo: abrir Pull Request"
+    case "merge":
+      return "Próximo passo: Merge PR"
+    default:
+      return ""
+  }
+}
+
 function DashboardView({
   dash,
   busy,
   prManageBusy,
-  mergeMethod,
   dockerVisible,
   dockerLoading,
   commitActivity,
@@ -656,8 +734,6 @@ function DashboardView({
   onOpenBranches,
   onRecommendCommit,
   onMarkPRReady,
-  onMergePR,
-  onMergeMethodChange,
   onOpenDockerEnv,
   onDockerUp,
   onDockerUpBuild,
@@ -670,7 +746,6 @@ function DashboardView({
   dash: Dashboard
   busy: boolean
   prManageBusy: boolean
-  mergeMethod: string
   dockerVisible: boolean
   dockerLoading: boolean
   commitActivity: CommitActivityView | null
@@ -681,8 +756,6 @@ function DashboardView({
   onOpenBranches: () => void
   onRecommendCommit: () => void
   onMarkPRReady: () => void
-  onMergePR: () => void
-  onMergeMethodChange: (method: string) => void
   onOpenDockerEnv: () => void
   onDockerUp: () => void
   onDockerUpBuild: () => void
@@ -697,11 +770,6 @@ function DashboardView({
   const openPREnabled = canOpenPRInWeb(dash)
   const openPRTitle = openPRDisabledReason(dash)
   const pr = dash.openPR
-  const mergeBlocked =
-    !pr ||
-    pr.isDraft ||
-    String(pr.mergeable || "").toUpperCase() === "CONFLICTING" ||
-    (pr.checksFail ?? 0) > 0
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-4">
@@ -902,13 +970,10 @@ function DashboardView({
                       checks: {pr.checksSummary}
                     </Badge>
                   )}
-                  {pr.mergeable && (
-                    <Badge variant="outline">{pr.mergeable.toLowerCase()}</Badge>
-                  )}
                 </div>
                 <p className="line-clamp-2 text-xs text-muted-foreground">{pr.title}</p>
-                <div className="flex flex-wrap items-center gap-2">
-                  {pr.isDraft && (
+                {pr.isDraft && (
+                  <div className="flex flex-wrap items-center gap-2">
                     <Button
                       size="sm"
                       variant="secondary"
@@ -919,45 +984,8 @@ function DashboardView({
                       {prManageBusy ? <Loader2 className="size-3 animate-spin" /> : null}
                       Ready for review
                     </Button>
-                  )}
-                  <Select
-                    value={mergeMethod}
-                    onValueChange={(v) => {
-                      if (v) onMergeMethodChange(v)
-                    }}
-                  >
-                    <SelectTrigger className="h-7 w-[8.5rem] text-xs" disabled={busy || prManageBusy}>
-                      <SelectValue placeholder="squash" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="squash">squash</SelectItem>
-                      <SelectItem value="merge">merge</SelectItem>
-                      <SelectItem value="rebase">rebase</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <Button
-                    size="sm"
-                    className="h-7 gap-1 text-xs"
-                    disabled={busy || prManageBusy || mergeBlocked}
-                    title={
-                      pr.isDraft
-                        ? "Marque Ready for review antes de mergear"
-                        : String(pr.mergeable || "").toUpperCase() === "CONFLICTING"
-                          ? "PR com conflitos"
-                          : (pr.checksFail ?? 0) > 0
-                            ? "Checks falhando"
-                            : "Mergear PR no GitHub"
-                    }
-                    onClick={onMergePR}
-                  >
-                    {prManageBusy ? (
-                      <Loader2 className="size-3 animate-spin" />
-                    ) : (
-                      <GitMerge className="size-3" />
-                    )}
-                    Merge PR
-                  </Button>
-                </div>
+                  </div>
+                )}
               </div>
             )}
           </CardContent>
@@ -1172,6 +1200,16 @@ function App() {
 
   const [prefs, setPrefs] = useState<Prefs | null>(null)
   const [dash, setDash] = useState<Dashboard | null>(null)
+  const [openPRReady, setOpenPRReady] = useState(false)
+
+  const applyDashboard = useCallback((next: Dashboard | null) => {
+    if (!next) {
+      setDash(null)
+      setOpenPRReady(false)
+      return
+    }
+    setDash((prev) => mergeFastDashboard(prev, next))
+  }, [])
   const [statuses, setStatuses] = useState<ProjectStatus[]>([])
 
   const [busy, setBusy] = useState(false)
@@ -1220,7 +1258,8 @@ function App() {
 
   // PR manage (ready / merge)
   const [prManageBusy, setPrManageBusy] = useState(false)
-  const [mergeMethod, setMergeMethod] = useState("squash")
+  const [mergeDialogOpen, setMergeDialogOpen] = useState(false)
+  const [mergingMethod, setMergingMethod] = useState<string | null>(null)
 
   // Commit calendar
   const [commitActivity, setCommitActivity] = useState<CommitActivityView | null>(null)
@@ -1281,6 +1320,17 @@ function App() {
   const [chatOpen, setChatOpen] = useState(false)
   const { open: activityOpen, toggle: toggleActivity } = useActivitySidebar(true)
 
+  // Doctor (repository health)
+  const [doctorOpen, setDoctorOpen] = useState(false)
+  const [doctorReport, setDoctorReport] = useState<DoctorView | null>(null)
+  const [doctorBusy, setDoctorBusy] = useState(false)
+  const [doctorExplainBusy, setDoctorExplainBusy] = useState(false)
+  const [doctorFixOpen, setDoctorFixOpen] = useState(false)
+  const [doctorFixPlan, setDoctorFixPlan] = useState<DoctorFixPlanView | null>(null)
+  const [doctorFixPlanBusy, setDoctorFixPlanBusy] = useState(false)
+  const [doctorFixRunning, setDoctorFixRunning] = useState(false)
+  const [doctorFixLiveSteps, setDoctorFixLiveSteps] = useState<DoctorFixStepView[]>([])
+
   /* --------------------------- data loaders --------------------------- */
 
   const refreshStatuses = async () => {
@@ -1309,7 +1359,8 @@ function App() {
     try {
       const d = await AppService.OpenProjectDialog()
       if (d) {
-        setDash(d)
+        setOpenPRReady(false)
+        applyDashboard(d)
         setTermSession({ kind: "host" })
         await refreshStatuses()
         await reloadPrefs()
@@ -1327,7 +1378,8 @@ function App() {
     try {
       const d = await AppService.OpenProject(path)
       if (d) {
-        setDash(d)
+        setOpenPRReady(false)
+        applyDashboard(d)
         setTermSession({ kind: "host" })
         await refreshStatuses()
         await reloadPrefs()
@@ -1345,7 +1397,8 @@ function App() {
     try {
       const d = await AppService.SwitchProject(path)
       if (d) {
-        setDash(d)
+        setOpenPRReady(false)
+        applyDashboard(d)
         setTermSession({ kind: "host" })
       }
       await refreshStatuses()
@@ -1360,7 +1413,7 @@ function App() {
   const unpinProject = async (path: string) => {
     try {
       const d = await AppService.UnpinProject(path)
-      setDash(d ?? null)
+      applyDashboard(d ?? null)
       await refreshStatuses()
       await reloadPrefs()
     } catch (e) {
@@ -1384,7 +1437,7 @@ function App() {
     setError(null)
     try {
       const d = await AppService.RefreshDashboard()
-      if (d) setDash(d)
+      if (d) applyDashboard(d)
       await AppService.RefreshProjectStatuses()
       await refreshStatuses()
     } catch (e) {
@@ -1397,8 +1450,10 @@ function App() {
   const closeProject = async () => {
     try {
       await AppService.CloseProject()
-      setDash(null)
+      applyDashboard(null)
       setChatOpen(false)
+      setDoctorOpen(false)
+      setDoctorReport(null)
       setTermSession({ kind: "host" })
       await refreshStatuses()
       await reloadPrefs()
@@ -1483,7 +1538,7 @@ function App() {
     setError(null)
     try {
       const d = await AppService.CreateBranch(name, from)
-      if (d) setDash(d)
+      if (d) applyDashboard(d)
       cancelCreateBranch()
       await loadBranches()
       await refreshStatuses()
@@ -1511,7 +1566,7 @@ function App() {
     setCheckoutConfirm(null)
     try {
       const d = await AppService.CheckoutBranch(name)
-      if (d) setDash(d)
+      if (d) applyDashboard(d)
       await loadBranches()
       await refreshStatuses()
     } catch (e) {
@@ -1536,6 +1591,150 @@ function App() {
     setSyncOpen(true)
   }
 
+  const runDoctor = async (explain = false, opts?: { quiet?: boolean }) => {
+    if (!dash) return
+    const quiet = !!opts?.quiet
+    if (explain) setDoctorExplainBusy(true)
+    else if (!quiet) setDoctorBusy(true)
+    if (!quiet) setError(null)
+    try {
+      const view = await AppService.RunDoctor(explain)
+      setDoctorReport(view ?? null)
+    } catch (e) {
+      if (!quiet) setError(errText(e))
+    } finally {
+      if (!quiet) setDoctorBusy(false)
+      setDoctorExplainBusy(false)
+    }
+  }
+
+  const openDoctor = async () => {
+    setDoctorOpen(true)
+    await runDoctor(false)
+  }
+
+  // Keep Doctor badge fresh when the workspace changes (not only when the dialog opens).
+  useEffect(() => {
+    if (!dash?.path) {
+      setDoctorReport(null)
+      return
+    }
+    let cancelled = false
+    const timer = window.setTimeout(() => {
+      void (async () => {
+        try {
+          const view = await AppService.RunDoctor(false)
+          if (!cancelled) setDoctorReport(view ?? null)
+        } catch {
+          /* quiet background refresh */
+        }
+      })()
+    }, 350)
+    return () => {
+      cancelled = true
+      window.clearTimeout(timer)
+    }
+  }, [
+    dash?.path,
+    dash?.branch,
+    dash?.headHash,
+    dash?.dirty,
+    dash?.staged,
+    dash?.modified,
+    dash?.untracked,
+    dash?.ahead,
+    dash?.behind,
+    dash?.baseBehind,
+    dash?.openPR?.number,
+    dash?.openPR?.state,
+  ])
+
+  const loadDoctorFixPlan = async (newBranch = "", baseAction = "") => {
+    setDoctorFixPlanBusy(true)
+    setError(null)
+    try {
+      const plan = await AppService.PlanDoctorFix(newBranch, baseAction)
+      setDoctorFixPlan(plan ?? null)
+    } catch (e) {
+      setError(errText(e))
+    } finally {
+      setDoctorFixPlanBusy(false)
+    }
+  }
+
+  const openDoctorFix = async () => {
+    setDoctorOpen(false)
+    setDoctorFixOpen(true)
+    setDoctorFixPlan(null)
+    setDoctorFixLiveSteps([])
+    try {
+      await loadDoctorFixPlan()
+    } catch {
+      setDoctorFixOpen(false)
+    }
+  }
+
+  const runDoctorFix = async (opts: {
+    newBranch: string
+    baseAction: string
+    confirmDestructive: boolean
+  }) => {
+    setError(null)
+    setDoctorFixRunning(true)
+    try {
+      const plan = await AppService.BeginDoctorFix(
+        opts.newBranch,
+        opts.baseAction,
+        opts.confirmDestructive,
+      )
+      const steps = plan?.steps ?? doctorFixPlan?.steps ?? []
+      if (plan) setDoctorFixPlan(plan)
+      setDoctorFixLiveSteps(
+        steps.map((s, i) => ({
+          ...s,
+          status: i === 0 ? "running" : "pending",
+        })),
+      )
+
+      let idx = 0
+      while (idx < steps.length) {
+        setDoctorFixLiveSteps((prev) =>
+          prev.map((s, i) => ({
+            ...s,
+            status: i === idx ? "running" : i < idx ? s.status || "ok" : "pending",
+          })),
+        )
+        const adv = await AppService.AdvanceDoctorFix()
+        if (!adv?.step) break
+        const step = adv.step
+        setDoctorFixLiveSteps((prev) => {
+          const next = prev.slice()
+          const at = next.findIndex((s) => s.id === step.id)
+          if (at >= 0) next[at] = { ...next[at], ...step }
+          else next.push(step)
+          return next
+        })
+        if (!adv.ok || step.status === "error") {
+          if (adv.message) setError(adv.message)
+          break
+        }
+        idx++
+        if (adv.done) {
+          if (adv.dashboard) {
+            applyDashboard(adv.dashboard)
+            await refreshStatuses()
+          }
+          await runDoctor(false, { quiet: true })
+          break
+        }
+      }
+    } catch (e) {
+      setError(errText(e))
+    } finally {
+      setDoctorFixRunning(false)
+    }
+  }
+
   const runSync = async () => {
     if (!dash) return
     if (dash.dirty) {
@@ -1549,7 +1748,7 @@ function App() {
       const res = await AppService.RunSync(syncMode, dash.baseBranch || "main")
       if (res) {
         setSyncResult(res)
-        if (res.dashboard) setDash(res.dashboard)
+        if (res.dashboard) applyDashboard(res.dashboard)
         await refreshStatuses()
       }
     } catch (e) {
@@ -1569,7 +1768,7 @@ function App() {
     setError(null)
     try {
       const res = await AppService.RunPull(dash.baseBranch || "main")
-      if (res?.dashboard) setDash(res.dashboard)
+      if (res?.dashboard) applyDashboard(res.dashboard)
       await refreshStatuses()
     } catch (e) {
       setError(errText(e))
@@ -1591,11 +1790,13 @@ function App() {
     }
   }
 
-  const mergePR = async () => {
+  const mergePR = async (method: string) => {
     setPrManageBusy(true)
+    setMergingMethod(method)
     setError(null)
     try {
-      await AppService.MergePR(mergeMethod)
+      await AppService.MergePR(method)
+      setMergeDialogOpen(false)
       const pr = await AppService.RefreshOpenPR()
       setDash((prev) => (prev ? { ...prev, openPR: pr ?? undefined } : prev))
       await refresh()
@@ -1604,6 +1805,7 @@ function App() {
       setError(errText(e))
     } finally {
       setPrManageBusy(false)
+      setMergingMethod(null)
     }
   }
 
@@ -1721,7 +1923,14 @@ function App() {
     }
   }
 
-  const canPushOnly = Boolean(dash) && !dash!.detached && dash!.ahead > 0
+  // Push when ↑ ahead of upstream, or first push of a feature with commits vs base.
+  const pushAheadCount = dash
+    ? dash.hasUpstream
+      ? dash.ahead
+      : dash.commitsAheadOfBase
+    : 0
+  const canPushOnly = Boolean(dash) && !dash!.detached && pushAheadCount > 0
+  const suggestedStep = nextToolbarStep(dash, openPRReady)
 
   const confirmNewBranch = async () => {
     const name = newBranchName.trim()
@@ -1730,7 +1939,7 @@ function App() {
     setError(null)
     try {
       const d = await AppService.CreateBranch(name, newBranchFrom || "main")
-      if (d) setDash(d)
+      if (d) applyDashboard(d)
       setNewBranchOpen(false)
       await openCommitPreview()
     } catch (e) {
@@ -1829,7 +2038,7 @@ function App() {
     setError(null)
     try {
       const res = (await fn()) as { dashboard?: Dashboard | null } | null
-      if (res?.dashboard) setDash(res.dashboard)
+      if (res?.dashboard) applyDashboard(res.dashboard)
       else await refresh()
     } catch (e) {
       setError(errText(e))
@@ -1981,6 +2190,7 @@ function App() {
   // After the fast dashboard lands, load Docker + open PR + commit calendar off the critical path.
   useEffect(() => {
     if (!dash?.path) {
+      setOpenPRReady(false)
       setDockerLoading(false)
       setCommitActivity(null)
       setTimeline(null)
@@ -1990,6 +2200,7 @@ function App() {
     const path = dash.path
     const token = `${path}|${dash.headHash}|${dash.branch}`
     let cancelled = false
+    setOpenPRReady(false)
     setDockerLoading(!!dash.hasDocker)
     setActivityLoading(true)
     setTimelineLimit(10)
@@ -2009,14 +2220,21 @@ function App() {
           )
         }
         tasks.push(
-          AppService.RefreshOpenPR().then((pr) => {
-            if (cancelled) return
-            setDash((prev) => {
-              if (!prev || prev.path !== path) return prev
-              if (`${prev.path}|${prev.headHash}|${prev.branch}` !== token) return prev
-              return { ...prev, openPR: pr ?? undefined }
+          AppService.RefreshOpenPR()
+            .then((pr) => {
+              if (cancelled) return
+              setDash((prev) => {
+                if (!prev || prev.path !== path) return prev
+                if (`${prev.path}|${prev.headHash}|${prev.branch}` !== token) return prev
+                return { ...prev, openPR: pr ?? undefined }
+              })
             })
-          }),
+            .catch(() => {
+              /* keep preserved openPR; still mark ready so UI can proceed */
+            })
+            .finally(() => {
+              if (!cancelled) setOpenPRReady(true)
+            }),
         )
         tasks.push(
           AppService.LoadCommitActivity(activityAuthorOnly).then((act) => {
@@ -2084,17 +2302,17 @@ function App() {
       try {
         if (action.type === "revert") {
           const res = await AppService.RevertTimelineCommit(action.hash, action.isMerge)
-          if (res?.dashboard) setDash(res.dashboard)
+          if (res?.dashboard) applyDashboard(res.dashboard)
         } else if (action.type === "reset") {
           const res = await AppService.ResetTimelineCommit(action.hash, action.mode)
-          if (res?.dashboard) setDash(res.dashboard)
+          if (res?.dashboard) applyDashboard(res.dashboard)
         } else if (action.type === "delete-branch") {
           const res = await AppService.DeleteTimelineBranch(action.name, true)
-          if (res?.dashboard) setDash(res.dashboard)
+          if (res?.dashboard) applyDashboard(res.dashboard)
         } else if (action.type === "merge-pr") {
           const res = await AppService.MergeTimelinePR(action.number, action.method)
           if (res?.dashboard) {
-            setDash(res.dashboard)
+            applyDashboard(res.dashboard)
           }
           try {
             const pr = await AppService.RefreshOpenPR()
@@ -2120,7 +2338,7 @@ function App() {
       setError(null)
       try {
         const d = await AppService.CheckoutBranch(name)
-        if (d) setDash(d)
+        if (d) applyDashboard(d)
         await refreshTimelineNow()
         await refreshStatuses()
       } catch (e) {
@@ -2210,7 +2428,7 @@ function App() {
     const offDashboard = Events.On("project:dashboard", (ev) => {
       const d = wailsEventData<Dashboard>(ev)
       if (d && typeof d === "object" && "path" in d) {
-        setDash(d)
+        applyDashboard(d)
         void actionsRef.current.refreshStatuses()
       }
     })
@@ -2229,7 +2447,7 @@ function App() {
       offDashboard()
       offUpdatePrompt()
     }
-  }, [])
+  }, [applyDashboard])
 
   /* ----------------------------- render ----------------------------- */
 
@@ -2380,9 +2598,17 @@ function App() {
               <div className="flex items-stretch">
                 <Button
                   size="sm"
-                  className="rounded-r-none"
+                  className={cn(
+                    "rounded-r-none",
+                    suggestedStep === "commit" && "next-step-pulse",
+                  )}
                   onClick={() => void startCommit()}
                   disabled={busy}
+                  title={
+                    suggestedStep === "commit"
+                      ? nextStepTitle("commit")
+                      : undefined
+                  }
                 >
                   <GitCommit />
                   Commit
@@ -2421,7 +2647,7 @@ function App() {
                         {canPushOnly && (
                           <DropdownMenuItem onClick={() => void runPushOnly()}>
                             Push
-                            {dash.ahead > 0 ? ` (↑${dash.ahead})` : ""}
+                            {pushAheadCount > 0 ? ` (↑${pushAheadCount})` : ""}
                           </DropdownMenuItem>
                         )}
                       </>
@@ -2439,7 +2665,8 @@ function App() {
                           onClick={() => void runPushOnly()}
                         >
                           Push
-                          {dash.ahead > 0 ? ` (↑${dash.ahead})` : ""}
+                          {pushAheadCount > 0 ? ` (↑${pushAheadCount})` : ""}
+                          {!dash.hasUpstream && pushAheadCount > 0 ? " · primeiro push" : ""}
                         </DropdownMenuItem>
                         <DropdownMenuItem onClick={() => void startCommitAction("pr")}>
                           Commit & Create PR
@@ -2449,17 +2676,42 @@ function App() {
                   </DropdownMenuContent>
                 </DropdownMenu>
               </div>
+              {canPushOnly && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => void runPushOnly()}
+                  disabled={busy}
+                  className={cn(suggestedStep === "push" && "next-step-pulse")}
+                  title={
+                    suggestedStep === "push"
+                      ? nextStepTitle("push")
+                      : dash.hasUpstream
+                        ? `Push ↑${pushAheadCount} para o upstream`
+                        : `Primeiro push de ${dash.branch} (↑${pushAheadCount} vs ${dash.baseBranch || "main"})`
+                  }
+                >
+                  <ArrowUp />
+                  Push
+                  <Badge variant="secondary" className="ml-1 h-5 px-1.5 text-[10px]">
+                    ↑{pushAheadCount}
+                  </Badge>
+                </Button>
+              )}
               <Button
                 size="sm"
                 variant="outline"
                 onClick={() => void runPull()}
                 disabled={busy || pullBusy || syncBusy || dash.dirty}
+                className={cn(suggestedStep === "pull" && "next-step-pulse")}
                 title={
-                  dash.dirty
-                    ? "Working tree dirty — commit ou stash antes de puxar"
-                    : pullNeedsAttention(dash)
-                      ? `Pull: branch ↓${dash.behind || 0} · ${dash.baseBranch || "main"} ↓${dash.baseBehind || 0}`
-                      : `Fetch + atualizar branch / ${dash.baseBranch || "main"}`
+                  suggestedStep === "pull"
+                    ? nextStepTitle("pull")
+                    : dash.dirty
+                      ? "Working tree dirty — commit ou stash antes de puxar"
+                      : pullNeedsAttention(dash)
+                        ? `Pull: branch ↓${dash.behind || 0} · ${dash.baseBranch || "main"} ↓${dash.baseBehind || 0}`
+                        : `Fetch + atualizar branch / ${dash.baseBranch || "main"}`
                 }
               >
                 {pullBusy ? <Loader2 className="animate-spin" /> : <ArrowDown />}
@@ -2470,9 +2722,97 @@ function App() {
                   </Badge>
                 )}
               </Button>
-              <Button size="sm" variant="secondary" onClick={() => void startPR()} disabled={busy}>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => void openDoctor()}
+                disabled={busy || doctorBusy}
+                title={
+                  doctorReport?.overall === "ok"
+                    ? "Doctor: repositório saudável"
+                    : doctorReport && doctorReport.overall !== "ok"
+                      ? `Doctor: ${doctorReport.issues?.length ?? 0} problema(s) (${doctorReport.overall})`
+                      : "Saúde do repositório (doctor)"
+                }
+                className={cn(
+                  doctorReport?.overall === "ok" &&
+                    "border-emerald-500/60 bg-emerald-500/10 text-emerald-800 hover:bg-emerald-500/15 hover:text-emerald-900 dark:text-emerald-300 dark:hover:text-emerald-200",
+                  doctorReport?.overall === "critical" &&
+                    "border-destructive/60 bg-destructive/10 text-destructive hover:bg-destructive/15 hover:text-destructive",
+                  doctorReport?.overall === "warn" &&
+                    "border-amber-500/60 bg-amber-500/10 text-amber-800 hover:bg-amber-500/15 hover:text-amber-900 dark:text-amber-300 dark:hover:text-amber-200",
+                )}
+              >
+                {doctorBusy ? (
+                  <Loader2 className="animate-spin" />
+                ) : doctorReport?.overall === "ok" ? (
+                  <CheckCircle2 />
+                ) : (
+                  <Stethoscope />
+                )}
+                Doctor
+                {doctorReport?.overall === "ok" ? (
+                  <Badge
+                    variant="outline"
+                    className="ml-1 h-5 border-emerald-500/50 bg-emerald-500/20 px-1.5 text-[10px] text-emerald-900 dark:text-emerald-200"
+                  >
+                    ok
+                  </Badge>
+                ) : null}
+                {doctorReport && doctorReport.overall !== "ok" && (
+                  <Badge
+                    variant={doctorReport.overall === "critical" ? "destructive" : "outline"}
+                    className={cn(
+                      "ml-1 h-5 px-1.5 text-[10px]",
+                      doctorReport.overall === "warn" &&
+                        "border-amber-500/50 bg-amber-500/20 text-amber-900 dark:text-amber-200",
+                    )}
+                  >
+                    {doctorReport.issues?.length ?? 0}
+                  </Badge>
+                )}
+              </Button>
+              <Button
+                size="sm"
+                variant="secondary"
+                onClick={() => void startPR()}
+                disabled={busy}
+                className={cn(suggestedStep === "pr" && "next-step-pulse")}
+                title={
+                  suggestedStep === "pr"
+                    ? nextStepTitle("pr")
+                    : dash.openPR?.url
+                      ? `PR #${dash.openPR.number} já aberta`
+                      : "Criar ou revisar Pull Request"
+                }
+              >
                 <GitPullRequest />
                 Pull Request
+                {suggestedStep === "pr" ? (
+                  <Badge variant="outline" className="ml-1 h-5 px-1.5 text-[10px]">
+                    próximo
+                  </Badge>
+                ) : null}
+              </Button>
+              <Button
+                size="sm"
+                variant="default"
+                onClick={() => setMergeDialogOpen(true)}
+                disabled={busy || prManageBusy || Boolean(prMergeBlocked(dash))}
+                className={cn(suggestedStep === "merge" && "next-step-pulse")}
+                title={
+                  suggestedStep === "merge"
+                    ? nextStepTitle("merge")
+                    : (prMergeBlocked(dash) ?? "Mergear PR no GitHub")
+                }
+              >
+                {prManageBusy ? <Loader2 className="animate-spin" /> : <GitMerge />}
+                Merge PR
+                {suggestedStep === "merge" ? (
+                  <Badge variant="outline" className="ml-1 h-5 px-1.5 text-[10px]">
+                    próximo
+                  </Badge>
+                ) : null}
               </Button>
               <Button
                 size="sm"
@@ -2494,7 +2834,6 @@ function App() {
               dash={dash}
               busy={busy}
               prManageBusy={prManageBusy}
-              mergeMethod={mergeMethod}
               dockerVisible={dockerVisible}
               dockerLoading={dockerLoading}
               commitActivity={commitActivity}
@@ -2512,8 +2851,6 @@ function App() {
               onOpenBranches={() => void openBranches()}
               onRecommendCommit={() => void startCommit()}
               onMarkPRReady={() => void markPRReady()}
-              onMergePR={() => void mergePR()}
-              onMergeMethodChange={setMergeMethod}
               onOpenDockerEnv={() => setDockerEnvOpen(true)}
               onDockerUp={() => void dockerAction(() => AppService.DockerUp(false))}
               onDockerUpBuild={() => void dockerAction(() => AppService.DockerUp(true))}
@@ -3034,6 +3371,78 @@ function App() {
       </Dialog>
 
       {/* PR dialog */}
+      <Dialog open={mergeDialogOpen} onOpenChange={setMergeDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <GitMerge className="size-4" />
+              Merge PR
+              {dash?.openPR?.number ? (
+                <Badge variant="outline" className="font-normal">
+                  #{dash.openPR.number}
+                </Badge>
+              ) : null}
+            </DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            Escolha o método de merge no GitHub.
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              size="sm"
+              variant="outline"
+              className="border-teal-200/80 bg-teal-50 text-teal-800 hover:bg-teal-100 hover:text-teal-900 dark:border-teal-800/60 dark:bg-teal-950/40 dark:text-teal-200 dark:hover:bg-teal-950/70"
+              disabled={prManageBusy}
+              onClick={() => void mergePR("squash")}
+            >
+              {mergingMethod === "squash" ? (
+                <Loader2 className="animate-spin" />
+              ) : (
+                <Layers />
+              )}
+              Squash
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              className="border-sky-200/80 bg-sky-50 text-sky-800 hover:bg-sky-100 hover:text-sky-900 dark:border-sky-800/60 dark:bg-sky-950/40 dark:text-sky-200 dark:hover:bg-sky-950/70"
+              disabled={prManageBusy}
+              onClick={() => void mergePR("merge")}
+            >
+              {mergingMethod === "merge" ? (
+                <Loader2 className="animate-spin" />
+              ) : (
+                <GitMerge />
+              )}
+              Merge
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              className="border-amber-200/80 bg-amber-50 text-amber-900 hover:bg-amber-100 hover:text-amber-950 dark:border-amber-800/60 dark:bg-amber-950/40 dark:text-amber-200 dark:hover:bg-amber-950/70"
+              disabled={prManageBusy}
+              onClick={() => void mergePR("rebase")}
+            >
+              {mergingMethod === "rebase" ? (
+                <Loader2 className="animate-spin" />
+              ) : (
+                <GitBranch />
+              )}
+              Rebase
+            </Button>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              disabled={prManageBusy}
+              onClick={() => setMergeDialogOpen(false)}
+            >
+              Cancelar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={prOpen} onOpenChange={setPrOpen}>
         <DialogContent className="flex h-[min(85vh,720px)] flex-col gap-4 overflow-hidden sm:max-w-3xl">
           <DialogHeader className="shrink-0">
@@ -3613,6 +4022,32 @@ function App() {
         </DialogContent>
       </Dialog>
       </div>
+
+      <DoctorDialog
+        open={doctorOpen}
+        onOpenChange={setDoctorOpen}
+        report={doctorReport}
+        loading={doctorBusy}
+        explaining={doctorExplainBusy}
+        onRefresh={() => void runDoctor(false)}
+        onExplain={() => void runDoctor(true)}
+        onStartCommit={() => {
+          setDoctorOpen(false)
+          void startCommit()
+        }}
+        onOpenFix={() => void openDoctorFix()}
+      />
+
+      <DoctorFixDialog
+        open={doctorFixOpen}
+        onOpenChange={setDoctorFixOpen}
+        plan={doctorFixPlan}
+        loadingPlan={doctorFixPlanBusy}
+        running={doctorFixRunning}
+        liveSteps={doctorFixLiveSteps}
+        onConfirm={(opts) => void runDoctorFix(opts)}
+        onReplan={(opts) => void loadDoctorFixPlan(opts.newBranch, opts.baseAction)}
+      />
 
       <FloatingChat
         projectPath={dash?.path ?? null}

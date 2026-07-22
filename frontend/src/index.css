@@ -137,3 +137,19 @@
 [data-slot="sidebar-wrapper"][data-resizing="true"] [data-slot="sidebar-container"] {
   transition: none !important;
 }
+
+/* Soft pulse for the recommended next toolbar action. */
+@keyframes next-step-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 color-mix(in oklch, var(--primary) 45%, transparent);
+  }
+  55% {
+    box-shadow: 0 0 0 6px color-mix(in oklch, var(--primary) 0%, transparent);
+  }
+}
+
+.next-step-pulse {
+  animation: next-step-pulse 2.2s ease-out infinite;
+  position: relative;
+}

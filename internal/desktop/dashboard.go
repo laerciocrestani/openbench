@@ -22,6 +22,7 @@ type Dashboard struct {
 	Untracked          int                 `json:"untracked"`
 	Ahead              int                 `json:"ahead"`
 	Behind             int                 `json:"behind"`
+	HasUpstream        bool                `json:"hasUpstream"`
 	BaseBranch         string              `json:"baseBranch"`
 	CommitsAheadOfBase int                 `json:"commitsAheadOfBase"`
 	HasBranchDiff      bool                `json:"hasBranchDiff"`
@@ -190,6 +191,7 @@ func FromSnapshot(projectPath string, snap *app.WorkspaceSnapshot) *Dashboard {
 		d.Untracked = o.Untracked
 		d.Ahead = o.Ahead
 		d.Behind = o.Behind
+		d.HasUpstream = strings.TrimSpace(o.Upstream) != ""
 		d.BaseBranch = o.BaseBranch
 		d.CommitsAheadOfBase = o.CommitsAheadOfBase
 		d.HasBranchDiff = o.HasBranchDiff
