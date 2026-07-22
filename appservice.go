@@ -13,15 +13,16 @@ import (
 
 // AppService exposes desktop bindings to the frontend.
 type AppService struct {
-	mu          sync.RWMutex
-	app         *application.App
-	projectPath string
-	trayRefresh func()
-	hub         *desktop.StatusHub
-	term        *desktop.TerminalSession
-	chatCancel  context.CancelFunc
-	pendingTool *pendingChatTool
-	repoWatch   *desktop.RepoWatcher
+	mu              sync.RWMutex
+	app             *application.App
+	projectPath     string
+	trayRefresh     func()
+	hub             *desktop.StatusHub
+	term            *desktop.TerminalSession
+	chatCancel      context.CancelFunc
+	pendingTool     *pendingChatTool
+	repoWatch       *desktop.RepoWatcher
+	doctorFixSession *desktop.DoctorFixSession
 }
 
 func (s *AppService) setApp(app *application.App) {
@@ -306,6 +307,11 @@ func (s *AppService) LoadTimeline(limit int) (*desktop.TimelineView, error) {
 	return desktop.LoadTimeline(s.currentPath(), limit)
 }
 
+// LoadPRDetail returns conversation, commits, checks and files for a PR number.
+func (s *AppService) LoadPRDetail(number int) (*desktop.PRDetailView, error) {
+	return desktop.LoadPRDetail(s.currentPath(), number)
+}
+
 // RevertTimelineCommit creates a git revert commit for the given hash.
 func (s *AppService) RevertTimelineCommit(hash string, isMerge bool) (*desktop.HistoryActionResult, error) {
 	res, err := desktop.RevertTimelineCommit(s.currentPath(), hash, isMerge)
@@ -414,6 +420,67 @@ func (s *AppService) MergeTimelinePR(number int, method string) (*desktop.Histor
 	s.syncHubFromPrefs()
 	s.refreshTray()
 	return res, nil
+}
+
+// RunDoctor analyzes repository health (optionally with AI explanation).
+func (s *AppService) RunDoctor(explain bool) (*desktop.DoctorView, error) {
+	path := s.currentPath()
+	base := ""
+	if dash, err := desktop.LoadDashboard(path); err == nil && dash != nil {
+		base = dash.BaseBranch
+	}
+	return desktop.RunDoctor(context.Background(), path, explain, base)
+}
+
+// PlanDoctorFix builds a deterministic remediation plan for the Doctor dialog.
+func (s *AppService) PlanDoctorFix(newBranch, baseAction string) (*desktop.DoctorFixPlanView, error) {
+	path := s.currentPath()
+	base := ""
+	if dash, err := desktop.LoadDashboard(path); err == nil && dash != nil {
+		base = dash.BaseBranch
+	}
+	return desktop.PlanDoctorFix(path, base, newBranch, baseAction)
+}
+
+// BeginDoctorFix prepares a step-by-step Doctor remediation session.
+func (s *AppService) BeginDoctorFix(newBranch, baseAction string, confirmDestructive bool) (*desktop.DoctorFixPlanView, error) {
+	path := s.currentPath()
+	base := ""
+	if dash, err := desktop.LoadDashboard(path); err == nil && dash != nil {
+		base = dash.BaseBranch
+	}
+	plan, sess, err := desktop.BeginDoctorFix(path, base, newBranch, baseAction, confirmDestructive)
+	s.mu.Lock()
+	if err != nil {
+		s.doctorFixSession = nil
+		s.mu.Unlock()
+		return plan, err
+	}
+	s.doctorFixSession = sess
+	s.mu.Unlock()
+	return plan, nil
+}
+
+// AdvanceDoctorFix runs the next step of the active Doctor remediation session.
+func (s *AppService) AdvanceDoctorFix() (*desktop.DoctorFixAdvanceView, error) {
+	s.mu.Lock()
+	sess := s.doctorFixSession
+	s.mu.Unlock()
+	out, err := desktop.AdvanceDoctorFixSession(sess)
+	if err != nil {
+		return nil, err
+	}
+	if out != nil && (out.Done || !out.OK) {
+		s.mu.Lock()
+		s.doctorFixSession = nil
+		s.mu.Unlock()
+	}
+	if out != nil && out.Dashboard != nil {
+		s.setProjectPath(out.Dashboard.Path)
+		s.syncHubFromPrefs()
+		s.refreshTray()
+	}
+	return out, nil
 }
 
 // ListBranches returns local branches for the open project.

@@ -9,6 +9,9 @@ import type {
   CommitContextIndex,
   CommitPreview,
   Dashboard,
+  DoctorFixPlanView,
+  DoctorFixStepView,
+  DoctorView,
   FileDiffView,
   OnboardingStatus,
   Prefs,
@@ -71,6 +74,8 @@ import {
 import { useTheme } from "@/components/theme-provider"
 import { DockerEnvironmentSheet } from "@/components/docker-environment-sheet"
 import { DockerGlobalPanel } from "@/components/docker-global-panel"
+import { DoctorDialog } from "@/components/DoctorDialog"
+import { DoctorFixDialog } from "@/components/DoctorFixDialog"
 import { FloatingChat } from "@/components/floating-chat"
 import {
   TerminalPanel,
@@ -113,6 +118,7 @@ import {
   RefreshCw,
   Settings,
   Square,
+  Stethoscope,
   Terminal,
   X,
 } from "lucide-react"
@@ -1281,6 +1287,17 @@ function App() {
   const [chatOpen, setChatOpen] = useState(false)
   const { open: activityOpen, toggle: toggleActivity } = useActivitySidebar(true)
 
+  // Doctor (repository health)
+  const [doctorOpen, setDoctorOpen] = useState(false)
+  const [doctorReport, setDoctorReport] = useState<DoctorView | null>(null)
+  const [doctorBusy, setDoctorBusy] = useState(false)
+  const [doctorExplainBusy, setDoctorExplainBusy] = useState(false)
+  const [doctorFixOpen, setDoctorFixOpen] = useState(false)
+  const [doctorFixPlan, setDoctorFixPlan] = useState<DoctorFixPlanView | null>(null)
+  const [doctorFixPlanBusy, setDoctorFixPlanBusy] = useState(false)
+  const [doctorFixRunning, setDoctorFixRunning] = useState(false)
+  const [doctorFixLiveSteps, setDoctorFixLiveSteps] = useState<DoctorFixStepView[]>([])
+
   /* --------------------------- data loaders --------------------------- */
 
   const refreshStatuses = async () => {
@@ -1399,6 +1416,8 @@ function App() {
       await AppService.CloseProject()
       setDash(null)
       setChatOpen(false)
+      setDoctorOpen(false)
+      setDoctorReport(null)
       setTermSession({ kind: "host" })
       await refreshStatuses()
       await reloadPrefs()
@@ -1534,6 +1553,150 @@ function App() {
       return
     }
     setSyncOpen(true)
+  }
+
+  const runDoctor = async (explain = false, opts?: { quiet?: boolean }) => {
+    if (!dash) return
+    const quiet = !!opts?.quiet
+    if (explain) setDoctorExplainBusy(true)
+    else if (!quiet) setDoctorBusy(true)
+    if (!quiet) setError(null)
+    try {
+      const view = await AppService.RunDoctor(explain)
+      setDoctorReport(view ?? null)
+    } catch (e) {
+      if (!quiet) setError(errText(e))
+    } finally {
+      if (!quiet) setDoctorBusy(false)
+      setDoctorExplainBusy(false)
+    }
+  }
+
+  const openDoctor = async () => {
+    setDoctorOpen(true)
+    await runDoctor(false)
+  }
+
+  // Keep Doctor badge fresh when the workspace changes (not only when the dialog opens).
+  useEffect(() => {
+    if (!dash?.path) {
+      setDoctorReport(null)
+      return
+    }
+    let cancelled = false
+    const timer = window.setTimeout(() => {
+      void (async () => {
+        try {
+          const view = await AppService.RunDoctor(false)
+          if (!cancelled) setDoctorReport(view ?? null)
+        } catch {
+          /* quiet background refresh */
+        }
+      })()
+    }, 350)
+    return () => {
+      cancelled = true
+      window.clearTimeout(timer)
+    }
+  }, [
+    dash?.path,
+    dash?.branch,
+    dash?.headHash,
+    dash?.dirty,
+    dash?.staged,
+    dash?.modified,
+    dash?.untracked,
+    dash?.ahead,
+    dash?.behind,
+    dash?.baseBehind,
+    dash?.openPR?.number,
+    dash?.openPR?.state,
+  ])
+
+  const loadDoctorFixPlan = async (newBranch = "", baseAction = "") => {
+    setDoctorFixPlanBusy(true)
+    setError(null)
+    try {
+      const plan = await AppService.PlanDoctorFix(newBranch, baseAction)
+      setDoctorFixPlan(plan ?? null)
+    } catch (e) {
+      setError(errText(e))
+    } finally {
+      setDoctorFixPlanBusy(false)
+    }
+  }
+
+  const openDoctorFix = async () => {
+    setDoctorOpen(false)
+    setDoctorFixOpen(true)
+    setDoctorFixPlan(null)
+    setDoctorFixLiveSteps([])
+    try {
+      await loadDoctorFixPlan()
+    } catch {
+      setDoctorFixOpen(false)
+    }
+  }
+
+  const runDoctorFix = async (opts: {
+    newBranch: string
+    baseAction: string
+    confirmDestructive: boolean
+  }) => {
+    setError(null)
+    setDoctorFixRunning(true)
+    try {
+      const plan = await AppService.BeginDoctorFix(
+        opts.newBranch,
+        opts.baseAction,
+        opts.confirmDestructive,
+      )
+      const steps = plan?.steps ?? doctorFixPlan?.steps ?? []
+      if (plan) setDoctorFixPlan(plan)
+      setDoctorFixLiveSteps(
+        steps.map((s, i) => ({
+          ...s,
+          status: i === 0 ? "running" : "pending",
+        })),
+      )
+
+      let idx = 0
+      while (idx < steps.length) {
+        setDoctorFixLiveSteps((prev) =>
+          prev.map((s, i) => ({
+            ...s,
+            status: i === idx ? "running" : i < idx ? s.status || "ok" : "pending",
+          })),
+        )
+        const adv = await AppService.AdvanceDoctorFix()
+        if (!adv?.step) break
+        const step = adv.step
+        setDoctorFixLiveSteps((prev) => {
+          const next = prev.slice()
+          const at = next.findIndex((s) => s.id === step.id)
+          if (at >= 0) next[at] = { ...next[at], ...step }
+          else next.push(step)
+          return next
+        })
+        if (!adv.ok || step.status === "error") {
+          if (adv.message) setError(adv.message)
+          break
+        }
+        idx++
+        if (adv.done) {
+          if (adv.dashboard) {
+            setDash(adv.dashboard)
+            await refreshStatuses()
+          }
+          await runDoctor(false, { quiet: true })
+          break
+        }
+      }
+    } catch (e) {
+      setError(errText(e))
+    } finally {
+      setDoctorFixRunning(false)
+    }
   }
 
   const runSync = async () => {
@@ -2467,6 +2630,38 @@ function App() {
                 {pullNeedsAttention(dash) && (
                   <Badge variant="secondary" className="ml-1 h-5 px-1.5 text-[10px]">
                     {dash.behind + dash.baseBehind}
+                  </Badge>
+                )}
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => void openDoctor()}
+                disabled={busy || doctorBusy}
+                title={
+                  doctorReport && doctorReport.overall !== "ok"
+                    ? `Doctor: ${doctorReport.issues?.length ?? 0} problema(s) (${doctorReport.overall})`
+                    : "Saúde do repositório (doctor)"
+                }
+                className={cn(
+                  doctorReport?.overall === "critical" &&
+                    "border-destructive/60 bg-destructive/10 text-destructive hover:bg-destructive/15 hover:text-destructive",
+                  doctorReport?.overall === "warn" &&
+                    "border-amber-500/60 bg-amber-500/10 text-amber-800 hover:bg-amber-500/15 hover:text-amber-900 dark:text-amber-300 dark:hover:text-amber-200",
+                )}
+              >
+                {doctorBusy ? <Loader2 className="animate-spin" /> : <Stethoscope />}
+                Doctor
+                {doctorReport && doctorReport.overall !== "ok" && (
+                  <Badge
+                    variant={doctorReport.overall === "critical" ? "destructive" : "outline"}
+                    className={cn(
+                      "ml-1 h-5 px-1.5 text-[10px]",
+                      doctorReport.overall === "warn" &&
+                        "border-amber-500/50 bg-amber-500/20 text-amber-900 dark:text-amber-200",
+                    )}
+                  >
+                    {doctorReport.issues?.length ?? 0}
                   </Badge>
                 )}
               </Button>
@@ -3613,6 +3808,32 @@ function App() {
         </DialogContent>
       </Dialog>
       </div>
+
+      <DoctorDialog
+        open={doctorOpen}
+        onOpenChange={setDoctorOpen}
+        report={doctorReport}
+        loading={doctorBusy}
+        explaining={doctorExplainBusy}
+        onRefresh={() => void runDoctor(false)}
+        onExplain={() => void runDoctor(true)}
+        onStartCommit={() => {
+          setDoctorOpen(false)
+          void startCommit()
+        }}
+        onOpenFix={() => void openDoctorFix()}
+      />
+
+      <DoctorFixDialog
+        open={doctorFixOpen}
+        onOpenChange={setDoctorFixOpen}
+        plan={doctorFixPlan}
+        loadingPlan={doctorFixPlanBusy}
+        running={doctorFixRunning}
+        liveSteps={doctorFixLiveSteps}
+        onConfirm={(opts) => void runDoctorFix(opts)}
+        onReplan={(opts) => void loadDoctorFixPlan(opts.newBranch, opts.baseAction)}
+      />
 
       <FloatingChat
         projectPath={dash?.path ?? null}

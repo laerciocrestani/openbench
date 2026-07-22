@@ -27,6 +27,7 @@ import {
   DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu"
 import { ScrollArea } from "@/components/ui/scroll-area"
+import { TimelineEventDetailDialog } from "@/components/TimelineEventDetailDialog"
 import { cn } from "@/lib/utils"
 import {
   Copy,
@@ -168,6 +169,7 @@ export function TimelinePanel({
   const [pending, setPending] = useState<TimelineConfirmAction | null>(null)
   const [menu, setMenu] = useState<CursorMenu | null>(null)
   const [menuOpen, setMenuOpen] = useState(false)
+  const [detail, setDetail] = useState<TimelineEventView | null>(null)
 
   const hint = useMemo(() => {
     if (!timeline) return null
@@ -271,6 +273,7 @@ export function TimelinePanel({
                 key={ev.id}
                 event={ev}
                 disabled={actionBusy}
+                onOpen={() => setDetail(ev)}
                 onContextMenu={(e) => openMenu(ev, e)}
               />
             ))}
@@ -294,6 +297,8 @@ export function TimelinePanel({
           </div>
         </ScrollArea>
       )}
+
+      <TimelineEventDetailDialog event={detail} onOpenChange={(open) => !open && setDetail(null)} />
 
       <DropdownMenu
         open={menuOpen}
@@ -522,10 +527,12 @@ export function TimelinePanel({
 function TimelineRow({
   event,
   disabled,
+  onOpen,
   onContextMenu,
 }: {
   event: TimelineEventView
   disabled?: boolean
+  onOpen: () => void
   onContextMenu: (e: MouseEvent) => void
 }) {
   const when = formatWhen(event.at)
@@ -540,9 +547,16 @@ function TimelineRow({
       <div
         role="button"
         tabIndex={0}
+        onClick={onOpen}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault()
+            onOpen()
+          }
+        }}
         onContextMenu={onContextMenu}
         className={cn(
-          "flex w-full cursor-default items-start gap-2 rounded-md px-1 py-1 hover:bg-muted/40",
+          "flex w-full cursor-pointer items-start gap-2 rounded-md px-1 py-1 hover:bg-muted/40",
           disabled && "pointer-events-none opacity-60",
         )}
       >
@@ -567,3 +581,4 @@ function TimelineRow({
     </li>
   )
 }
+

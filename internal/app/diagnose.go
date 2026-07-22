@@ -17,16 +17,29 @@ import (
 type DoctorOptions struct {
 	Explain  bool
 	Base     string
+	WorkDir  string // optional; when set, git/gh/docker run in this directory
 	Progress Progress
+}
+
+// DoctorIssue is a structured health finding for CLI/TUI/desktop.
+type DoctorIssue struct {
+	Level  string `json:"level"` // ok|warn|critical
+	Code   string `json:"code"`
+	Title  string `json:"title"`
+	Detail string `json:"detail"`
 }
 
 // DoctorReport é o resultado formatado do doctor.
 type DoctorReport struct {
-	Overall   gitpkg.HealthLevel
-	Lines     []string
-	Facts     string
-	AI        *ai.HealthExplanation
-	Usage     ai.UsageSummary
+	Overall         gitpkg.HealthLevel
+	Issues          []DoctorIssue
+	Recommendations []string
+	Lines           []string
+	Facts           string
+	AI              *ai.HealthExplanation
+	Usage           ai.UsageSummary
+	Branch          string
+	Base            string
 }
 
 // RunDoctor analisa a saúde do repositório e retorna um panorama.
@@ -40,7 +53,7 @@ func RunDoctor(ctx context.Context, opts DoctorOptions) (*DoctorReport, error) {
 
 	var repo *gitpkg.Repo
 	if err := prog.Step("Opening repository", func() error {
-		r, err := gitpkg.New()
+		r, err := openRepo(opts.WorkDir)
 		if err != nil {
 			return err
 		}
@@ -79,16 +92,16 @@ func RunDoctor(ctx context.Context, opts DoctorOptions) (*DoctorReport, error) {
 	}
 
 	var openPR *prpkg.PRView
-	if client, err := prpkg.New(); err == nil {
+	if client, err := openPRClient(opts.WorkDir); err == nil {
 		openPR, _ = client.ViewCurrent()
 	}
 
-	issues := analyzeHealthIssues(snap)
-	recommendations := buildHealthRecommendations(snap, issues)
+	issues := analyzeHealthIssues(snap, openPR)
+	recommendations := buildHealthRecommendations(snap, issues, openPR)
 
 	var dockerOverview *dockerpkg.Overview
 	if err := prog.Step("Checking Docker environment", func() error {
-		dockerOverview = dockerpkg.LoadOverview("")
+		dockerOverview = dockerpkg.LoadOverview(opts.WorkDir)
 		dockerIssues, dockerRecs := analyzeDockerHealth(dockerOverview)
 		issues = append(issues, dockerIssues...)
 		recommendations = appendUniqueRecommendations(recommendations, dockerRecs)
@@ -100,9 +113,13 @@ func RunDoctor(ctx context.Context, opts DoctorOptions) (*DoctorReport, error) {
 	overall := overallHealth(issues, snap)
 
 	report := &DoctorReport{
-		Overall: overall,
-		Facts:   formatHealthFacts(snap, openPR, dockerOverview, issues, recommendations),
-		Lines:   formatDoctorLines(snap, openPR, issues, recommendations, overall, nil),
+		Overall:         overall,
+		Issues:          toDoctorIssues(issues),
+		Recommendations: append([]string{}, recommendations...),
+		Facts:           formatHealthFacts(snap, openPR, dockerOverview, issues, recommendations),
+		Lines:           formatDoctorLines(snap, openPR, issues, recommendations, overall, nil),
+		Branch:          snap.Branch,
+		Base:            snap.Base,
 	}
 
 	if opts.Explain {
@@ -195,8 +212,8 @@ func DiagnoseSyncFailure(base string, syncErr error, prog Progress) {
 		return
 	}
 
-	issues := analyzeHealthIssues(snap)
-	recommendations := buildHealthRecommendations(snap, issues)
+	issues := analyzeHealthIssues(snap, nil)
+	recommendations := buildHealthRecommendations(snap, issues, nil)
 	overall := overallHealth(issues, snap)
 
 	if prog == nil {
@@ -228,7 +245,7 @@ type healthIssue struct {
 	Detail string
 }
 
-func analyzeHealthIssues(snap *gitpkg.HealthSnapshot) []healthIssue {
+func analyzeHealthIssues(snap *gitpkg.HealthSnapshot, currentPR *prpkg.PRView) []healthIssue {
 	if snap == nil {
 		return nil
 	}
@@ -241,6 +258,19 @@ func analyzeHealthIssues(snap *gitpkg.HealthSnapshot) []healthIssue {
 			Code:   "dirty_tree",
 			Title:  "Working tree com alterações",
 			Detail: fmt.Sprintf("%d staged · %d modified · %d untracked", snap.Staged, snap.Modified, snap.Untracked),
+		})
+	}
+
+	if currentPR != nil && strings.EqualFold(currentPR.State, "MERGED") && !snap.OnBase {
+		detail := fmt.Sprintf("PR #%d já foi mergeada — não continue desenvolvendo nesta branch", currentPR.Number)
+		if snap.IsDirty {
+			detail += "; salve o work e abra uma branch nova a partir da base atualizada"
+		}
+		issues = append(issues, healthIssue{
+			Level:  gitpkg.HealthWarn,
+			Code:   "work_on_merged_branch",
+			Title:  fmt.Sprintf("Branch %q já tem PR mergeada", snap.Branch),
+			Detail: detail,
 		})
 	}
 
@@ -314,7 +344,7 @@ func analyzeHealthIssues(snap *gitpkg.HealthSnapshot) []healthIssue {
 	return issues
 }
 
-func buildHealthRecommendations(snap *gitpkg.HealthSnapshot, issues []healthIssue) []string {
+func buildHealthRecommendations(snap *gitpkg.HealthSnapshot, issues []healthIssue, currentPR *prpkg.PRView) []string {
 	if snap == nil {
 		return nil
 	}
@@ -329,11 +359,23 @@ func buildHealthRecommendations(snap *gitpkg.HealthSnapshot, issues []healthIssu
 		recs = append(recs, s)
 	}
 
+	mergedBranch := currentPR != nil && strings.EqualFold(currentPR.State, "MERGED") && !snap.OnBase
+
 	for _, issue := range issues {
 		switch issue.Code {
+		case "work_on_merged_branch":
+			if snap.IsDirty {
+				add("Salve o work: Commit na branch atual OU git stash push -m \"wip\"")
+			}
+			add("Pull (atualiza a base local sem perder o contexto)")
+			add(fmt.Sprintf("Checkout %s atualizado e crie uma NOVA feature branch", snap.Base))
+			add("Aplique o work na branch nova (stash pop / cherry-pick) e abra outra PR")
+			add(fmt.Sprintf("Evite push/PR de novo em %s — a PR já foi mergeada", snap.Branch))
 		case "dirty_tree":
-			add("ob commit")
-			add("git stash push -m \"wip\"")
+			if !mergedBranch {
+				add("Commit as alterações nesta branch (botão Commit / ob commit)")
+				add("Depois: push e abra (ou atualize) a Pull Request")
+			}
 		case "behind_remote":
 			if !snap.IsDirty {
 				add("ob sync")
@@ -410,7 +452,14 @@ func formatHealthFacts(
 	fmt.Fprintf(&b, "Commits ahead of base: %d\n", snap.CommitsAheadOfBase)
 
 	if openPR != nil {
-		fmt.Fprintf(&b, "Open PR: #%d %s (%s)\n", openPR.Number, openPR.Title, openPR.State)
+		label := "PR"
+		if strings.EqualFold(openPR.State, "MERGED") {
+			label = "PR (já mergeada — NÃO continue nesta branch)"
+		} else if strings.EqualFold(openPR.State, "OPEN") {
+			label = "Open PR"
+		}
+		fmt.Fprintf(&b, "%s: #%d %s (state=%s draft=%v)\n",
+			label, openPR.Number, openPR.Title, openPR.State, openPR.IsDraft)
 	}
 
 	if dockerOverview != nil {
@@ -661,6 +710,22 @@ func analyzeDockerHealth(ov *dockerpkg.Overview) ([]healthIssue, []string) {
 		recs = append(recs, "ob docker up")
 	}
 	return issues, recs
+}
+
+func toDoctorIssues(issues []healthIssue) []DoctorIssue {
+	if len(issues) == 0 {
+		return nil
+	}
+	out := make([]DoctorIssue, 0, len(issues))
+	for _, issue := range issues {
+		out = append(out, DoctorIssue{
+			Level:  string(issue.Level),
+			Code:   issue.Code,
+			Title:  issue.Title,
+			Detail: issue.Detail,
+		})
+	}
+	return out
 }
 
 func appendUniqueRecommendations(base, extra []string) []string {
