@@ -1438,6 +1438,13 @@ function App() {
     try {
       const d = await AppService.RefreshDashboard()
       if (d) applyDashboard(d)
+      try {
+        const pr = await AppService.RefreshOpenPR()
+        setDash((prev) => (prev ? { ...prev, openPR: pr ?? undefined } : prev))
+        setOpenPRReady(true)
+      } catch {
+        setOpenPRReady(true)
+      }
       await AppService.RefreshProjectStatuses()
       await refreshStatuses()
     } catch (e) {
@@ -2007,6 +2014,18 @@ function App() {
     }
   }
 
+  const refreshOpenPR = useCallback(async () => {
+    try {
+      const pr = await AppService.RefreshOpenPR()
+      setDash((prev) => (prev ? { ...prev, openPR: pr ?? undefined } : prev))
+      setOpenPRReady(true)
+      return pr
+    } catch {
+      setOpenPRReady(true)
+      return null
+    }
+  }, [])
+
   const confirmPR = async () => {
     setPrBusy(true)
     setError(null)
@@ -2014,6 +2033,8 @@ function App() {
       const out = await AppService.ConfirmPR(prTitle, prBody, prDraft)
       setPrOpen(false)
       await refresh()
+      // LoadDashboard skips open PR; headHash often unchanged after create — force refresh.
+      await refreshOpenPR()
       if (out?.url) {
         void Browser.OpenURL(out.url).catch(() => {
           window.open(out.url, "_blank")
