@@ -1788,27 +1788,26 @@ function App() {
         className="relative flex h-12 shrink-0 items-center border-b px-4 pl-20 [--wails-draggable:drag]"
         onDoubleClick={() => void Window.ToggleMaximise()}
       >
-        <span className="pointer-events-none absolute inset-x-0 text-center text-sm font-medium">
-          openbench
-        </span>
         {dash && (
-          <span
-            className="relative z-10 flex max-w-[50%] items-center gap-2 truncate font-mono text-xs text-muted-foreground [--wails-draggable:no-drag]"
-            title={dash.path}
-          >
-            <FolderOpen className="size-3.5 shrink-0 opacity-70" />
-            <span className="truncate">{dash.repoName}</span>
-            <DiffStat
-              insertions={
-                dash.contextIndex?.insertions ??
-                (dash.changedFiles ?? []).reduce((a, f) => a + (f.insertions || 0), 0)
-              }
-              deletions={
-                dash.contextIndex?.deletions ??
-                (dash.changedFiles ?? []).reduce((a, f) => a + (f.deletions || 0), 0)
-              }
-            />
-          </span>
+          <div className="pointer-events-none absolute inset-x-0 flex justify-center px-28">
+            <span
+              className="pointer-events-auto relative z-10 flex max-w-full items-center gap-2 truncate font-mono text-xs text-muted-foreground [--wails-draggable:no-drag]"
+              title={dash.path}
+            >
+              <FolderOpen className="size-3.5 shrink-0 opacity-70" />
+              <span className="truncate font-medium text-foreground">{dash.repoName}</span>
+              <DiffStat
+                insertions={
+                  dash.contextIndex?.insertions ??
+                  (dash.changedFiles ?? []).reduce((a, f) => a + (f.insertions || 0), 0)
+                }
+                deletions={
+                  dash.contextIndex?.deletions ??
+                  (dash.changedFiles ?? []).reduce((a, f) => a + (f.deletions || 0), 0)
+                }
+              />
+            </span>
+          </div>
         )}
         <div className="relative z-10 ml-auto flex items-center gap-1 [--wails-draggable:no-drag]">
           <SidebarTrigger title={terminalOpen ? "Fechar terminal (⌘B)" : "Abrir terminal (⌘B)"} />

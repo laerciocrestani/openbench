@@ -3,6 +3,8 @@ package main
 import (
 	"path/filepath"
 	"runtime"
+	"strconv"
+	"strings"
 
 	"github.com/laerciocrestani/openbench/internal/desktop"
 	"github.com/wailsapp/wails/v3/pkg/application"
@@ -17,7 +19,7 @@ func setupSystemTray(app *application.App, window *application.WebviewWindow, sv
 		tray.SetIcon(appIcon)
 	}
 	tray.SetTooltip("openbench")
-	tray.SetLabel("") // icon only — no text beside the tray icon
+	tray.SetLabel("")
 
 	tray.OnClick(func() {
 		toggleWindow(window)
@@ -35,8 +37,8 @@ func rebuildTrayMenu(app *application.App, tray *application.SystemTray, window 
 	activePath := svc.currentPath()
 	hasProject := activePath != ""
 
-	// Status line (menu only — tray stays icon-only)
 	statusLabel := "Nenhum projeto aberto"
+	trayLabel := ""
 	if hasProject {
 		st := desktop.LoadProjectStatus(activePath, false)
 		name := st.RepoName
@@ -47,14 +49,18 @@ func rebuildTrayMenu(app *application.App, tray *application.SystemTray, window 
 		if st.Branch != "" {
 			statusLabel += " · " + st.Branch
 		}
-		if st.Dirty {
+		trayLabel = trayDiffLabel(st.ChangedFiles, st.Insertions, st.Deletions)
+		if trayLabel != "" {
+			statusLabel += " · " + trayLabel
+		} else if st.Dirty {
 			statusLabel += " · dirty"
 		}
 		tray.SetTooltip("openbench — " + statusLabel)
 	} else {
 		tray.SetTooltip("openbench")
 	}
-	tray.SetLabel("")
+	// macOS menu bar: icon + "4 +168 -14" (files + line stats).
+	tray.SetLabel(trayLabel)
 
 	statusItem := menu.Add(statusLabel)
 	statusItem.SetEnabled(false)
@@ -142,6 +148,28 @@ func rebuildTrayMenu(app *application.App, tray *application.SystemTray, window 
 	})
 
 	tray.SetMenu(menu)
+}
+
+// trayDiffLabel formats menu-bar text: "4 +168 -14" (changed files + line stats).
+func trayDiffLabel(files, insertions, deletions int) string {
+	if files <= 0 && insertions <= 0 && deletions <= 0 {
+		return ""
+	}
+	var b strings.Builder
+	if files > 0 {
+		b.WriteString(strconv.Itoa(files))
+	} else {
+		b.WriteByte('0')
+	}
+	if insertions > 0 {
+		b.WriteString(" +")
+		b.WriteString(strconv.Itoa(insertions))
+	}
+	if deletions > 0 {
+		b.WriteString(" -")
+		b.WriteString(strconv.Itoa(deletions))
+	}
+	return b.String()
 }
 
 type trayPinned struct {

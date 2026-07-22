@@ -17,6 +17,7 @@ type ProjectStatus struct {
 	Alias         string `json:"alias,omitempty"`
 	Branch        string `json:"branch"`
 	Dirty         bool   `json:"dirty"`
+	ChangedFiles  int    `json:"changedFiles"`
 	Insertions    int    `json:"insertions"`
 	Deletions     int    `json:"deletions"`
 	StatusLabel   string `json:"statusLabel"`
@@ -72,6 +73,7 @@ func LoadProjectStatus(projectPath string, includePR bool) ProjectStatus {
 	}
 	st.Dirty = overview.IsDirty()
 	st.StatusLabel = statusLabel(overview.IsDirty(), overview.Staged, overview.Modified, overview.Untracked)
+	st.ChangedFiles = len(overview.FileChanges)
 	for _, c := range overview.FileChanges {
 		st.Insertions += c.Insertions
 		st.Deletions += c.Deletions

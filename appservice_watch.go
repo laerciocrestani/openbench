@@ -60,9 +60,11 @@ func (s *AppService) emitDashboardRefresh(path string) {
 		return
 	}
 	if appRef != nil {
-		appRef.Event.Emit("project:dashboard", dash)
+		// Must emit value type: RegisterEvent[desktop.Dashboard] rejects *Dashboard.
+		appRef.Event.Emit("project:dashboard", *dash)
 	}
 	if hub != nil {
 		_ = hub.RefreshNow()
 	}
+	s.refreshTray()
 }
