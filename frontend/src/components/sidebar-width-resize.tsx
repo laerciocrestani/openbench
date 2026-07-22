@@ -8,7 +8,7 @@ import {
 } from "react"
 
 const WIDTH_KEY = "openbench.sidebar.widthPx"
-const DEFAULT_WIDTH_PX = 448 // 28rem
+const DEFAULT_WIDTH_PX = 448 // 28rem — terminal + chat
 const MIN_WIDTH_PX = 320
 const MAX_WIDTH_PX = 720
 

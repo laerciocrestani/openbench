@@ -39,6 +39,8 @@ type Overview struct {
 	Behind             int
 	BaseBranch         string
 	CommitsAheadOfBase int
+	HasBranchDiff      bool // true when base...HEAD has at least one file
+	BaseBehind         int  // local base behind origin/<base>
 	Staged             int
 	Modified           int
 	Untracked          int
@@ -88,6 +90,12 @@ func (r *Repo) Overview(baseBranch string) (*Overview, error) {
 			if count, err := r.run("rev-list", "--count", fmt.Sprintf("%s..HEAD", resolved)); err == nil {
 				o.CommitsAheadOfBase, _ = strconv.Atoi(count)
 			}
+			if names, err := r.DiffBranchNames(resolved); err == nil {
+				o.HasBranchDiff = strings.TrimSpace(names) != ""
+			}
+		}
+		if n, err := r.BaseBehindOrigin(baseBranch); err == nil {
+			o.BaseBehind = n
 		}
 	}
 

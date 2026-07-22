@@ -24,6 +24,8 @@ type Dashboard struct {
 	Behind             int                 `json:"behind"`
 	BaseBranch         string              `json:"baseBranch"`
 	CommitsAheadOfBase int                 `json:"commitsAheadOfBase"`
+	HasBranchDiff      bool                `json:"hasBranchDiff"`
+	BaseBehind         int                 `json:"baseBehind"`
 	HeadHash           string              `json:"headHash"`
 	RemoteURL          string              `json:"remoteURL"`
 	StatusLabel        string              `json:"statusLabel"`
@@ -80,11 +82,18 @@ type DockerServiceView struct {
 
 // PRStatus is the open pull request, if any.
 type PRStatus struct {
-	URL     string `json:"url"`
-	Title   string `json:"title"`
-	State   string `json:"state"`
-	Number  int    `json:"number"`
-	IsDraft bool   `json:"isDraft"`
+	URL            string `json:"url"`
+	Title          string `json:"title"`
+	State          string `json:"state"`
+	Number         int    `json:"number"`
+	IsDraft        bool   `json:"isDraft"`
+	Mergeable      string `json:"mergeable,omitempty"`
+	ReviewDecision string `json:"reviewDecision,omitempty"`
+	ChecksPass     int    `json:"checksPass"`
+	ChecksFail     int    `json:"checksFail"`
+	ChecksPending  int    `json:"checksPending"`
+	ChecksTotal    int    `json:"checksTotal"`
+	ChecksSummary  string `json:"checksSummary,omitempty"`
 }
 
 // NextStepView is a suggested next action.
@@ -129,13 +138,27 @@ func LoadOpenPR(projectPath string) (*PRStatus, error) {
 	if err != nil || pr == nil {
 		return nil, nil
 	}
+	return mapPRStatus(pr), nil
+}
+
+func mapPRStatus(pr *prpkg.PRView) *PRStatus {
+	if pr == nil {
+		return nil
+	}
 	return &PRStatus{
-		URL:     pr.URL,
-		Title:   pr.Title,
-		State:   pr.State,
-		Number:  pr.Number,
-		IsDraft: pr.IsDraft,
-	}, nil
+		URL:            pr.URL,
+		Title:          pr.Title,
+		State:          pr.State,
+		Number:         pr.Number,
+		IsDraft:        pr.IsDraft,
+		Mergeable:      pr.Mergeable,
+		ReviewDecision: pr.ReviewDecision,
+		ChecksPass:     pr.ChecksPass,
+		ChecksFail:     pr.ChecksFail,
+		ChecksPending:  pr.ChecksPending,
+		ChecksTotal:    pr.ChecksTotal,
+		ChecksSummary:  pr.ChecksSummary,
+	}
 }
 
 // FromSnapshot maps an app snapshot into the desktop DTO.
@@ -169,6 +192,8 @@ func FromSnapshot(projectPath string, snap *app.WorkspaceSnapshot) *Dashboard {
 		d.Behind = o.Behind
 		d.BaseBranch = o.BaseBranch
 		d.CommitsAheadOfBase = o.CommitsAheadOfBase
+		d.HasBranchDiff = o.HasBranchDiff
+		d.BaseBehind = o.BaseBehind
 		d.HeadHash = o.HeadHash
 		d.RemoteURL = o.RemoteURL
 		d.StatusLabel = statusLabel(o.IsDirty(), o.Staged, o.Modified, o.Untracked)
@@ -207,13 +232,7 @@ func FromSnapshot(projectPath string, snap *app.WorkspaceSnapshot) *Dashboard {
 	d.Docker = mapDocker(snap.Docker, snap.HasDocker)
 
 	if snap.OpenPR != nil {
-		d.OpenPR = &PRStatus{
-			URL:     snap.OpenPR.URL,
-			Title:   snap.OpenPR.Title,
-			State:   snap.OpenPR.State,
-			Number:  snap.OpenPR.Number,
-			IsDraft: snap.OpenPR.IsDraft,
-		}
+		d.OpenPR = mapPRStatus(snap.OpenPR)
 	}
 
 	for _, step := range snap.NextSteps {

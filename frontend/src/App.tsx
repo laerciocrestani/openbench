@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 
 import { AppService } from "../bindings/github.com/laerciocrestani/openbench"
 import type { UpdateCheckResult } from "../bindings/github.com/laerciocrestani/openbench"
 import type {
   BranchView,
   ChangedFileView,
+  CommitActivityView,
   CommitContextIndex,
   CommitPreview,
   Dashboard,
@@ -15,8 +16,9 @@ import type {
   PRPreview,
   SyncModeView,
   SyncResult,
+  TimelineView,
 } from "../bindings/github.com/laerciocrestani/openbench/internal/desktop"
-import { Events, Window } from "@wailsio/runtime"
+import { Events, Window, Browser } from "@wailsio/runtime"
 
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -92,7 +94,11 @@ import {
   type BranchTemplate,
 } from "@/lib/branch-templates"
 import { cn } from "@/lib/utils"
+import { CommitCalendarCard } from "@/components/CommitCalendarCard"
+import { TimelinePanel, type TimelineConfirmAction } from "@/components/TimelinePanel"
+import { ActivitySidebar, useActivitySidebar } from "@/components/activity-sidebar"
 import {
+  ArrowDown,
   ArrowDownUp,
   ChartColumn,
   ChevronDown,
@@ -105,8 +111,10 @@ import {
   FolderOpen,
   GitBranch,
   GitCommit,
+  GitMerge,
   GitPullRequest,
   Loader2,
+  PanelLeft,
   Pin,
   PinOff,
   Play,
@@ -626,25 +634,165 @@ function ProjectTabs({
   )
 }
 
+function canOpenPRInWeb(dash: Dashboard): boolean {
+  return Boolean(dash.openPR?.url) && dash.commitsAheadOfBase > 0 && dash.hasBranchDiff
+}
+
+function openPRDisabledReason(dash: Dashboard): string | undefined {
+  if (!dash.openPR?.url) return "Nenhum pull request aberto nesta branch"
+  if (dash.commitsAheadOfBase <= 0) return "Sem commits à frente da base"
+  if (!dash.hasBranchDiff) return "Diff vazio em relação à base"
+  return undefined
+}
+
+function pullNeedsAttention(dash: Dashboard): boolean {
+  return dash.behind > 0 || dash.baseBehind > 0
+}
+
 function DashboardView({
   dash,
   busy,
+  prManageBusy,
+  mergeMethod,
+  dockerVisible,
+  dockerLoading,
+  commitActivity,
+  activityLoading,
+  activityAuthorOnly,
   onSelectFile,
   onOpenBranches,
   onRecommendCommit,
+  onMarkPRReady,
+  onMergePR,
+  onMergeMethodChange,
+  onOpenDockerEnv,
+  onDockerUp,
+  onDockerUpBuild,
+  onDockerStart,
+  onDockerStop,
+  onDockerRecreate,
+  onDockerDown,
+  onToggleActivityAuthor,
 }: {
   dash: Dashboard
   busy: boolean
+  prManageBusy: boolean
+  mergeMethod: string
+  dockerVisible: boolean
+  dockerLoading: boolean
+  commitActivity: CommitActivityView | null
+  activityLoading: boolean
+  activityAuthorOnly: boolean
   onSelectFile: (f: ChangedFileView) => void
   onOpenBranches: () => void
   onRecommendCommit: () => void
+  onMarkPRReady: () => void
+  onMergePR: () => void
+  onMergeMethodChange: (method: string) => void
+  onOpenDockerEnv: () => void
+  onDockerUp: () => void
+  onDockerUpBuild: () => void
+  onDockerStart: () => void
+  onDockerStop: () => void
+  onDockerRecreate: () => void
+  onDockerDown: () => void
+  onToggleActivityAuthor: () => void
 }) {
   const files = dash.changedFiles ?? []
   const contextIndex = dash.contextIndex
+  const openPREnabled = canOpenPRInWeb(dash)
+  const openPRTitle = openPRDisabledReason(dash)
+  const pr = dash.openPR
+  const mergeBlocked =
+    !pr ||
+    pr.isDraft ||
+    String(pr.mergeable || "").toUpperCase() === "CONFLICTING" ||
+    (pr.checksFail ?? 0) > 0
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-4">
-      <div className="grid shrink-0 grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      <div className="grid shrink-0 grid-cols-1 gap-4 lg:grid-cols-3 lg:grid-rows-2">
+        {/* Row 1: Docker | Branch | Calendar */}
+        <Card size="sm" className="min-h-0">
+          <CardHeader
+            className={cn(
+              "rounded-t-xl",
+              dockerVisible && "cursor-pointer hover:bg-muted/40",
+            )}
+            onClick={() => {
+              if (dockerVisible && !dockerLoading) onOpenDockerEnv()
+            }}
+            title={dockerVisible ? "Abrir containers, shell e presets" : undefined}
+          >
+            <CardTitle className="flex items-center gap-2 text-sm">
+              <Container className="size-4 text-muted-foreground" />
+              Docker
+              {dockerVisible ? (
+                dockerLoading ? (
+                  <Badge variant="outline" className="ml-1 gap-1 font-normal">
+                    <Loader2 className="size-3 animate-spin" />
+                    carregando
+                  </Badge>
+                ) : (
+                  <>
+                    <Badge variant="outline" className="ml-1 font-normal">
+                      {dash.docker.running}/{dash.docker.total}
+                    </Badge>
+                    <span className="ml-auto text-[11px] font-normal text-muted-foreground">
+                      containers →
+                    </span>
+                  </>
+                )
+              ) : (
+                <Badge variant="outline" className="ml-1 font-normal">
+                  indisponível
+                </Badge>
+              )}
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-2">
+            {!dockerVisible ? (
+              <p className="text-xs text-muted-foreground">
+                Docker Compose não detectado neste projeto.
+              </p>
+            ) : dockerLoading ? (
+              <p className="text-xs text-muted-foreground">Consultando Docker / Compose…</p>
+            ) : (
+              <>
+                <p className="truncate text-xs text-muted-foreground">{dash.docker.summary}</p>
+                <div className="flex flex-wrap gap-1.5">
+                  <Button size="xs" onClick={onDockerUp} disabled={busy}>
+                    <Play />
+                    Up
+                  </Button>
+                  <Button size="xs" variant="outline" onClick={onDockerUpBuild} disabled={busy}>
+                    Up --build
+                  </Button>
+                  <Button size="xs" variant="outline" onClick={onDockerStart} disabled={busy}>
+                    Start
+                  </Button>
+                  <Button size="xs" variant="outline" onClick={onDockerStop} disabled={busy}>
+                    <Square />
+                    Stop
+                  </Button>
+                  <Button
+                    size="xs"
+                    variant="outline"
+                    onClick={onDockerRecreate}
+                    disabled={busy || !(dash.docker.services?.length)}
+                  >
+                    <RefreshCw />
+                    Recreate
+                  </Button>
+                  <Button size="xs" variant="destructive" onClick={onDockerDown} disabled={busy}>
+                    Down
+                  </Button>
+                </div>
+              </>
+            )}
+          </CardContent>
+        </Card>
+
         <button
           type="button"
           onClick={onOpenBranches}
@@ -669,6 +817,11 @@ function DashboardView({
                 <span>base: {dash.baseBranch || "—"}</span>
                 {dash.ahead > 0 && <Badge variant="outline">↑{dash.ahead}</Badge>}
                 {dash.behind > 0 && <Badge variant="outline">↓{dash.behind}</Badge>}
+                {dash.baseBehind > 0 && (
+                  <Badge variant="outline">
+                    {dash.baseBranch || "base"} ↓{dash.baseBehind}
+                  </Badge>
+                )}
                 {dash.commitsAheadOfBase > 0 && (
                   <Badge variant="outline">{dash.commitsAheadOfBase} vs base</Badge>
                 )}
@@ -677,6 +830,22 @@ function DashboardView({
           </Card>
         </button>
 
+        <Card size="sm" className="flex min-h-0 flex-col lg:row-span-2">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm">Calendar</CardTitle>
+          </CardHeader>
+          <CardContent className="flex min-h-0 flex-1 flex-col">
+            <CommitCalendarCard
+              activity={commitActivity}
+              loading={activityLoading}
+              authorOnly={activityAuthorOnly}
+              onToggleAuthorOnly={onToggleActivityAuthor}
+              className="min-h-0 flex-1"
+            />
+          </CardContent>
+        </Card>
+
+        {/* Row 2: Status | IA | (Calendar continues) */}
         <Card size="sm">
           <CardHeader>
             <CardTitle className="text-sm">Status</CardTitle>
@@ -695,12 +864,108 @@ function DashboardView({
                 }
                 className="text-xs"
               />
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-7 gap-1 px-2 text-xs"
+                disabled={!openPREnabled}
+                title={openPRTitle}
+                onClick={() => {
+                  const url = dash.openPR?.url
+                  if (!url) return
+                  void Browser.OpenURL(url).catch(() => {
+                    window.open(url, "_blank", "noopener,noreferrer")
+                  })
+                }}
+              >
+                <ExternalLink className="size-3" />
+                Open PR in web
+              </Button>
             </div>
             <div className="flex flex-wrap gap-1.5 text-xs text-muted-foreground">
               <Badge variant="outline">staged {dash.staged}</Badge>
               <Badge variant="outline">mod {dash.modified}</Badge>
               <Badge variant="outline">untracked {dash.untracked}</Badge>
             </div>
+
+            {pr && (
+              <div className="mt-1 flex flex-col gap-2 rounded-lg border border-border/60 bg-muted/20 p-2">
+                <div className="flex flex-wrap items-center gap-1.5 text-xs">
+                  <Badge variant={pr.isDraft ? "outline" : "default"}>
+                    PR #{pr.number}
+                    {pr.isDraft ? " · draft" : ""}
+                  </Badge>
+                  {pr.checksSummary && (
+                    <Badge
+                      variant={
+                        (pr.checksFail ?? 0) > 0
+                          ? "destructive"
+                          : (pr.checksPending ?? 0) > 0
+                            ? "outline"
+                            : "secondary"
+                      }
+                    >
+                      checks: {pr.checksSummary}
+                    </Badge>
+                  )}
+                  {pr.mergeable && (
+                    <Badge variant="outline">{pr.mergeable.toLowerCase()}</Badge>
+                  )}
+                </div>
+                <p className="line-clamp-2 text-xs text-muted-foreground">{pr.title}</p>
+                <div className="flex flex-wrap items-center gap-2">
+                  {pr.isDraft && (
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      className="h-7 text-xs"
+                      disabled={busy || prManageBusy}
+                      onClick={onMarkPRReady}
+                    >
+                      {prManageBusy ? <Loader2 className="size-3 animate-spin" /> : null}
+                      Ready for review
+                    </Button>
+                  )}
+                  <Select
+                    value={mergeMethod}
+                    onValueChange={(v) => {
+                      if (v) onMergeMethodChange(v)
+                    }}
+                  >
+                    <SelectTrigger className="h-7 w-[8.5rem] text-xs" disabled={busy || prManageBusy}>
+                      <SelectValue placeholder="squash" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="squash">squash</SelectItem>
+                      <SelectItem value="merge">merge</SelectItem>
+                      <SelectItem value="rebase">rebase</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Button
+                    size="sm"
+                    className="h-7 gap-1 text-xs"
+                    disabled={busy || prManageBusy || mergeBlocked}
+                    title={
+                      pr.isDraft
+                        ? "Marque Ready for review antes de mergear"
+                        : String(pr.mergeable || "").toUpperCase() === "CONFLICTING"
+                          ? "PR com conflitos"
+                          : (pr.checksFail ?? 0) > 0
+                            ? "Checks falhando"
+                            : "Mergear PR no GitHub"
+                    }
+                    onClick={onMergePR}
+                  >
+                    {prManageBusy ? (
+                      <Loader2 className="size-3 animate-spin" />
+                    ) : (
+                      <GitMerge className="size-3" />
+                    )}
+                    Merge PR
+                  </Button>
+                </div>
+              </div>
+            )}
           </CardContent>
         </Card>
 
@@ -944,6 +1209,24 @@ function App() {
   const [syncBusy, setSyncBusy] = useState(false)
   const [syncResult, setSyncResult] = useState<SyncResult | null>(null)
 
+  // Pull (one-click)
+  const [pullBusy, setPullBusy] = useState(false)
+
+  // PR manage (ready / merge)
+  const [prManageBusy, setPrManageBusy] = useState(false)
+  const [mergeMethod, setMergeMethod] = useState("squash")
+
+  // Commit calendar
+  const [commitActivity, setCommitActivity] = useState<CommitActivityView | null>(null)
+  const [activityLoading, setActivityLoading] = useState(false)
+  const [activityAuthorOnly, setActivityAuthorOnly] = useState(true)
+
+  // Timeline (commits + PR events)
+  const [timeline, setTimeline] = useState<TimelineView | null>(null)
+  const [timelineLoading, setTimelineLoading] = useState(false)
+  const [timelineLimit, setTimelineLimit] = useState(10)
+  const [timelineActionBusy, setTimelineActionBusy] = useState(false)
+
   // Commit modal
   const [commitPreview, setCommitPreview] = useState<CommitPreview | null>(null)
   const [commitMessage, setCommitMessage] = useState("")
@@ -990,6 +1273,7 @@ function App() {
 
   // Terminal sidebar — always available (home → user home dir; project → repo root)
   const [terminalOpen, setTerminalOpen] = useState(true)
+  const { open: activityOpen, toggle: toggleActivity } = useActivitySidebar(true)
 
   /* --------------------------- data loaders --------------------------- */
 
@@ -1271,6 +1555,54 @@ function App() {
     }
   }
 
+  const runPull = async () => {
+    if (!dash) return
+    if (dash.dirty) {
+      setError("Working tree dirty — commit ou stash antes de puxar")
+      return
+    }
+    setPullBusy(true)
+    setError(null)
+    try {
+      const res = await AppService.RunPull(dash.baseBranch || "main")
+      if (res?.dashboard) setDash(res.dashboard)
+      await refreshStatuses()
+    } catch (e) {
+      setError(errText(e))
+    } finally {
+      setPullBusy(false)
+    }
+  }
+
+  const markPRReady = async () => {
+    setPrManageBusy(true)
+    setError(null)
+    try {
+      const pr = await AppService.MarkPRReady()
+      setDash((prev) => (prev ? { ...prev, openPR: pr ?? undefined } : prev))
+    } catch (e) {
+      setError(errText(e))
+    } finally {
+      setPrManageBusy(false)
+    }
+  }
+
+  const mergePR = async () => {
+    setPrManageBusy(true)
+    setError(null)
+    try {
+      await AppService.MergePR(mergeMethod)
+      const pr = await AppService.RefreshOpenPR()
+      setDash((prev) => (prev ? { ...prev, openPR: pr ?? undefined } : prev))
+      await refresh()
+      await refreshStatuses()
+    } catch (e) {
+      setError(errText(e))
+    } finally {
+      setPrManageBusy(false)
+    }
+  }
+
   const filteredBranches = useMemo(() => {
     const q = branchFilter.trim().toLowerCase()
     if (!q) return branches
@@ -1452,7 +1784,11 @@ function App() {
       const out = await AppService.ConfirmPR(prTitle, prBody, prDraft)
       setPrOpen(false)
       await refresh()
-      if (out?.url) window.open(out.url, "_blank")
+      if (out?.url) {
+        void Browser.OpenURL(out.url).catch(() => {
+          window.open(out.url, "_blank")
+        })
+      }
     } catch (e) {
       setError(errText(e))
     } finally {
@@ -1622,16 +1958,21 @@ function App() {
     setDockerEnvOpen(false)
   }, [dash?.path])
 
-  // After the fast dashboard lands, load Docker + open PR off the critical path.
+  // After the fast dashboard lands, load Docker + open PR + commit calendar off the critical path.
   useEffect(() => {
     if (!dash?.path) {
       setDockerLoading(false)
+      setCommitActivity(null)
+      setTimeline(null)
+      setTimelineLimit(10)
       return
     }
     const path = dash.path
     const token = `${path}|${dash.headHash}|${dash.branch}`
     let cancelled = false
     setDockerLoading(!!dash.hasDocker)
+    setActivityLoading(true)
+    setTimelineLimit(10)
     ;(async () => {
       try {
         const tasks: Promise<void>[] = []
@@ -1657,17 +1998,108 @@ function App() {
             })
           }),
         )
+        tasks.push(
+          AppService.LoadCommitActivity(activityAuthorOnly).then((act) => {
+            if (cancelled) return
+            setCommitActivity(act ?? null)
+          }),
+        )
         await Promise.all(tasks)
       } catch (e) {
         if (!cancelled) setError(errText(e))
       } finally {
-        if (!cancelled) setDockerLoading(false)
+        if (!cancelled) {
+          setDockerLoading(false)
+          setActivityLoading(false)
+        }
       }
     })()
     return () => {
       cancelled = true
     }
-  }, [dash?.path, dash?.headHash, dash?.branch, dash?.hasDocker])
+  }, [dash?.path, dash?.headHash, dash?.branch, dash?.hasDocker, activityAuthorOnly])
+
+  // Timeline loads separately so "load more" only refetches activity events.
+  useEffect(() => {
+    if (!dash?.path) {
+      setTimeline(null)
+      return
+    }
+    let cancelled = false
+    setTimelineLoading(true)
+    ;(async () => {
+      try {
+        const tl = await AppService.LoadTimeline(timelineLimit)
+        if (!cancelled) setTimeline(tl ?? null)
+      } catch (e) {
+        if (!cancelled) setError(errText(e))
+      } finally {
+        if (!cancelled) setTimelineLoading(false)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [dash?.path, dash?.headHash, timelineLimit])
+
+  const loadMoreTimeline = useCallback(() => {
+    if (timelineLoading || !timeline?.hasMore) return
+    setTimelineLimit((n) => n + 10)
+  }, [timelineLoading, timeline?.hasMore])
+
+  const refreshTimelineNow = useCallback(async () => {
+    if (!dash?.path) return
+    try {
+      const tl = await AppService.LoadTimeline(timelineLimit)
+      setTimeline(tl ?? null)
+    } catch (e) {
+      setError(errText(e))
+    }
+  }, [dash?.path, timelineLimit])
+
+  const handleTimelineConfirm = useCallback(
+    async (action: TimelineConfirmAction) => {
+      setTimelineActionBusy(true)
+      setError(null)
+      try {
+        if (action.type === "revert") {
+          const res = await AppService.RevertTimelineCommit(action.hash, action.isMerge)
+          if (res?.dashboard) setDash(res.dashboard)
+        } else if (action.type === "reset") {
+          const res = await AppService.ResetTimelineCommit(action.hash, action.mode)
+          if (res?.dashboard) setDash(res.dashboard)
+        } else if (action.type === "delete-branch") {
+          const res = await AppService.DeleteTimelineBranch(action.name, true)
+          if (res?.dashboard) setDash(res.dashboard)
+        }
+        await refreshTimelineNow()
+        await refreshStatuses()
+      } catch (e) {
+        setError(errText(e))
+      } finally {
+        setTimelineActionBusy(false)
+      }
+    },
+    [refreshTimelineNow, refreshStatuses],
+  )
+
+  const handleTimelineCheckout = useCallback(
+    async (name: string) => {
+      setTimelineActionBusy(true)
+      setError(null)
+      try {
+        const d = await AppService.CheckoutBranch(name)
+        if (d) setDash(d)
+        await refreshTimelineNow()
+        await refreshStatuses()
+      } catch (e) {
+        setError(errText(e))
+      } finally {
+        setTimelineActionBusy(false)
+      }
+    },
+    [refreshTimelineNow, refreshStatuses],
+  )
 
   useEffect(() => {
     let cancelled = false
@@ -1782,6 +2214,29 @@ function App() {
       className="h-svh max-h-svh min-h-0 overflow-hidden"
       style={sidebarWidthStyle}
     >
+      {dash && (
+        <ActivitySidebar open={activityOpen}>
+          <div className="flex h-full min-h-0 flex-col border-r border-sidebar-border bg-background">
+            <div className="flex shrink-0 items-center gap-2 border-b px-3 py-2">
+              <span className="text-sm font-medium">Atividade</span>
+              <span className="text-[11px] text-muted-foreground">timeline</span>
+            </div>
+            <div className="min-h-0 flex-1 p-3">
+              <TimelinePanel
+                timeline={timeline}
+                loading={timelineLoading}
+                onLoadMore={loadMoreTimeline}
+                onConfirmAction={handleTimelineConfirm}
+                onCheckoutBranch={handleTimelineCheckout}
+                actionBusy={timelineActionBusy}
+                compact
+                className="h-full"
+              />
+            </div>
+          </div>
+        </ActivitySidebar>
+      )}
+
       <SidebarInset className="flex h-svh max-h-svh min-h-0 flex-col overflow-hidden bg-background text-foreground">
       {/* Header (draggable) */}
       <header
@@ -1810,6 +2265,16 @@ function App() {
           </div>
         )}
         <div className="relative z-10 ml-auto flex items-center gap-1 [--wails-draggable:no-drag]">
+          {dash && (
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              onClick={toggleActivity}
+              title={activityOpen ? "Fechar atividade (sidebar)" : "Abrir atividade (sidebar)"}
+            >
+              <PanelLeft />
+            </Button>
+          )}
           <SidebarTrigger title={terminalOpen ? "Fechar terminal (⌘B)" : "Abrir terminal (⌘B)"} />
           {dash && (
             <Button
@@ -1938,6 +2403,27 @@ function App() {
                   </DropdownMenuContent>
                 </DropdownMenu>
               </div>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => void runPull()}
+                disabled={busy || pullBusy || syncBusy || dash.dirty}
+                title={
+                  dash.dirty
+                    ? "Working tree dirty — commit ou stash antes de puxar"
+                    : pullNeedsAttention(dash)
+                      ? `Pull: branch ↓${dash.behind || 0} · ${dash.baseBranch || "main"} ↓${dash.baseBehind || 0}`
+                      : `Fetch + atualizar branch / ${dash.baseBranch || "main"}`
+                }
+              >
+                {pullBusy ? <Loader2 className="animate-spin" /> : <ArrowDown />}
+                Pull
+                {pullNeedsAttention(dash) && (
+                  <Badge variant="secondary" className="ml-1 h-5 px-1.5 text-[10px]">
+                    {dash.behind + dash.baseBehind}
+                  </Badge>
+                )}
+              </Button>
               <Button size="sm" variant="secondary" onClick={() => void startPR()} disabled={busy}>
                 <GitPullRequest />
                 Pull Request
@@ -1946,7 +2432,7 @@ function App() {
                 size="sm"
                 variant="outline"
                 onClick={() => void openSync()}
-                disabled={busy || syncBusy || dash.dirty}
+                disabled={busy || syncBusy || pullBusy || dash.dirty}
                 title={
                   dash.dirty
                     ? "Working tree dirty — commit ou stash antes de sincronizar"
@@ -1958,121 +2444,30 @@ function App() {
               </Button>
             </div>
 
-            {dockerVisible && (
-              <Card size="sm" className="shrink-0">
-                <CardHeader
-                  className="cursor-pointer rounded-t-xl hover:bg-muted/40"
-                  onClick={() => !dockerLoading && setDockerEnvOpen(true)}
-                  title="Abrir containers, shell e presets"
-                >
-                  <CardTitle className="flex items-center gap-2 text-sm">
-                    <Container className="size-4 text-muted-foreground" />
-                    Docker
-                    {dockerLoading ? (
-                      <Badge variant="outline" className="ml-1 gap-1 font-normal">
-                        <Loader2 className="size-3 animate-spin" />
-                        carregando
-                      </Badge>
-                    ) : (
-                      <>
-                        <Badge variant="outline" className="ml-1 font-normal">
-                          {dash.docker.running}/{dash.docker.total}
-                        </Badge>
-                        <span className="ml-1 truncate text-xs font-normal text-muted-foreground">
-                          {dash.docker.summary}
-                        </span>
-                        <span className="ml-auto text-[11px] font-normal text-muted-foreground">
-                          containers →
-                        </span>
-                      </>
-                    )}
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="flex flex-wrap gap-2">
-                  {dockerLoading ? (
-                    <p className="text-xs text-muted-foreground">Consultando Docker / Compose…</p>
-                  ) : (
-                    <>
-                      <Button
-                        size="xs"
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          void dockerAction(() => AppService.DockerUp(false))
-                        }}
-                        disabled={busy}
-                      >
-                        <Play />
-                        Up
-                      </Button>
-                      <Button
-                        size="xs"
-                        variant="outline"
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          void dockerAction(() => AppService.DockerUp(true))
-                        }}
-                        disabled={busy}
-                      >
-                        Up --build
-                      </Button>
-                      <Button
-                        size="xs"
-                        variant="outline"
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          void dockerAction(() => AppService.DockerStart())
-                        }}
-                        disabled={busy}
-                      >
-                        Start
-                      </Button>
-                      <Button
-                        size="xs"
-                        variant="outline"
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          void dockerAction(() => AppService.DockerStop())
-                        }}
-                        disabled={busy}
-                      >
-                        <Square />
-                        Stop
-                      </Button>
-                      <Button
-                        size="xs"
-                        variant="outline"
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          openRecreate()
-                        }}
-                        disabled={busy || !(dash.docker.services?.length)}
-                      >
-                        <RefreshCw />
-                        Recreate
-                      </Button>
-                      <Button
-                        size="xs"
-                        variant="destructive"
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          void dockerAction(() => AppService.DockerDown())
-                        }}
-                        disabled={busy}
-                      >
-                        Down
-                      </Button>
-                    </>
-                  )}
-                </CardContent>
-              </Card>
-            )}
-
             <DashboardView
               dash={dash}
               busy={busy}
+              prManageBusy={prManageBusy}
+              mergeMethod={mergeMethod}
+              dockerVisible={dockerVisible}
+              dockerLoading={dockerLoading}
+              commitActivity={commitActivity}
+              activityLoading={activityLoading}
+              activityAuthorOnly={activityAuthorOnly}
               onSelectFile={(f) => void openFileDiff(f)}
               onOpenBranches={() => void openBranches()}
               onRecommendCommit={() => void startCommit()}
+              onMarkPRReady={() => void markPRReady()}
+              onMergePR={() => void mergePR()}
+              onMergeMethodChange={setMergeMethod}
+              onOpenDockerEnv={() => setDockerEnvOpen(true)}
+              onDockerUp={() => void dockerAction(() => AppService.DockerUp(false))}
+              onDockerUpBuild={() => void dockerAction(() => AppService.DockerUp(true))}
+              onDockerStart={() => void dockerAction(() => AppService.DockerStart())}
+              onDockerStop={() => void dockerAction(() => AppService.DockerStop())}
+              onDockerRecreate={() => openRecreate()}
+              onDockerDown={() => void dockerAction(() => AppService.DockerDown())}
+              onToggleActivityAuthor={() => setActivityAuthorOnly((v) => !v)}
             />
           </>
         ) : (
@@ -2465,28 +2860,24 @@ function App() {
             </div>
           )}
 
-          <DialogFooter>
-            {syncResult ? (
-              <Button onClick={() => setSyncOpen(false)}>Fechar</Button>
-            ) : (
-              <>
-                <Button
-                  variant="outline"
-                  onClick={() => setSyncOpen(false)}
-                  disabled={syncBusy}
-                >
-                  Cancelar
-                </Button>
-                <Button
-                  onClick={() => void runSync()}
-                  disabled={syncBusy || !!dash?.dirty || !syncMode}
-                >
-                  {syncBusy ? <Loader2 className="animate-spin" /> : <ArrowDownUp />}
-                  Executar sync
-                </Button>
-              </>
-            )}
-          </DialogFooter>
+          {syncResult ? null : (
+            <DialogFooter>
+              <Button
+                variant="outline"
+                onClick={() => setSyncOpen(false)}
+                disabled={syncBusy}
+              >
+                Cancelar
+              </Button>
+              <Button
+                onClick={() => void runSync()}
+                disabled={syncBusy || !!dash?.dirty || !syncMode}
+              >
+                {syncBusy ? <Loader2 className="animate-spin" /> : <ArrowDownUp />}
+                Executar sync
+              </Button>
+            </DialogFooter>
+          )}
         </DialogContent>
       </Dialog>
 
@@ -3050,11 +3441,6 @@ function App() {
             </TabsContent>
           </Tabs>
 
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setSettingsOpen(false)}>
-              Fechar
-            </Button>
-          </DialogFooter>
         </DialogContent>
       </Dialog>
 

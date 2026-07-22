@@ -120,6 +120,11 @@ func (r *Repo) DiffBranch(base string) (string, error) {
 	return r.run("diff", fmt.Sprintf("%s...HEAD", base))
 }
 
+// DiffBranchNames returns paths changed between base and HEAD (triple-dot).
+func (r *Repo) DiffBranchNames(base string) (string, error) {
+	return r.run("diff", "--name-only", fmt.Sprintf("%s...HEAD", base))
+}
+
 func (r *Repo) HasStagedChanges() (bool, error) {
 	diff, err := r.DiffStaged()
 	if err != nil {

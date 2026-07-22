@@ -91,3 +91,48 @@ func ConfirmPR(ctx context.Context, projectPath, title, body string, draft bool)
 	}
 	return out, nil
 }
+
+// MarkPRReady marks the current draft PR as ready for review.
+func MarkPRReady(projectPath string) (*PRStatus, error) {
+	if strings.TrimSpace(projectPath) == "" {
+		return nil, fmt.Errorf("no project open")
+	}
+	client, err := prpkg.Open(projectPath)
+	if err != nil {
+		return nil, err
+	}
+	if err := client.Ready(); err != nil {
+		return nil, err
+	}
+	pr, err := client.ViewCurrent()
+	if err != nil {
+		return nil, err
+	}
+	return mapPRStatus(pr), nil
+}
+
+// MergePR merges the current branch PR. method: squash|merge|rebase.
+func MergePR(projectPath, method string) (*PROutcome, error) {
+	if strings.TrimSpace(projectPath) == "" {
+		return nil, fmt.Errorf("no project open")
+	}
+	client, err := prpkg.Open(projectPath)
+	if err != nil {
+		return nil, err
+	}
+	view, err := client.ViewCurrent()
+	if err != nil {
+		return nil, err
+	}
+	if view == nil {
+		return nil, fmt.Errorf("nenhum PR aberto nesta branch")
+	}
+	if _, err := client.Merge(method); err != nil {
+		return nil, err
+	}
+	return &PROutcome{
+		URL:   view.URL,
+		Title: view.Title,
+		Path:  projectPath,
+	}, nil
+}

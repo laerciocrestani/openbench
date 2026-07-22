@@ -295,6 +295,59 @@ func (s *AppService) RefreshOpenPR() (*desktop.PRStatus, error) {
 	return desktop.LoadOpenPR(s.currentPath())
 }
 
+// LoadCommitActivity returns a GitHub-style commit calendar for the open project.
+// authorOnly=true filters by local git user.email.
+func (s *AppService) LoadCommitActivity(authorOnly bool) (*desktop.CommitActivityView, error) {
+	return desktop.LoadCommitActivity(s.currentPath(), authorOnly)
+}
+
+// LoadTimeline returns a unified commit + PR activity timeline for the open project.
+func (s *AppService) LoadTimeline(limit int) (*desktop.TimelineView, error) {
+	return desktop.LoadTimeline(s.currentPath(), limit)
+}
+
+// RevertTimelineCommit creates a git revert commit for the given hash.
+func (s *AppService) RevertTimelineCommit(hash string, isMerge bool) (*desktop.HistoryActionResult, error) {
+	res, err := desktop.RevertTimelineCommit(s.currentPath(), hash, isMerge)
+	if err != nil {
+		return nil, err
+	}
+	if res != nil && res.Dashboard != nil {
+		s.setProjectPath(res.Dashboard.Path)
+	}
+	s.syncHubFromPrefs()
+	s.refreshTray()
+	return res, nil
+}
+
+// ResetTimelineCommit runs git reset --soft|mixed|hard to hash (must be ancestor of HEAD).
+func (s *AppService) ResetTimelineCommit(hash, mode string) (*desktop.HistoryActionResult, error) {
+	res, err := desktop.ResetTimelineCommit(s.currentPath(), hash, mode)
+	if err != nil {
+		return nil, err
+	}
+	if res != nil && res.Dashboard != nil {
+		s.setProjectPath(res.Dashboard.Path)
+	}
+	s.syncHubFromPrefs()
+	s.refreshTray()
+	return res, nil
+}
+
+// DeleteTimelineBranch deletes a local branch from the timeline context menu.
+func (s *AppService) DeleteTimelineBranch(name string, force bool) (*desktop.HistoryActionResult, error) {
+	res, err := desktop.DeleteTimelineBranch(s.currentPath(), name, force)
+	if err != nil {
+		return nil, err
+	}
+	if res != nil && res.Dashboard != nil {
+		s.setProjectPath(res.Dashboard.Path)
+	}
+	s.syncHubFromPrefs()
+	s.refreshTray()
+	return res, nil
+}
+
 // FileDiff returns before/after content for a changed file in the open project.
 func (s *AppService) FileDiff(path string) (*desktop.FileDiffView, error) {
 	return desktop.LoadFileDiff(s.currentPath(), path)
@@ -317,6 +370,36 @@ func (s *AppService) RunSync(mode, base string) (*desktop.SyncResult, error) {
 	s.syncHubFromPrefs()
 	s.refreshTray()
 	return res, nil
+}
+
+// RunPull fetches origin and fast-forwards the current branch / local base.
+func (s *AppService) RunPull(base string) (*desktop.PullResult, error) {
+	res, err := desktop.RunPull(s.currentPath(), base)
+	if err != nil {
+		return nil, err
+	}
+	if res != nil && res.Dashboard != nil {
+		s.setProjectPath(res.Dashboard.Path)
+	}
+	s.syncHubFromPrefs()
+	s.refreshTray()
+	return res, nil
+}
+
+// MarkPRReady marks the open draft PR as ready for review.
+func (s *AppService) MarkPRReady() (*desktop.PRStatus, error) {
+	return desktop.MarkPRReady(s.currentPath())
+}
+
+// MergePR merges the open PR (method: squash|merge|rebase).
+func (s *AppService) MergePR(method string) (*desktop.PROutcome, error) {
+	out, err := desktop.MergePR(s.currentPath(), method)
+	if err != nil {
+		return nil, err
+	}
+	s.syncHubFromPrefs()
+	s.refreshTray()
+	return out, nil
 }
 
 // ListBranches returns local branches for the open project.

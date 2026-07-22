@@ -9,10 +9,8 @@ import type {
 
 import {
   AlertDialog,
-  AlertDialogCancel,
   AlertDialogContent,
   AlertDialogDescription,
-  AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogMedia,
   AlertDialogTitle,
@@ -271,9 +269,6 @@ export function DockerGlobalPanel({
               {error}
             </pre>
           </div>
-          <AlertDialogFooter className="shrink-0">
-            <AlertDialogCancel>Fechar</AlertDialogCancel>
-          </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
     </div>
