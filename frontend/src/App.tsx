@@ -110,6 +110,7 @@ import {
   GitCommit,
   GitMerge,
   GitPullRequest,
+  Layers,
   Loader2,
   MessageSquare,
   PanelLeft,
@@ -649,7 +650,16 @@ function pullNeedsAttention(dash: Dashboard): boolean {
   return dash.behind > 0 || dash.baseBehind > 0
 }
 
-type NextToolbarStep = "commit" | "push" | "pull" | "pr" | null
+type NextToolbarStep = "commit" | "push" | "pull" | "pr" | "merge" | null
+
+function prMergeBlocked(dash: Dashboard | null): string | undefined {
+  const pr = dash?.openPR
+  if (!pr?.url) return "Nenhuma PR aberta nesta branch"
+  if (pr.isDraft) return "Marque Ready for review antes de mergear"
+  if (String(pr.mergeable || "").toUpperCase() === "CONFLICTING") return "PR com conflitos"
+  if ((pr.checksFail ?? 0) > 0) return "Checks falhando"
+  return undefined
+}
 
 /** Single recommended toolbar action based on repo state. */
 function nextToolbarStep(dash: Dashboard | null): NextToolbarStep {
@@ -668,6 +678,9 @@ function nextToolbarStep(dash: Dashboard | null): NextToolbarStep {
   ) {
     return "pr"
   }
+  if (dash.openPR?.url && !prMergeBlocked(dash)) {
+    return "merge"
+  }
   return null
 }
 
@@ -681,6 +694,8 @@ function nextStepTitle(step: NextToolbarStep): string {
       return "Próximo passo: Pull"
     case "pr":
       return "Próximo passo: abrir Pull Request"
+    case "merge":
+      return "Próximo passo: Merge PR"
     default:
       return ""
   }
@@ -690,7 +705,6 @@ function DashboardView({
   dash,
   busy,
   prManageBusy,
-  mergeMethod,
   dockerVisible,
   dockerLoading,
   commitActivity,
@@ -701,8 +715,6 @@ function DashboardView({
   onOpenBranches,
   onRecommendCommit,
   onMarkPRReady,
-  onMergePR,
-  onMergeMethodChange,
   onOpenDockerEnv,
   onDockerUp,
   onDockerUpBuild,
@@ -715,7 +727,6 @@ function DashboardView({
   dash: Dashboard
   busy: boolean
   prManageBusy: boolean
-  mergeMethod: string
   dockerVisible: boolean
   dockerLoading: boolean
   commitActivity: CommitActivityView | null
@@ -726,8 +737,6 @@ function DashboardView({
   onOpenBranches: () => void
   onRecommendCommit: () => void
   onMarkPRReady: () => void
-  onMergePR: () => void
-  onMergeMethodChange: (method: string) => void
   onOpenDockerEnv: () => void
   onDockerUp: () => void
   onDockerUpBuild: () => void
@@ -742,11 +751,6 @@ function DashboardView({
   const openPREnabled = canOpenPRInWeb(dash)
   const openPRTitle = openPRDisabledReason(dash)
   const pr = dash.openPR
-  const mergeBlocked =
-    !pr ||
-    pr.isDraft ||
-    String(pr.mergeable || "").toUpperCase() === "CONFLICTING" ||
-    (pr.checksFail ?? 0) > 0
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-4">
@@ -947,13 +951,10 @@ function DashboardView({
                       checks: {pr.checksSummary}
                     </Badge>
                   )}
-                  {pr.mergeable && (
-                    <Badge variant="outline">{pr.mergeable.toLowerCase()}</Badge>
-                  )}
                 </div>
                 <p className="line-clamp-2 text-xs text-muted-foreground">{pr.title}</p>
-                <div className="flex flex-wrap items-center gap-2">
-                  {pr.isDraft && (
+                {pr.isDraft && (
+                  <div className="flex flex-wrap items-center gap-2">
                     <Button
                       size="sm"
                       variant="secondary"
@@ -964,45 +965,8 @@ function DashboardView({
                       {prManageBusy ? <Loader2 className="size-3 animate-spin" /> : null}
                       Ready for review
                     </Button>
-                  )}
-                  <Select
-                    value={mergeMethod}
-                    onValueChange={(v) => {
-                      if (v) onMergeMethodChange(v)
-                    }}
-                  >
-                    <SelectTrigger className="h-7 w-[8.5rem] text-xs" disabled={busy || prManageBusy}>
-                      <SelectValue placeholder="squash" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="squash">squash</SelectItem>
-                      <SelectItem value="merge">merge</SelectItem>
-                      <SelectItem value="rebase">rebase</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <Button
-                    size="sm"
-                    className="h-7 gap-1 text-xs"
-                    disabled={busy || prManageBusy || mergeBlocked}
-                    title={
-                      pr.isDraft
-                        ? "Marque Ready for review antes de mergear"
-                        : String(pr.mergeable || "").toUpperCase() === "CONFLICTING"
-                          ? "PR com conflitos"
-                          : (pr.checksFail ?? 0) > 0
-                            ? "Checks falhando"
-                            : "Mergear PR no GitHub"
-                    }
-                    onClick={onMergePR}
-                  >
-                    {prManageBusy ? (
-                      <Loader2 className="size-3 animate-spin" />
-                    ) : (
-                      <GitMerge className="size-3" />
-                    )}
-                    Merge PR
-                  </Button>
-                </div>
+                  </div>
+                )}
               </div>
             )}
           </CardContent>
@@ -1265,7 +1229,8 @@ function App() {
 
   // PR manage (ready / merge)
   const [prManageBusy, setPrManageBusy] = useState(false)
-  const [mergeMethod, setMergeMethod] = useState("squash")
+  const [mergeDialogOpen, setMergeDialogOpen] = useState(false)
+  const [mergingMethod, setMergingMethod] = useState<string | null>(null)
 
   // Commit calendar
   const [commitActivity, setCommitActivity] = useState<CommitActivityView | null>(null)
@@ -1793,11 +1758,13 @@ function App() {
     }
   }
 
-  const mergePR = async () => {
+  const mergePR = async (method: string) => {
     setPrManageBusy(true)
+    setMergingMethod(method)
     setError(null)
     try {
-      await AppService.MergePR(mergeMethod)
+      await AppService.MergePR(method)
+      setMergeDialogOpen(false)
       const pr = await AppService.RefreshOpenPR()
       setDash((prev) => (prev ? { ...prev, openPR: pr ?? undefined } : prev))
       await refresh()
@@ -1806,6 +1773,7 @@ function App() {
       setError(errText(e))
     } finally {
       setPrManageBusy(false)
+      setMergingMethod(null)
     }
   }
 
@@ -2787,6 +2755,26 @@ function App() {
               </Button>
               <Button
                 size="sm"
+                variant="default"
+                onClick={() => setMergeDialogOpen(true)}
+                disabled={busy || prManageBusy || Boolean(prMergeBlocked(dash))}
+                className={cn(suggestedStep === "merge" && "next-step-pulse")}
+                title={
+                  suggestedStep === "merge"
+                    ? nextStepTitle("merge")
+                    : (prMergeBlocked(dash) ?? "Mergear PR no GitHub")
+                }
+              >
+                {prManageBusy ? <Loader2 className="animate-spin" /> : <GitMerge />}
+                Merge PR
+                {suggestedStep === "merge" ? (
+                  <Badge variant="outline" className="ml-1 h-5 px-1.5 text-[10px]">
+                    próximo
+                  </Badge>
+                ) : null}
+              </Button>
+              <Button
+                size="sm"
                 variant="outline"
                 onClick={() => void openSync()}
                 disabled={busy || syncBusy || pullBusy || dash.dirty}
@@ -2805,7 +2793,6 @@ function App() {
               dash={dash}
               busy={busy}
               prManageBusy={prManageBusy}
-              mergeMethod={mergeMethod}
               dockerVisible={dockerVisible}
               dockerLoading={dockerLoading}
               commitActivity={commitActivity}
@@ -2823,8 +2810,6 @@ function App() {
               onOpenBranches={() => void openBranches()}
               onRecommendCommit={() => void startCommit()}
               onMarkPRReady={() => void markPRReady()}
-              onMergePR={() => void mergePR()}
-              onMergeMethodChange={setMergeMethod}
               onOpenDockerEnv={() => setDockerEnvOpen(true)}
               onDockerUp={() => void dockerAction(() => AppService.DockerUp(false))}
               onDockerUpBuild={() => void dockerAction(() => AppService.DockerUp(true))}
@@ -3345,6 +3330,72 @@ function App() {
       </Dialog>
 
       {/* PR dialog */}
+      <Dialog open={mergeDialogOpen} onOpenChange={setMergeDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <GitMerge className="size-4" />
+              Merge PR
+              {dash?.openPR?.number ? (
+                <Badge variant="outline" className="font-normal">
+                  #{dash.openPR.number}
+                </Badge>
+              ) : null}
+            </DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            Escolha o método de merge no GitHub.
+          </p>
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+            <Button
+              className="h-auto flex-col gap-2 bg-teal-600 py-4 text-white hover:bg-teal-700"
+              disabled={prManageBusy}
+              onClick={() => void mergePR("squash")}
+            >
+              {mergingMethod === "squash" ? (
+                <Loader2 className="size-5 animate-spin" />
+              ) : (
+                <Layers className="size-5" />
+              )}
+              Squash
+            </Button>
+            <Button
+              className="h-auto flex-col gap-2 bg-violet-600 py-4 text-white hover:bg-violet-700"
+              disabled={prManageBusy}
+              onClick={() => void mergePR("merge")}
+            >
+              {mergingMethod === "merge" ? (
+                <Loader2 className="size-5 animate-spin" />
+              ) : (
+                <GitMerge className="size-5" />
+              )}
+              Merge
+            </Button>
+            <Button
+              className="h-auto flex-col gap-2 bg-amber-600 py-4 text-white hover:bg-amber-700"
+              disabled={prManageBusy}
+              onClick={() => void mergePR("rebase")}
+            >
+              {mergingMethod === "rebase" ? (
+                <Loader2 className="size-5 animate-spin" />
+              ) : (
+                <GitBranch className="size-5" />
+              )}
+              Rebase
+            </Button>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              disabled={prManageBusy}
+              onClick={() => setMergeDialogOpen(false)}
+            >
+              Cancelar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={prOpen} onOpenChange={setPrOpen}>
         <DialogContent className="flex h-[min(85vh,720px)] flex-col gap-4 overflow-hidden sm:max-w-3xl">
           <DialogHeader className="shrink-0">
