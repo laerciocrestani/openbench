@@ -382,7 +382,11 @@ func buildDoctorFixPlan(repo *gitpkg.Repo, snap *gitpkg.HealthSnapshot, issues [
 		}
 		plan.Warnings = append(plan.Warnings,
 			fmt.Sprintf("Não faça push/PR de novo em %s — a PR já foi mergeada", snap.Branch))
-		plan.Summary = "Salvar WIP, atualizar base e continuar em uma branch nova"
+		if willStash {
+			plan.Summary = "Salvar WIP, atualizar base e continuar em uma branch nova"
+		} else {
+			plan.Summary = "Atualizar base e continuar em uma branch nova"
+		}
 	} else {
 		if commitsOnBase {
 			add(DoctorFixStep{
