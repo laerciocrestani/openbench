@@ -93,7 +93,8 @@ func RunDoctor(ctx context.Context, opts DoctorOptions) (*DoctorReport, error) {
 
 	var openPR *prpkg.PRView
 	if client, err := openPRClient(opts.WorkDir); err == nil {
-		openPR, _ = client.ViewCurrent()
+		// Meta only: Doctor issues need PR state (e.g. MERGED), not CI checks.
+		openPR, _ = client.ViewCurrentMeta()
 	}
 
 	issues := analyzeHealthIssues(snap, openPR)
@@ -367,13 +368,9 @@ func buildHealthRecommendations(snap *gitpkg.HealthSnapshot, issues []healthIssu
 			if snap.IsDirty {
 				add("Salve o work: Commit na branch atual OU git stash push -m \"wip\"")
 			}
-			add(fmt.Sprintf("Atualize a base local %s (fetch)", snap.Base))
-			add(fmt.Sprintf("Crie uma NOVA feature branch a partir de %s atualizado", snap.Base))
-			if snap.IsDirty {
-				add("Aplique o work na branch nova (stash pop / cherry-pick) e abra outra PR")
-			} else {
-				add("Continue o desenvolvimento na branch nova (abra PR quando houver commits)")
-			}
+			add(fmt.Sprintf("Atualize a base local %s (fetch / Sync)", snap.Base))
+			add(fmt.Sprintf("Opção A — terminar: volte para %s e use Hygiene para limpar branches antigas", snap.Base))
+			add(fmt.Sprintf("Opção B — continuar: crie uma NOVA feature branch a partir de %s", snap.Base))
 			add(fmt.Sprintf("Evite push/PR de novo em %s — a PR já foi mergeada", snap.Branch))
 		case "dirty_tree":
 			if !mergedBranch {

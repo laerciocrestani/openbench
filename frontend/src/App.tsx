@@ -1380,6 +1380,7 @@ function App() {
   const [doctorFixOpen, setDoctorFixOpen] = useState(false)
   const [doctorFixPlan, setDoctorFixPlan] = useState<DoctorFixPlanView | null>(null)
   const [doctorFixPlanBusy, setDoctorFixPlanBusy] = useState(false)
+  const [doctorFixPlanError, setDoctorFixPlanError] = useState<string | null>(null)
   const [doctorFixRunning, setDoctorFixRunning] = useState(false)
   const [doctorFixLiveSteps, setDoctorFixLiveSteps] = useState<DoctorFixStepView[]>([])
 
@@ -1702,15 +1703,37 @@ function App() {
     dash?.openPR?.state,
   ])
 
-  const loadDoctorFixPlan = async (newBranch = "", baseAction = "") => {
+  const loadDoctorFixPlan = async (newBranch = "", baseAction = "", mergedAction = "") => {
     setDoctorFixPlanBusy(true)
+    setDoctorFixPlanError(null)
     setError(null)
+    let timeoutId = 0
     try {
-      const plan = await AppService.PlanDoctorFix(newBranch, baseAction)
+      const plan = await Promise.race([
+        AppService.PlanDoctorFix(newBranch, baseAction, mergedAction),
+        new Promise<never>((_, reject) => {
+          timeoutId = window.setTimeout(
+            () =>
+              reject(
+                new Error(
+                  "Timeout ao montar o plano — reinicie o app (o binário pode estar desatualizado).",
+                ),
+              ),
+            20_000,
+          )
+        }),
+      ])
       setDoctorFixPlan(plan ?? null)
+      if (!plan) {
+        setDoctorFixPlanError("Não foi possível montar o plano do Doctor.")
+      }
     } catch (e) {
-      setError(errText(e))
+      const msg = errText(e)
+      setDoctorFixPlanError(msg)
+      setError(msg)
+      setDoctorFixPlan(null)
     } finally {
+      if (timeoutId) window.clearTimeout(timeoutId)
       setDoctorFixPlanBusy(false)
     }
   }
@@ -1719,17 +1742,15 @@ function App() {
     setDoctorOpen(false)
     setDoctorFixOpen(true)
     setDoctorFixPlan(null)
+    setDoctorFixPlanError(null)
     setDoctorFixLiveSteps([])
-    try {
-      await loadDoctorFixPlan()
-    } catch {
-      setDoctorFixOpen(false)
-    }
+    await loadDoctorFixPlan()
   }
 
   const runDoctorFix = async (opts: {
     newBranch: string
     baseAction: string
+    mergedAction: string
     confirmDestructive: boolean
   }) => {
     setError(null)
@@ -1738,6 +1759,7 @@ function App() {
       const plan = await AppService.BeginDoctorFix(
         opts.newBranch,
         opts.baseAction,
+        opts.mergedAction,
         opts.confirmDestructive,
       )
       const steps = plan?.steps ?? doctorFixPlan?.steps ?? []
@@ -4291,10 +4313,13 @@ function App() {
         onOpenChange={setDoctorFixOpen}
         plan={doctorFixPlan}
         loadingPlan={doctorFixPlanBusy}
+        planError={doctorFixPlanError}
         running={doctorFixRunning}
         liveSteps={doctorFixLiveSteps}
         onConfirm={(opts) => void runDoctorFix(opts)}
-        onReplan={(opts) => void loadDoctorFixPlan(opts.newBranch, opts.baseAction)}
+        onReplan={(opts) =>
+          void loadDoctorFixPlan(opts.newBranch, opts.baseAction, opts.mergedAction)
+        }
       />
 
       <FloatingChat

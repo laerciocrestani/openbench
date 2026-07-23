@@ -25,12 +25,19 @@ const (
 	DoctorStepPushBase       = "push_base"
 )
 
+// Post-merge destinations for work_on_merged_branch.
+const (
+	MergedActionContinue   = "continue"    // create a new feature branch from updated base
+	MergedActionReturnBase = "return_base" // update base and check it out (finish / sync)
+)
+
 // DoctorFixOptions configures plan execution.
 type DoctorFixOptions struct {
 	WorkDir            string
 	Base               string
 	NewBranchName      string
 	BaseAction         string // update | rebase | reset | push
+	MergedAction       string // continue | return_base
 	ConfirmDestructive bool
 }
 
@@ -53,6 +60,9 @@ type DoctorFixPlan struct {
 	NeedsBaseAction         bool            `json:"needsBaseAction"`
 	BaseActionOptions       []string        `json:"baseActionOptions,omitempty"`
 	SuggestedBaseAction     string          `json:"suggestedBaseAction,omitempty"`
+	NeedsMergedAction       bool            `json:"needsMergedAction"`
+	MergedActionOptions     []string        `json:"mergedActionOptions,omitempty"`
+	SuggestedMergedAction   string          `json:"suggestedMergedAction,omitempty"`
 	NeedsDestructiveConfirm bool            `json:"needsDestructiveConfirm"`
 	Summary                 string          `json:"summary"`
 	Warnings                []string        `json:"warnings,omitempty"`
@@ -112,6 +122,19 @@ func NewDoctorFixRunner(opts DoctorFixOptions) (*DoctorFixRunner, *DoctorFixPlan
 	if !plan.CanAutoFix {
 		return nil, plan, fmt.Errorf("%s", plan.BlockReason)
 	}
+
+	if plan.NeedsMergedAction {
+		action := effectiveMergedAction(opts, plan)
+		if action == "" {
+			return nil, plan, fmt.Errorf("escolha o destino após o merge (%s)", strings.Join(plan.MergedActionOptions, "|"))
+		}
+		opts.MergedAction = action
+		plan = buildDoctorFixPlan(repo, snap, issues, opts)
+		if !plan.CanAutoFix {
+			return nil, plan, fmt.Errorf("%s", plan.BlockReason)
+		}
+	}
+
 	if plan.NeedsBranchName {
 		name := strings.TrimSpace(opts.NewBranchName)
 		if name == "" {
@@ -266,7 +289,8 @@ func loadDoctorContext(workDir, base string) (*gitpkg.Repo, *gitpkg.HealthSnapsh
 	}
 	var openPR *prpkg.PRView
 	if client, err := openPRClient(workDir); err == nil {
-		openPR, _ = client.ViewCurrent()
+		// Meta only: CI checks are slow and unused by the fix planner.
+		openPR, _ = client.ViewCurrentMeta()
 	}
 	issues := analyzeHealthIssues(snap, openPR)
 	return repo, snap, issues, openPR, nil
@@ -323,7 +347,6 @@ func buildDoctorFixPlan(repo *gitpkg.Repo, snap *gitpkg.HealthSnapshot, issues [
 
 	// Stash only when we must move/sync with a dirty tree.
 	willStash := dirty && needsStructuralFix
-	plan.NeedsBranchName = merged || commitsOnBase
 
 	var steps []DoctorFixStep
 	add := func(step DoctorFixStep) {
@@ -351,6 +374,7 @@ func buildDoctorFixPlan(repo *gitpkg.Repo, snap *gitpkg.HealthSnapshot, issues [
 	}
 
 	branchName := plan.SuggestedBranch
+	mergedAction := ""
 
 	// Base divergence handling (also when leaving a merged feature that needs a fresh base).
 	if baseDiv && snap.BaseDivergence != nil {
@@ -365,30 +389,70 @@ func buildDoctorFixPlan(repo *gitpkg.Repo, snap *gitpkg.HealthSnapshot, issues [
 	}
 
 	if merged {
-		add(DoctorFixStep{
-			Kind: DoctorStepCreateBranch, Risk: "ok",
-			Title:      "Criar nova feature branch",
-			Command:    fmt.Sprintf("git checkout -b %s %s", branchName, snap.Base),
-			FromRef:    snap.Base,
-			IssueCodes: []string{"work_on_merged_branch"},
-		})
-		if willStash {
+		plan.NeedsMergedAction = true
+		plan.MergedActionOptions = []string{MergedActionReturnBase, MergedActionContinue}
+		// Finished work (clean) → prefer sync back to base. WIP → prefer new feature branch.
+		plan.SuggestedMergedAction = MergedActionReturnBase
+		if dirty {
+			plan.SuggestedMergedAction = MergedActionContinue
+		}
+		mergedAction = effectiveMergedAction(opts, plan)
+		plan.SuggestedMergedAction = mergedAction
+
+		switch mergedAction {
+		case MergedActionReturnBase:
+			plan.NeedsBranchName = false
 			add(DoctorFixStep{
-				Kind: DoctorStepStashPop, Risk: "warn",
-				Title:      "Reaplicar alterações na branch nova",
-				Command:    "git stash pop",
+				Kind: DoctorStepCheckout, Risk: "ok",
+				Title:      fmt.Sprintf("Voltar para %s", snap.Base),
+				Command:    fmt.Sprintf("git checkout %s", snap.Base),
+				FromRef:    snap.Base,
 				IssueCodes: []string{"work_on_merged_branch"},
 			})
-		}
-		plan.Warnings = append(plan.Warnings,
-			fmt.Sprintf("Não faça push/PR de novo em %s — a PR já foi mergeada", snap.Branch))
-		if willStash {
-			plan.Summary = "Salvar WIP, atualizar base e continuar em uma branch nova"
-		} else {
-			plan.Summary = "Atualizar base e continuar em uma branch nova"
+			// Do not stash-pop onto the base: "terminar" should leave main clean.
+			// WIP stays in stash until the user continues on a new feature branch.
+			if willStash {
+				plan.Warnings = append(plan.Warnings,
+					"WIP fica no stash (não reaplicado em "+snap.Base+") — use \"Nova feature branch\" para continuar o trabalho",
+				)
+			}
+			plan.Warnings = append(plan.Warnings,
+				fmt.Sprintf("Não faça push/PR de novo em %s — a PR já foi mergeada", snap.Branch),
+				"Depois: use Hygiene para limpar branches mergeadas antigas",
+			)
+			if willStash {
+				plan.Summary = fmt.Sprintf("Salvar WIP no stash, atualizar %s e voltar para a base", snap.Base)
+			} else {
+				plan.Summary = fmt.Sprintf("Atualizar %s e voltar para a base (repo sincronizado)", snap.Base)
+			}
+		default: // continue
+			plan.NeedsBranchName = true
+			add(DoctorFixStep{
+				Kind: DoctorStepCreateBranch, Risk: "ok",
+				Title:      "Criar nova feature branch",
+				Command:    fmt.Sprintf("git checkout -b %s %s", branchName, snap.Base),
+				FromRef:    snap.Base,
+				IssueCodes: []string{"work_on_merged_branch"},
+			})
+			if willStash {
+				add(DoctorFixStep{
+					Kind: DoctorStepStashPop, Risk: "warn",
+					Title:      "Reaplicar alterações na branch nova",
+					Command:    "git stash pop",
+					IssueCodes: []string{"work_on_merged_branch"},
+				})
+			}
+			plan.Warnings = append(plan.Warnings,
+				fmt.Sprintf("Não faça push/PR de novo em %s — a PR já foi mergeada", snap.Branch))
+			if willStash {
+				plan.Summary = "Salvar WIP, atualizar base e continuar em uma branch nova"
+			} else {
+				plan.Summary = "Atualizar base e continuar em uma branch nova"
+			}
 		}
 	} else {
 		if commitsOnBase {
+			plan.NeedsBranchName = true
 			add(DoctorFixStep{
 				Kind: DoctorStepCreateBranch, Risk: "ok",
 				Title:      "Mover trabalho para feature branch",
@@ -538,6 +602,19 @@ func effectiveBaseAction(opts DoctorFixOptions, plan *DoctorFixPlan) string {
 		action = plan.SuggestedBaseAction
 	}
 	return action
+}
+
+func effectiveMergedAction(opts DoctorFixOptions, plan *DoctorFixPlan) string {
+	action := strings.TrimSpace(opts.MergedAction)
+	if action == "" {
+		action = plan.SuggestedMergedAction
+	}
+	switch action {
+	case MergedActionContinue, MergedActionReturnBase:
+		return action
+	default:
+		return plan.SuggestedMergedAction
+	}
 }
 
 func baseCommitsDiscardable(div *gitpkg.DivergenceReport) bool {

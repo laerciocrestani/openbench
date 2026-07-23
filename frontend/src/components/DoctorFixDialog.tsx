@@ -25,6 +25,7 @@ import {
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { cn } from "@/lib/utils"
 
 function stepIcon(status: string | undefined) {
@@ -54,6 +55,7 @@ export function DoctorFixDialog({
   onOpenChange,
   plan,
   loadingPlan,
+  planError,
   running,
   liveSteps,
   onConfirm,
@@ -63,17 +65,20 @@ export function DoctorFixDialog({
   onOpenChange: (open: boolean) => void
   plan: DoctorFixPlanView | null
   loadingPlan: boolean
+  planError?: string | null
   running: boolean
   liveSteps: DoctorFixStepView[]
   onConfirm: (opts: {
     newBranch: string
     baseAction: string
+    mergedAction: string
     confirmDestructive: boolean
   }) => void
-  onReplan: (opts: { newBranch: string; baseAction: string }) => void
+  onReplan: (opts: { newBranch: string; baseAction: string; mergedAction: string }) => void
 }) {
   const [newBranch, setNewBranch] = useState("")
   const [baseAction, setBaseAction] = useState("")
+  const [mergedAction, setMergedAction] = useState("")
   const [confirmDestructive, setConfirmDestructive] = useState(false)
   const [hydrated, setHydrated] = useState(false)
 
@@ -85,6 +90,7 @@ export function DoctorFixDialog({
     if (!plan || hydrated) return
     setNewBranch(plan.suggestedBranch || "")
     setBaseAction(plan.suggestedBaseAction || plan.baseActionOptions?.[0] || "")
+    setMergedAction(plan.suggestedMergedAction || plan.mergedActionOptions?.[0] || "")
     setConfirmDestructive(false)
     setHydrated(true)
   }, [open, plan, hydrated])
@@ -124,8 +130,15 @@ export function DoctorFixDialog({
     onConfirm({
       newBranch: newBranch.trim(),
       baseAction,
+      mergedAction,
       confirmDestructive,
     })
+  }
+
+  const mergedLabel = (opt: string) => {
+    if (opt === "return_base") return `Voltar para ${plan?.base || "main"}`
+    if (opt === "continue") return "Nova feature branch"
+    return opt
   }
 
   return (
@@ -139,7 +152,11 @@ export function DoctorFixDialog({
           <DialogDescription className="text-xs">
             {plan
               ? `${plan.summary || "Plano de correção"} · ${plan.branch || "—"} → base ${plan.base || "—"}`
-              : "Montando plano…"}
+              : loadingPlan
+                ? "Montando plano…"
+                : planError
+                  ? "Falha ao montar o plano"
+                  : "Sem plano"}
           </DialogDescription>
         </DialogHeader>
 
@@ -152,10 +169,69 @@ export function DoctorFixDialog({
               </div>
             ) : null}
 
+            {!loadingPlan && !plan && planError ? (
+              <p className="rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+                {planError}
+              </p>
+            ) : null}
+
             {plan && !plan.canAutoFix ? (
               <p className="rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
                 {plan.blockReason || "Ajuste automático indisponível."}
               </p>
+            ) : null}
+
+            {plan?.needsMergedAction && (plan.mergedActionOptions?.length ?? 0) > 0 ? (
+              <Tabs
+                value={mergedAction || plan.suggestedMergedAction || plan.mergedActionOptions![0]}
+                onValueChange={(opt) => {
+                  if (running || !opt) return
+                  setMergedAction(opt)
+                  setConfirmDestructive(false)
+                  onReplan({
+                    newBranch: newBranch.trim(),
+                    baseAction,
+                    mergedAction: opt,
+                  })
+                }}
+                className="gap-3"
+              >
+                <div className="space-y-1.5">
+                  <Label>O que fazer agora?</Label>
+                  <TabsList className="grid w-full grid-cols-2">
+                    {plan.mergedActionOptions!.map((opt) => (
+                      <TabsTrigger
+                        key={opt}
+                        value={opt}
+                        disabled={running}
+                        className="text-xs sm:text-sm"
+                      >
+                        {mergedLabel(opt)}
+                      </TabsTrigger>
+                    ))}
+                  </TabsList>
+                </div>
+
+                <TabsContent value="return_base" className="mt-0 space-y-2">
+                  <p className="text-xs text-muted-foreground">
+                    Terminar o ciclo: sincroniza <code className="text-[11px]">{plan.base || "main"}</code>, faz
+                    checkout nela e deixa a base limpa. Ideal após merge.
+                  </p>
+                  {plan.steps?.some((s) => s.kind === "stash_push") ? (
+                    <p className="rounded-lg border border-amber-500/25 bg-amber-500/5 px-3 py-2 text-xs text-amber-800 dark:text-amber-300">
+                      Com WIP: as alterações vão para o stash e <strong>não</strong> são reaplicadas em{" "}
+                      {plan.base || "main"}. Para continuar o trabalho, use a aba “Nova feature branch”.
+                    </p>
+                  ) : null}
+                </TabsContent>
+
+                <TabsContent value="continue" className="mt-0 space-y-2">
+                  <p className="text-xs text-muted-foreground">
+                    Continuar desenvolvendo: cria uma branch nova a partir de{" "}
+                    <code className="text-[11px]">{plan.base || "main"}</code> atualizada e reaplica o WIP nela.
+                  </p>
+                </TabsContent>
+              </Tabs>
             ) : null}
 
             {plan?.needsBranchName ? (
@@ -166,7 +242,12 @@ export function DoctorFixDialog({
                   value={newBranch}
                   onChange={(e) => setNewBranch(e.target.value)}
                   onBlur={() => {
-                    if (!running) onReplan({ newBranch: newBranch.trim(), baseAction })
+                    if (!running)
+                      onReplan({
+                        newBranch: newBranch.trim(),
+                        baseAction,
+                        mergedAction,
+                      })
                   }}
                   disabled={running}
                   placeholder="feature/minha-alteracao"
@@ -188,7 +269,11 @@ export function DoctorFixDialog({
                       onClick={() => {
                         setBaseAction(opt)
                         setConfirmDestructive(false)
-                        onReplan({ newBranch: newBranch.trim(), baseAction: opt })
+                        onReplan({
+                          newBranch: newBranch.trim(),
+                          baseAction: opt,
+                          mergedAction,
+                        })
                       }}
                     >
                       {opt}

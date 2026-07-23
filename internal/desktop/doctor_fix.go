@@ -28,6 +28,9 @@ type DoctorFixPlanView struct {
 	NeedsBaseAction         bool                `json:"needsBaseAction"`
 	BaseActionOptions       []string            `json:"baseActionOptions,omitempty"`
 	SuggestedBaseAction     string              `json:"suggestedBaseAction,omitempty"`
+	NeedsMergedAction       bool                `json:"needsMergedAction"`
+	MergedActionOptions     []string            `json:"mergedActionOptions,omitempty"`
+	SuggestedMergedAction   string              `json:"suggestedMergedAction,omitempty"`
 	NeedsDestructiveConfirm bool                `json:"needsDestructiveConfirm"`
 	Summary                 string              `json:"summary"`
 	Warnings                []string            `json:"warnings,omitempty"`
@@ -62,7 +65,7 @@ type DoctorFixSession struct {
 }
 
 // PlanDoctorFix builds the remediation preview for the open project.
-func PlanDoctorFix(projectPath, base, newBranch, baseAction string) (*DoctorFixPlanView, error) {
+func PlanDoctorFix(projectPath, base, newBranch, baseAction, mergedAction string) (*DoctorFixPlanView, error) {
 	if strings.TrimSpace(projectPath) == "" {
 		return nil, fmt.Errorf("no project open")
 	}
@@ -71,6 +74,7 @@ func PlanDoctorFix(projectPath, base, newBranch, baseAction string) (*DoctorFixP
 		Base:          base,
 		NewBranchName: newBranch,
 		BaseAction:    baseAction,
+		MergedAction:  mergedAction,
 	})
 	if err != nil {
 		return nil, err
@@ -80,7 +84,7 @@ func PlanDoctorFix(projectPath, base, newBranch, baseAction string) (*DoctorFixP
 
 // BeginDoctorFix prepares a step-by-step execution session.
 func BeginDoctorFix(
-	projectPath, base, newBranch, baseAction string,
+	projectPath, base, newBranch, baseAction, mergedAction string,
 	confirmDestructive bool,
 ) (*DoctorFixPlanView, *DoctorFixSession, error) {
 	if strings.TrimSpace(projectPath) == "" {
@@ -91,6 +95,7 @@ func BeginDoctorFix(
 		Base:               base,
 		NewBranchName:      newBranch,
 		BaseAction:         baseAction,
+		MergedAction:       mergedAction,
 		ConfirmDestructive: confirmDestructive,
 	})
 	if err != nil {
@@ -147,6 +152,9 @@ func mapDoctorFixPlan(plan *app.DoctorFixPlan) *DoctorFixPlanView {
 		NeedsBaseAction:         plan.NeedsBaseAction,
 		BaseActionOptions:       append([]string{}, plan.BaseActionOptions...),
 		SuggestedBaseAction:     plan.SuggestedBaseAction,
+		NeedsMergedAction:       plan.NeedsMergedAction,
+		MergedActionOptions:     append([]string{}, plan.MergedActionOptions...),
+		SuggestedMergedAction:   plan.SuggestedMergedAction,
 		NeedsDestructiveConfirm: plan.NeedsDestructiveConfirm,
 		Summary:                 plan.Summary,
 		Warnings:                append([]string{}, plan.Warnings...),
