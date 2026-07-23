@@ -152,6 +152,10 @@ func mapPRStatus(pr *prpkg.PRView) *PRStatus {
 	if pr == nil {
 		return nil
 	}
+	// Only surface open PRs in the dashboard toolbar (merged/closed must not pulse Merge).
+	if !strings.EqualFold(strings.TrimSpace(pr.State), "OPEN") {
+		return nil
+	}
 	return &PRStatus{
 		URL:            pr.URL,
 		Title:          pr.Title,

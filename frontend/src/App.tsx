@@ -76,6 +76,8 @@ import { DockerEnvironmentSheet } from "@/components/docker-environment-sheet"
 import { DockerGlobalPanel } from "@/components/docker-global-panel"
 import { DoctorDialog } from "@/components/DoctorDialog"
 import { DoctorFixDialog } from "@/components/DoctorFixDialog"
+import { DoctorGateAlert } from "@/components/DoctorGateAlert"
+import { doctorBlocksAction, doctorGate } from "@/lib/doctor-gate"
 import { FloatingChat } from "@/components/floating-chat"
 import {
   TerminalPanel,
@@ -648,7 +650,13 @@ function openPRDisabledReason(dash: Dashboard): string | undefined {
 }
 
 /** Why "Pull Request" toolbar action is unavailable (create/review flow). */
-function createPRDisabledReason(dash: Dashboard): string | undefined {
+function createPRDisabledReason(
+  dash: Dashboard,
+  doctorBlocked = false,
+): string | undefined {
+  if (doctorBlocked) {
+    return "Doctor: resolva as recomendações antes de abrir PR"
+  }
   if (dash.detached) return "HEAD detached — faça checkout de uma branch"
   if (isOnBase(dash)) return `Você está em ${dash.baseBranch || "main"} — use uma feature branch`
   if (dash.dirty) return "Há alterações locais — faça commit antes de abrir PR"
@@ -676,11 +684,14 @@ function hygieneBadgeLabel(dash: Dashboard): string {
   return `${local}·${remote}`
 }
 
-type NextToolbarStep = "commit" | "push" | "pull" | "pr" | "merge" | null
+type NextToolbarStep = "commit" | "push" | "pull" | "sync" | "pr" | "merge" | "hygiene" | null
 
 function prMergeBlocked(dash: Dashboard | null): string | undefined {
   const pr = dash?.openPR
   if (!pr?.url) return "Nenhuma PR aberta nesta branch"
+  if (pr.state && !String(pr.state).toUpperCase().startsWith("OPEN")) {
+    return "PR já fechada/mergeada"
+  }
   if (pr.isDraft) return "Marque Ready for review antes de mergear"
   if (String(pr.mergeable || "").toUpperCase() === "CONFLICTING") return "PR com conflitos"
   if ((pr.checksFail ?? 0) > 0) return "Checks falhando"
@@ -697,9 +708,15 @@ function mergeFastDashboard(prev: Dashboard | null, next: Dashboard): Dashboard 
   const dockerStub =
     next.hasDocker &&
     (!next.docker || next.docker.summary === "carregando…" || next.docker.total === 0)
+  const preservedPR = sameBranch ? prev.openPR : undefined
+  const openPR =
+    next.openPR ??
+    (preservedPR && (!preservedPR.state || String(preservedPR.state).toUpperCase().startsWith("OPEN"))
+      ? preservedPR
+      : undefined)
   return {
     ...next,
-    openPR: next.openPR ?? (sameBranch ? prev.openPR : undefined),
+    openPR,
     docker: dockerStub && prev.docker?.total ? prev.docker : next.docker,
   }
 }
@@ -711,6 +728,8 @@ function nextToolbarStep(dash: Dashboard | null, openPRReady = true): NextToolba
   const pushCount = dash.hasUpstream ? dash.ahead : dash.commitsAheadOfBase
   if (pushCount > 0) return "push"
   if (dash.behind > 0) return "pull"
+  // After a PR merge, local base usually lags origin — Sync before more work.
+  if (syncNeedsAttention(dash)) return "sync"
   if (
     !isOnBase(dash) &&
     dash.commitsAheadOfBase > 0 &&
@@ -726,6 +745,7 @@ function nextToolbarStep(dash: Dashboard | null, openPRReady = true): NextToolba
   if (dash.openPR?.url && !prMergeBlocked(dash)) {
     return "merge"
   }
+  if (hygieneNeedsAttention(dash)) return "hygiene"
   return null
 }
 
@@ -737,10 +757,14 @@ function nextStepTitle(step: NextToolbarStep): string {
       return "Próximo passo: Push"
     case "pull":
       return "Próximo passo: Pull"
+    case "sync":
+      return "Próximo passo: Sync da base"
     case "pr":
       return "Próximo passo: abrir Pull Request"
     case "merge":
       return "Próximo passo: Merge PR"
+    case "hygiene":
+      return "Próximo passo: Hygiene"
     default:
       return ""
   }
@@ -1633,6 +1657,15 @@ function App() {
     await runDoctor(false)
   }
 
+  const openDoctorFromGate = () => {
+    setCommitOpen(false)
+    setPrOpen(false)
+    setMergeDialogOpen(false)
+    setSyncOpen(false)
+    setNewBranchOpen(false)
+    void openDoctor()
+  }
+
   // Keep Doctor badge fresh when the workspace changes (not only when the dialog opens).
   useEffect(() => {
     if (!dash?.path) {
@@ -1845,6 +1878,8 @@ function App() {
     try {
       await AppService.MergePR(method)
       setMergeDialogOpen(false)
+      // Clear immediately — gh may still return the MERGED PR for a moment.
+      setDash((prev) => (prev ? { ...prev, openPR: undefined } : prev))
       const pr = await AppService.RefreshOpenPR()
       setDash((prev) => (prev ? { ...prev, openPR: pr ?? undefined } : prev))
       await refresh()
@@ -1953,6 +1988,11 @@ function App() {
 
   const runPushOnly = async () => {
     if (!dash) return
+    if (doctorBlocksAction(doctorReport, "push")) {
+      setError("Doctor: resolva a branch mergeada antes de fazer push")
+      void openDoctor()
+      return
+    }
     if (!(await ensureOnboarding(true))) return
     setBusy(true)
     setError(null)
@@ -1974,6 +2014,10 @@ function App() {
     : 0
   const canPushOnly = Boolean(dash) && !dash!.detached && pushAheadCount > 0
   const suggestedStep = nextToolbarStep(dash, openPRReady)
+  const commitDoctorGate = doctorGate(doctorReport, "commit")
+  const pushDoctorGate = doctorGate(doctorReport, "push")
+  const prDoctorGate = doctorGate(doctorReport, "pr")
+  const mergeDoctorGate = doctorGate(doctorReport, "merge")
 
   const confirmNewBranch = async () => {
     const name = newBranchName.trim()
@@ -2028,6 +2072,11 @@ function App() {
 
   const startPR = async () => {
     if (!dash) return
+    if (doctorBlocksAction(doctorReport, "pr")) {
+      setError("Doctor: resolva as recomendações antes de abrir PR")
+      void openDoctor()
+      return
+    }
     if (!(await ensureOnboarding(true))) return
     setPrOpen(true)
     setPrPreview(null)
@@ -2657,18 +2706,30 @@ function App() {
                   size="sm"
                   className={cn(
                     "rounded-r-none",
-                    suggestedStep === "commit" && "next-step-pulse",
+                    suggestedStep === "commit" && !commitDoctorGate.blocked && "next-step-pulse",
+                    commitDoctorGate.blocked &&
+                      "border-amber-500/60 bg-amber-500/10 text-amber-900 hover:bg-amber-500/15 dark:text-amber-200",
                   )}
                   onClick={() => void startCommit()}
                   disabled={busy}
                   title={
-                    suggestedStep === "commit"
-                      ? nextStepTitle("commit")
-                      : undefined
+                    commitDoctorGate.blocked
+                      ? commitDoctorGate.title
+                      : suggestedStep === "commit"
+                        ? nextStepTitle("commit")
+                        : undefined
                   }
                 >
                   <GitCommit />
                   Commit
+                  {commitDoctorGate.blocked ? (
+                    <Badge
+                      variant="outline"
+                      className="ml-1 h-5 border-amber-500/50 bg-amber-500/20 px-1.5 text-[10px]"
+                    >
+                      doctor
+                    </Badge>
+                  ) : null}
                 </Button>
                 <DropdownMenu>
                   <DropdownMenuTrigger
@@ -2684,6 +2745,18 @@ function App() {
                     <ChevronDown className="size-3.5" />
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="start" className="min-w-56">
+                    {commitDoctorGate.blocked && (
+                      <>
+                        <DropdownMenuLabel className="text-amber-800 dark:text-amber-200">
+                          Doctor recomenda outra ação
+                        </DropdownMenuLabel>
+                        <DropdownMenuItem onClick={() => void openDoctor()}>
+                          <Stethoscope />
+                          Resolver no Doctor
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator />
+                      </>
+                    )}
                     {isOnBase(dash) ? (
                       <>
                         <DropdownMenuLabel>Na base ({dash.baseBranch})</DropdownMenuLabel>
@@ -2702,7 +2775,10 @@ function App() {
                           Commit
                         </DropdownMenuItem>
                         {canPushOnly && (
-                          <DropdownMenuItem onClick={() => void runPushOnly()}>
+                          <DropdownMenuItem
+                            disabled={pushDoctorGate.blocked}
+                            onClick={() => void runPushOnly()}
+                          >
                             Push
                             {pushAheadCount > 0 ? ` (↑${pushAheadCount})` : ""}
                           </DropdownMenuItem>
@@ -2713,20 +2789,26 @@ function App() {
                         <DropdownMenuLabel>Nesta branch</DropdownMenuLabel>
                         <DropdownMenuItem onClick={() => void startCommitAction("commit")}>
                           Commit
+                          {commitDoctorGate.blocked ? " · não recomendado" : ""}
                         </DropdownMenuItem>
                         <DropdownMenuItem onClick={() => void startCommitAction("push")}>
                           Commit & Push
+                          {commitDoctorGate.blocked ? " · não recomendado" : ""}
                         </DropdownMenuItem>
                         <DropdownMenuItem
-                          disabled={!canPushOnly}
+                          disabled={!canPushOnly || pushDoctorGate.blocked}
                           onClick={() => void runPushOnly()}
                         >
                           Push
                           {pushAheadCount > 0 ? ` (↑${pushAheadCount})` : ""}
                           {!dash.hasUpstream && pushAheadCount > 0 ? " · primeiro push" : ""}
                         </DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => void startCommitAction("pr")}>
+                        <DropdownMenuItem
+                          disabled={prDoctorGate.blocked}
+                          onClick={() => void startCommitAction("pr")}
+                        >
                           Commit & Create PR
+                          {prDoctorGate.blocked ? " · use Doctor" : ""}
                         </DropdownMenuItem>
                       </>
                     )}
@@ -2738,11 +2820,13 @@ function App() {
                   size="sm"
                   variant="outline"
                   onClick={() => void runPushOnly()}
-                  disabled={busy}
+                  disabled={busy || pushDoctorGate.blocked}
                   className={cn(suggestedStep === "push" && "next-step-pulse")}
                   title={
-                    suggestedStep === "push"
-                      ? nextStepTitle("push")
+                    pushDoctorGate.blocked
+                      ? pushDoctorGate.title
+                      : suggestedStep === "push"
+                        ? nextStepTitle("push")
                       : dash.hasUpstream
                         ? `Push ↑${pushAheadCount} para o upstream`
                         : `Primeiro push de ${dash.branch} (↑${pushAheadCount} vs ${dash.baseBranch || "main"})`
@@ -2833,12 +2917,12 @@ function App() {
                 size="sm"
                 variant="secondary"
                 onClick={() => void startPR()}
-                disabled={busy || Boolean(createPRDisabledReason(dash))}
+                disabled={busy || Boolean(createPRDisabledReason(dash, prDoctorGate.blocked))}
                 className={cn(suggestedStep === "pr" && "next-step-pulse")}
                 title={
                   suggestedStep === "pr"
                     ? nextStepTitle("pr")
-                    : (createPRDisabledReason(dash) ??
+                    : (createPRDisabledReason(dash, prDoctorGate.blocked) ??
                       (dash.openPR?.url
                         ? `PR #${dash.openPR.number} já aberta`
                         : "Criar ou revisar Pull Request"))
@@ -2877,20 +2961,22 @@ function App() {
                 variant="outline"
                 onClick={() => void runSync()}
                 disabled={busy || syncBusy || pullBusy || hygieneBusy || dash.dirty}
-                className={cn(syncNeedsAttention(dash) && "next-step-pulse")}
+                className={cn(suggestedStep === "sync" && "next-step-pulse")}
                 title={
-                  dash.dirty
-                    ? "Working tree dirty — commit ou stash antes de sincronizar"
-                    : syncNeedsAttention(dash)
-                      ? `Sync: ${dash.baseBranch || "main"} ↓${dash.baseBehind} no remoto`
-                      : `Sincronizar ${dash.baseBranch || "main"} com origin`
+                  suggestedStep === "sync"
+                    ? nextStepTitle("sync")
+                    : dash.dirty
+                      ? "Working tree dirty — commit ou stash antes de sincronizar"
+                      : syncNeedsAttention(dash)
+                        ? `Sync: ${dash.baseBranch || "main"} ↓${dash.baseBehind} no remoto`
+                        : `Sincronizar ${dash.baseBranch || "main"} com origin`
                 }
               >
                 {syncBusy ? <Loader2 className="animate-spin" /> : <ArrowDownUp />}
                 Sync
-                {syncNeedsAttention(dash) && (
+                {(suggestedStep === "sync" || syncNeedsAttention(dash)) && (
                   <Badge variant="secondary" className="ml-1 h-5 px-1.5 text-[10px]">
-                    ↓{dash.baseBehind}
+                    {suggestedStep === "sync" ? "próximo" : `↓${dash.baseBehind}`}
                   </Badge>
                 )}
               </Button>
@@ -2899,18 +2985,20 @@ function App() {
                 variant="outline"
                 onClick={() => openHygiene()}
                 disabled={busy || syncBusy || pullBusy || hygieneBusy}
-                className={cn(hygieneNeedsAttention(dash) && "next-step-pulse")}
+                className={cn(suggestedStep === "hygiene" && "next-step-pulse")}
                 title={
-                  hygieneNeedsAttention(dash)
-                    ? `Hygiene: ${dash.hygieneLocal || 0} local · ${dash.hygieneRemote || 0} remoto`
-                    : "Limpar branches mergeadas"
+                  suggestedStep === "hygiene"
+                    ? nextStepTitle("hygiene")
+                    : hygieneNeedsAttention(dash)
+                      ? `Hygiene: ${dash.hygieneLocal || 0} local · ${dash.hygieneRemote || 0} remoto`
+                      : "Limpar branches mergeadas"
                 }
               >
                 {hygieneBusy ? <Loader2 className="animate-spin" /> : <Trash2 />}
                 Hygiene
-                {hygieneNeedsAttention(dash) && (
+                {(suggestedStep === "hygiene" || hygieneNeedsAttention(dash)) && (
                   <Badge variant="secondary" className="ml-1 h-5 px-1.5 text-[10px]">
-                    {hygieneBadgeLabel(dash)}
+                    {suggestedStep === "hygiene" ? "próximo" : hygieneBadgeLabel(dash)}
                   </Badge>
                 )}
               </Button>
@@ -3413,6 +3501,11 @@ function App() {
               Revisar commit
             </DialogTitle>
           </DialogHeader>
+          <DoctorGateAlert
+            report={doctorReport}
+            action="commit"
+            onOpenDoctor={openDoctorFromGate}
+          />
           {commitBusy && !commitPreview ? (
             <div className="flex items-center justify-center gap-2 py-8 text-sm text-muted-foreground">
               <Loader2 className="size-4 animate-spin" />
@@ -3446,7 +3539,17 @@ function App() {
             <Button variant="outline" onClick={() => setCommitOpen(false)} disabled={commitBusy}>
               Cancelar
             </Button>
-            <Button onClick={() => void confirmCommit()} disabled={commitBusy || !commitMessage.trim()}>
+            <Button
+              onClick={() => void confirmCommit()}
+              disabled={
+                commitBusy || !commitMessage.trim() || commitDoctorGate.blocked
+              }
+              title={
+                commitDoctorGate.blocked
+                  ? commitDoctorGate.title
+                  : undefined
+              }
+            >
               {commitBusy ? <Loader2 className="animate-spin" /> : <GitCommit />}
               {commitConfirmLabel}
             </Button>
@@ -3516,6 +3619,11 @@ function App() {
               ) : null}
             </DialogTitle>
           </DialogHeader>
+          <DoctorGateAlert
+            report={doctorReport}
+            action="merge"
+            onOpenDoctor={openDoctorFromGate}
+          />
           <p className="text-sm text-muted-foreground">
             Escolha o método de merge no GitHub.
           </p>
@@ -3524,7 +3632,7 @@ function App() {
               size="sm"
               variant="outline"
               className="border-teal-200/80 bg-teal-50 text-teal-800 hover:bg-teal-100 hover:text-teal-900 dark:border-teal-800/60 dark:bg-teal-950/40 dark:text-teal-200 dark:hover:bg-teal-950/70"
-              disabled={prManageBusy}
+              disabled={prManageBusy || mergeDoctorGate.blocked}
               onClick={() => void mergePR("squash")}
             >
               {mergingMethod === "squash" ? (
@@ -3538,7 +3646,7 @@ function App() {
               size="sm"
               variant="outline"
               className="border-sky-200/80 bg-sky-50 text-sky-800 hover:bg-sky-100 hover:text-sky-900 dark:border-sky-800/60 dark:bg-sky-950/40 dark:text-sky-200 dark:hover:bg-sky-950/70"
-              disabled={prManageBusy}
+              disabled={prManageBusy || mergeDoctorGate.blocked}
               onClick={() => void mergePR("merge")}
             >
               {mergingMethod === "merge" ? (
@@ -3552,7 +3660,7 @@ function App() {
               size="sm"
               variant="outline"
               className="border-amber-200/80 bg-amber-50 text-amber-900 hover:bg-amber-100 hover:text-amber-950 dark:border-amber-800/60 dark:bg-amber-950/40 dark:text-amber-200 dark:hover:bg-amber-950/70"
-              disabled={prManageBusy}
+              disabled={prManageBusy || mergeDoctorGate.blocked}
               onClick={() => void mergePR("rebase")}
             >
               {mergingMethod === "rebase" ? (
@@ -3583,6 +3691,11 @@ function App() {
               Revisar Pull Request
             </DialogTitle>
           </DialogHeader>
+          <DoctorGateAlert
+            report={doctorReport}
+            action="pr"
+            onOpenDoctor={openDoctorFromGate}
+          />
           {prBusy && !prPreview ? (
             <div className="flex flex-1 items-center justify-center gap-2 text-sm text-muted-foreground">
               <Loader2 className="size-4 animate-spin" />
@@ -3640,8 +3753,11 @@ function App() {
             <Button variant="outline" onClick={() => setPrOpen(false)} disabled={prBusy}>
               Cancelar
             </Button>
-            <Button onClick={() => void confirmPR()} disabled={prBusy || !prTitle.trim()}>
-              {prBusy ? <Loader2 className="animate-spin" /> : <GitPullRequest />}
+            <Button
+              onClick={() => void confirmPR()}
+              disabled={prBusy || !prTitle.trim() || prDoctorGate.blocked}
+              title={prDoctorGate.blocked ? prDoctorGate.title : undefined}
+            >              {prBusy ? <Loader2 className="animate-spin" /> : <GitPullRequest />}
               Criar PR
             </Button>
           </DialogFooter>

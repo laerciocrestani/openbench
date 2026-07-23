@@ -267,7 +267,7 @@ func analyzeHealthIssues(snap *gitpkg.HealthSnapshot, currentPR *prpkg.PRView) [
 			detail += "; salve o work e abra uma branch nova a partir da base atualizada"
 		}
 		issues = append(issues, healthIssue{
-			Level:  gitpkg.HealthWarn,
+			Level:  gitpkg.HealthCritical,
 			Code:   "work_on_merged_branch",
 			Title:  fmt.Sprintf("Branch %q já tem PR mergeada", snap.Branch),
 			Detail: detail,
