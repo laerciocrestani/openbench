@@ -6,6 +6,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/laerciocrestani/openbench/internal/config"
 	"github.com/laerciocrestani/openbench/internal/desktop"
 	"github.com/laerciocrestani/openbench/internal/version"
 	"github.com/wailsapp/wails/v3/pkg/application"
@@ -444,31 +445,19 @@ func (s *AppService) MergeTimelinePR(number int, method string) (*desktop.Histor
 // RunDoctor analyzes repository health (optionally with AI explanation).
 func (s *AppService) RunDoctor(explain bool) (*desktop.DoctorView, error) {
 	path := s.currentPath()
-	base := ""
-	if dash, err := desktop.LoadDashboard(path); err == nil && dash != nil {
-		base = dash.BaseBranch
-	}
-	return desktop.RunDoctor(context.Background(), path, explain, base)
+	return desktop.RunDoctor(context.Background(), path, explain, doctorBaseBranch())
 }
 
 // PlanDoctorFix builds a deterministic remediation plan for the Doctor dialog.
-func (s *AppService) PlanDoctorFix(newBranch, baseAction string) (*desktop.DoctorFixPlanView, error) {
+func (s *AppService) PlanDoctorFix(newBranch, baseAction, mergedAction string) (*desktop.DoctorFixPlanView, error) {
 	path := s.currentPath()
-	base := ""
-	if dash, err := desktop.LoadDashboard(path); err == nil && dash != nil {
-		base = dash.BaseBranch
-	}
-	return desktop.PlanDoctorFix(path, base, newBranch, baseAction)
+	return desktop.PlanDoctorFix(path, doctorBaseBranch(), newBranch, baseAction, mergedAction)
 }
 
 // BeginDoctorFix prepares a step-by-step Doctor remediation session.
-func (s *AppService) BeginDoctorFix(newBranch, baseAction string, confirmDestructive bool) (*desktop.DoctorFixPlanView, error) {
+func (s *AppService) BeginDoctorFix(newBranch, baseAction, mergedAction string, confirmDestructive bool) (*desktop.DoctorFixPlanView, error) {
 	path := s.currentPath()
-	base := ""
-	if dash, err := desktop.LoadDashboard(path); err == nil && dash != nil {
-		base = dash.BaseBranch
-	}
-	plan, sess, err := desktop.BeginDoctorFix(path, base, newBranch, baseAction, confirmDestructive)
+	plan, sess, err := desktop.BeginDoctorFix(path, doctorBaseBranch(), newBranch, baseAction, mergedAction, confirmDestructive)
 	s.mu.Lock()
 	if err != nil {
 		s.doctorFixSession = nil
@@ -478,6 +467,14 @@ func (s *AppService) BeginDoctorFix(newBranch, baseAction string, confirmDestruc
 	s.doctorFixSession = sess
 	s.mu.Unlock()
 	return plan, nil
+}
+
+// doctorBaseBranch resolves base without LoadDashboard (avoids hygiene scan latency).
+func doctorBaseBranch() string {
+	if cfg, err := config.Load(); err == nil && strings.TrimSpace(cfg.BaseBranch) != "" {
+		return cfg.BaseBranch
+	}
+	return "main"
 }
 
 // AdvanceDoctorFix runs the next step of the active Doctor remediation session.

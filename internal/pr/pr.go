@@ -134,6 +134,15 @@ func (c *Client) ListOpen() (map[string]PRView, error) {
 }
 
 func (c *Client) ViewCurrent() (*PRView, error) {
+	return c.viewCurrent(true)
+}
+
+// ViewCurrentMeta returns PR metadata without CI checks (faster; enough for Doctor).
+func (c *Client) ViewCurrentMeta() (*PRView, error) {
+	return c.viewCurrent(false)
+}
+
+func (c *Client) viewCurrent(withChecks bool) (*PRView, error) {
 	out, err := c.run("pr", "view", "--json", "title,url,state,number,isDraft,mergeable,reviewDecision")
 	if err != nil {
 		if isPRNotFound(err) {
@@ -164,7 +173,9 @@ func (c *Client) ViewCurrent() (*PRView, error) {
 		Mergeable:      raw.Mergeable,
 		ReviewDecision: raw.ReviewDecision,
 	}
-	c.enrichChecks(view)
+	if withChecks {
+		c.enrichChecks(view)
+	}
 	return view, nil
 }
 
