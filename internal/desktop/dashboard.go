@@ -301,6 +301,18 @@ func mapDocker(ov *dockerpkg.Overview, hasDocker bool) DockerStatus {
 			Health:    c.Health,
 		})
 	}
+	// When no containers yet (Down), still expose compose service names for the UI.
+	if len(st.Services) == 0 && strings.TrimSpace(ov.ComposeFile) != "" && ov.DaemonRunning {
+		if names, err := dockerpkg.ListComposeServices(ov.ComposeFile); err == nil {
+			st.Services = make([]DockerServiceView, 0, len(names))
+			for _, name := range names {
+				st.Services = append(st.Services, DockerServiceView{Name: name})
+			}
+			if st.DefaultService == "" && len(names) > 0 {
+				st.DefaultService = names[0]
+			}
+		}
+	}
 	// Show docker block when CLI exists or the repo has Compose (so UI can warn
 	// that the environment is stopped / Docker is missing).
 	st.Visible = ov.Available || strings.TrimSpace(ov.ComposeFile) != ""

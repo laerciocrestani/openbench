@@ -27,6 +27,7 @@ const IGNORE_CODES = new Set([
   "dirty_tree",
   "docker_missing",
   "docker_daemon",
+  "docker_down",
   "docker_stopped",
   "build_artifacts",
 ])

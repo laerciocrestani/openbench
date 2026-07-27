@@ -40,6 +40,7 @@ type DispatchPreview struct {
 	WorkflowID  int64             `json:"workflowId,omitempty"`
 	Ref         string            `json:"ref,omitempty"`
 	Fields      map[string]string `json:"fields,omitempty"`
+	Inputs      []DispatchInput   `json:"inputs,omitempty"`
 	CostWarning string            `json:"costWarning"`
 	Usage       ActionsUsage      `json:"usage"`
 	CanDispatch bool              `json:"canDispatch"`
@@ -125,12 +126,15 @@ func (c *Client) PreviewDispatch(workflow, ref string, fields map[string]string)
 	if workflow == "" {
 		return nil, fmt.Errorf("workflow obrigatório")
 	}
-	can := c.workflowHasDispatch(workflow)
+	yamlBody, can, inputs := c.loadDispatchSchema(workflow)
+	_ = yamlBody
+	fields = MergeDispatchDefaults(inputs, fields)
 	usage := c.UsageForRuns(nil, c.RemoteOwner())
 	preview := &DispatchPreview{
 		Workflow:    workflow,
 		Ref:         strings.TrimSpace(ref),
 		Fields:      fields,
+		Inputs:      inputs,
 		CanDispatch: can,
 		CostWarning: "workflow_dispatch vai disparar um novo run e consumir minutos de GitHub Actions.",
 		Usage:       usage,
@@ -147,6 +151,11 @@ func (c *Client) ConfirmDispatch(workflow, ref string, fields map[string]string)
 	if workflow == "" {
 		return fmt.Errorf("workflow obrigatório")
 	}
+	_, _, inputs := c.loadDispatchSchema(workflow)
+	fields = MergeDispatchDefaults(inputs, fields)
+	if missing := MissingRequiredDispatchInputs(inputs, fields); len(missing) > 0 {
+		return fmt.Errorf("input obrigatório não informado: %s", strings.Join(missing, ", "))
+	}
 	args := []string{"workflow", "run", workflow}
 	if r := strings.TrimSpace(ref); r != "" {
 		args = append(args, "--ref", r)
@@ -162,16 +171,25 @@ func (c *Client) ConfirmDispatch(workflow, ref string, fields map[string]string)
 	return err
 }
 
-func (c *Client) workflowHasDispatch(nameOrPath string) bool {
+func (c *Client) loadDispatchSchema(nameOrPath string) (yamlBody string, canDispatch bool, inputs []DispatchInput) {
 	nameOrPath = strings.TrimSpace(nameOrPath)
 	if nameOrPath == "" {
-		return false
+		return "", false, nil
 	}
 	out, _, err := c.runAllowExit("workflow", "view", nameOrPath, "--yaml")
 	if out == "" {
 		_ = err
-		return false
+		return "", false, nil
 	}
-	// cheap signal; avoids full YAML parse
-	return strings.Contains(out, "workflow_dispatch")
+	can, parsed, parseErr := ParseWorkflowDispatchInputs(out)
+	if parseErr != nil {
+		// Fallback to cheap string signal if YAML parse fails.
+		return out, strings.Contains(out, "workflow_dispatch"), nil
+	}
+	return out, can, parsed
+}
+
+func (c *Client) workflowHasDispatch(nameOrPath string) bool {
+	_, can, _ := c.loadDispatchSchema(nameOrPath)
+	return can
 }

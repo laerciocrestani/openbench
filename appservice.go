@@ -607,53 +607,93 @@ func (s *AppService) ConfirmPR(title, body string, draft bool) (*desktop.PROutco
 }
 
 // DockerUp starts compose services for the open project.
+// Emits: docker:line, docker:service, docker:done.
 func (s *AppService) DockerUp(build bool) (*desktop.DockerActionResult, error) {
-	res, err := desktop.DockerUp(s.currentPath(), build)
-	if err != nil {
-		return nil, err
-	}
-	s.afterDocker(res)
-	return res, nil
+	return s.runDockerWithProgress(func(hooks desktop.DockerProgressHooks) (*desktop.DockerActionResult, error) {
+		return desktop.DockerUp(s.currentPath(), build, hooks)
+	})
 }
 
 // DockerDown stops and removes compose services.
+// Emits: docker:line, docker:service, docker:done.
 func (s *AppService) DockerDown() (*desktop.DockerActionResult, error) {
-	res, err := desktop.DockerDown(s.currentPath())
-	if err != nil {
-		return nil, err
-	}
-	s.afterDocker(res)
-	return res, nil
+	return s.runDockerWithProgress(func(hooks desktop.DockerProgressHooks) (*desktop.DockerActionResult, error) {
+		return desktop.DockerDown(s.currentPath(), hooks)
+	})
 }
 
 // DockerStop stops running compose services.
+// Emits: docker:line, docker:service, docker:done.
 func (s *AppService) DockerStop() (*desktop.DockerActionResult, error) {
-	res, err := desktop.DockerStop(s.currentPath(), nil)
-	if err != nil {
-		return nil, err
-	}
-	s.afterDocker(res)
-	return res, nil
+	return s.runDockerWithProgress(func(hooks desktop.DockerProgressHooks) (*desktop.DockerActionResult, error) {
+		return desktop.DockerStop(s.currentPath(), nil, hooks)
+	})
 }
 
 // DockerStart starts compose services.
+// Emits: docker:line, docker:service, docker:done.
 func (s *AppService) DockerStart() (*desktop.DockerActionResult, error) {
-	res, err := desktop.DockerStart(s.currentPath(), nil)
-	if err != nil {
-		return nil, err
-	}
-	s.afterDocker(res)
-	return res, nil
+	return s.runDockerWithProgress(func(hooks desktop.DockerProgressHooks) (*desktop.DockerActionResult, error) {
+		return desktop.DockerStart(s.currentPath(), nil, hooks)
+	})
 }
 
 // DockerRecreate force-recreates the default (or given) service.
+// Emits: docker:line, docker:service, docker:done.
 func (s *AppService) DockerRecreate(service string) (*desktop.DockerActionResult, error) {
-	res, err := desktop.DockerRecreate(s.currentPath(), service)
-	if err != nil {
-		return nil, err
+	return s.runDockerWithProgress(func(hooks desktop.DockerProgressHooks) (*desktop.DockerActionResult, error) {
+		return desktop.DockerRecreate(s.currentPath(), service, hooks)
+	})
+}
+
+func (s *AppService) runDockerWithProgress(
+	fn func(desktop.DockerProgressHooks) (*desktop.DockerActionResult, error),
+) (*desktop.DockerActionResult, error) {
+	s.mu.RLock()
+	appRef := s.app
+	s.mu.RUnlock()
+	emit := func(event string, data any) {
+		if appRef == nil {
+			return
+		}
+		appRef.Event.Emit(event, data)
 	}
-	s.afterDocker(res)
-	return res, nil
+
+	hooks := desktop.DockerProgressHooks{
+		OnLine: func(line string) {
+			if line == "" {
+				return
+			}
+			emit("docker:line", line)
+		},
+		OnService: func(name, status, detail string) {
+			if name == "" {
+				return
+			}
+			emit("docker:service", map[string]string{
+				"name":   name,
+				"status": status,
+				"detail": detail,
+			})
+		},
+	}
+
+	res, err := fn(hooks)
+	if res != nil {
+		emit("docker:done", res)
+		if res.OK {
+			s.afterDocker(res)
+		} else if res.Dashboard != nil {
+			// Still refresh path/tray from partial dashboard after failure.
+			s.afterDocker(res)
+		}
+	} else if err != nil {
+		emit("docker:done", &desktop.DockerActionResult{
+			OK:      false,
+			Message: err.Error(),
+		})
+	}
+	return res, err
 }
 
 // ListDockerPresets returns project docker command presets.

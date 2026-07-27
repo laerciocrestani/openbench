@@ -255,12 +255,23 @@ type CIRerunPreviewView struct {
 
 // CIDispatchPreviewView is shown before ConfirmCIDispatch.
 type CIDispatchPreviewView struct {
-	Workflow    string            `json:"workflow"`
-	Ref         string            `json:"ref,omitempty"`
-	Fields      map[string]string `json:"fields,omitempty"`
-	CostWarning string            `json:"costWarning"`
-	CanDispatch bool              `json:"canDispatch"`
-	Usage       CIUsageView       `json:"usage"`
+	Workflow    string                 `json:"workflow"`
+	Ref         string                 `json:"ref,omitempty"`
+	Fields      map[string]string      `json:"fields,omitempty"`
+	Inputs      []CIDispatchInputView  `json:"inputs,omitempty"`
+	CostWarning string                 `json:"costWarning"`
+	CanDispatch bool                   `json:"canDispatch"`
+	Usage       CIUsageView            `json:"usage"`
+}
+
+// CIDispatchInputView is one workflow_dispatch input for the confirm form.
+type CIDispatchInputView struct {
+	ID          string   `json:"id"`
+	Description string   `json:"description,omitempty"`
+	Type        string   `json:"type,omitempty"`
+	Required    bool     `json:"required"`
+	Default     string   `json:"default,omitempty"`
+	Options     []string `json:"options,omitempty"`
 }
 
 // CIWorkflowView is one workflow for dispatch UI.
@@ -340,6 +351,7 @@ func PreviewCIDispatch(projectPath, workflow, ref string, fields []string) (*CID
 		Workflow:    prev.Workflow,
 		Ref:         prev.Ref,
 		Fields:      prev.Fields,
+		Inputs:      mapDispatchInputs(prev.Inputs),
 		CostWarning: prev.CostWarning,
 		CanDispatch: prev.CanDispatch,
 		Usage:       usageToView(prev.Usage),
@@ -353,6 +365,24 @@ func ConfirmCIDispatch(projectPath, workflow, ref string, fields []string) error
 		return err
 	}
 	return client.ConfirmDispatch(workflow, ref, parseFieldPairs(fields))
+}
+
+func mapDispatchInputs(inputs []gha.DispatchInput) []CIDispatchInputView {
+	if len(inputs) == 0 {
+		return nil
+	}
+	out := make([]CIDispatchInputView, 0, len(inputs))
+	for _, in := range inputs {
+		out = append(out, CIDispatchInputView{
+			ID:          in.ID,
+			Description: in.Description,
+			Type:        in.Type,
+			Required:    in.Required,
+			Default:     in.Default,
+			Options:     append([]string(nil), in.Options...),
+		})
+	}
+	return out
 }
 
 func openCI(projectPath string) (*gha.Client, error) {

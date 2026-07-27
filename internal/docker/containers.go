@@ -37,13 +37,14 @@ type publisherRow struct {
 	Protocol      string `json:"Protocol"`
 }
 
-// ListComposeContainers returns containers for the compose project.
+// ListComposeContainers returns containers for the compose project,
+// including stopped/exited ones (compose ps -a).
 func ListComposeContainers(composeFile string) ([]ContainerSummary, error) {
 	if composeFile == "" {
 		return nil, nil
 	}
 	dir := composeDir(composeFile)
-	args := []string{"compose", "-f", filepath.Base(composeFile), "ps", "--format", "json"}
+	args := []string{"compose", "-f", filepath.Base(composeFile), "ps", "-a", "--format", "json"}
 	cmd := exec.Command("docker", args...)
 	cmd.Dir = dir
 	out, err := cmd.Output()
@@ -124,6 +125,31 @@ func formatPublisher(p publisherRow) string {
 		return p.URL
 	}
 	return ""
+}
+
+// ListComposeServices returns service names from the compose file
+// (docker compose config --services), even when no containers exist yet.
+func ListComposeServices(composeFile string) ([]string, error) {
+	if composeFile == "" {
+		return nil, nil
+	}
+	dir := composeDir(composeFile)
+	args := []string{"compose", "-f", filepath.Base(composeFile), "config", "--services"}
+	cmd := exec.Command("docker", args...)
+	cmd.Dir = dir
+	out, err := cmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("docker compose config --services: %w", err)
+	}
+	var services []string
+	for _, line := range strings.Split(string(out), "\n") {
+		name := strings.TrimSpace(line)
+		if name == "" {
+			continue
+		}
+		services = append(services, name)
+	}
+	return services, nil
 }
 
 // ProjectName derives compose project name from directory basename.

@@ -1,10 +1,14 @@
 package docker
 
 import (
+	"bufio"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
+	"sync"
 )
 
 // UpOptions configures docker compose up.
@@ -16,12 +20,14 @@ type UpOptions struct {
 	ForceRecreate bool
 	NoDeps        bool
 	DryRun        bool
+	OnLine        func(string) // optional line callback (stdout/stderr)
 }
 
 // DownOptions configures docker compose down.
 type DownOptions struct {
 	ComposeFile string
 	DryRun      bool
+	OnLine      func(string)
 }
 
 // ServiceOptions configures docker compose service actions (stop/start).
@@ -29,6 +35,7 @@ type ServiceOptions struct {
 	ComposeFile string
 	Services    []string
 	DryRun      bool
+	OnLine      func(string)
 }
 
 // LogsOptions configures docker compose logs.
@@ -45,6 +52,11 @@ type ExecOptions struct {
 	Service     string
 	Command     []string
 	Interactive bool
+}
+
+// RunResult is the captured output of a compose mutation.
+type RunResult struct {
+	Output string
 }
 
 func upArgs(opts UpOptions) []string {
@@ -108,66 +120,138 @@ func BuildShellCommand(composeFile, service string) (*exec.Cmd, error) {
 	return BuildExecCommand(composeFile, service, true, "sh")
 }
 
+// runCompose runs a compose subcommand. When onLine is nil, output goes to
+// the process stdout/stderr (CLI). When set, lines are captured and streamed.
+func runCompose(composeFile string, args []string, onLine func(string)) (string, error) {
+	cmd := buildDockerComposeCmd(composeFile, args...)
+	if onLine == nil {
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		return "", cmd.Run()
+	}
+
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return "", err
+	}
+	stderr, err := cmd.StderrPipe()
+	if err != nil {
+		return "", err
+	}
+	if err := cmd.Start(); err != nil {
+		return "", err
+	}
+
+	var (
+		mu  sync.Mutex
+		buf strings.Builder
+		wg  sync.WaitGroup
+	)
+	emit := func(line string) {
+		mu.Lock()
+		if buf.Len() > 0 {
+			buf.WriteByte('\n')
+		}
+		buf.WriteString(line)
+		mu.Unlock()
+		onLine(line)
+	}
+	scan := func(r io.Reader) {
+		defer wg.Done()
+		sc := bufio.NewScanner(r)
+		sc.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+		for sc.Scan() {
+			emit(sc.Text())
+		}
+	}
+	wg.Add(2)
+	go scan(stdout)
+	go scan(stderr)
+	wg.Wait()
+	runErr := cmd.Wait()
+
+	mu.Lock()
+	out := buf.String()
+	mu.Unlock()
+	return out, runErr
+}
+
 // Up runs docker compose up -d.
 func Up(opts UpOptions) error {
+	_, err := UpResult(opts)
+	return err
+}
+
+// UpResult runs docker compose up -d and returns captured output when OnLine is set.
+func UpResult(opts UpOptions) (RunResult, error) {
 	if opts.ComposeFile == "" {
-		return fmt.Errorf("compose file não encontrado")
+		return RunResult{}, fmt.Errorf("compose file não encontrado")
 	}
 	if opts.DryRun {
-		return nil
+		return RunResult{}, nil
 	}
-	cmd := buildDockerComposeCmd(opts.ComposeFile, upArgs(opts)...)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	return cmd.Run()
+	out, err := runCompose(opts.ComposeFile, upArgs(opts), opts.OnLine)
+	return RunResult{Output: out}, err
 }
 
 // Down runs docker compose down.
 func Down(opts DownOptions) error {
+	_, err := DownResult(opts)
+	return err
+}
+
+// DownResult runs docker compose down and returns captured output when OnLine is set.
+func DownResult(opts DownOptions) (RunResult, error) {
 	if opts.ComposeFile == "" {
-		return fmt.Errorf("compose file não encontrado")
+		return RunResult{}, fmt.Errorf("compose file não encontrado")
 	}
 	if opts.DryRun {
-		return nil
+		return RunResult{}, nil
 	}
-	cmd := buildDockerComposeCmd(opts.ComposeFile, "down")
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	return cmd.Run()
+	out, err := runCompose(opts.ComposeFile, []string{"down"}, opts.OnLine)
+	return RunResult{Output: out}, err
 }
 
 // Stop runs docker compose stop for one or more services.
 func Stop(opts ServiceOptions) error {
+	_, err := StopResult(opts)
+	return err
+}
+
+// StopResult runs docker compose stop and returns captured output when OnLine is set.
+func StopResult(opts ServiceOptions) (RunResult, error) {
 	if opts.ComposeFile == "" {
-		return fmt.Errorf("compose file não encontrado")
+		return RunResult{}, fmt.Errorf("compose file não encontrado")
 	}
 	if len(opts.Services) == 0 {
-		return fmt.Errorf("serviço não informado")
+		return RunResult{}, fmt.Errorf("serviço não informado")
 	}
 	if opts.DryRun {
-		return nil
+		return RunResult{}, nil
 	}
-	cmd := buildDockerComposeCmd(opts.ComposeFile, serviceArgs("stop", opts.Services)...)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	return cmd.Run()
+	out, err := runCompose(opts.ComposeFile, serviceArgs("stop", opts.Services), opts.OnLine)
+	return RunResult{Output: out}, err
 }
 
 // Start runs docker compose start for one or more services.
 func Start(opts ServiceOptions) error {
+	_, err := StartResult(opts)
+	return err
+}
+
+// StartResult runs docker compose start and returns captured output when OnLine is set.
+func StartResult(opts ServiceOptions) (RunResult, error) {
 	if opts.ComposeFile == "" {
-		return fmt.Errorf("compose file não encontrado")
+		return RunResult{}, fmt.Errorf("compose file não encontrado")
 	}
 	if len(opts.Services) == 0 {
-		return fmt.Errorf("serviço não informado")
+		return RunResult{}, fmt.Errorf("serviço não informado")
 	}
 	if opts.DryRun {
-		return nil
+		return RunResult{}, nil
 	}
-	cmd := buildDockerComposeCmd(opts.ComposeFile, serviceArgs("start", opts.Services)...)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	return cmd.Run()
+	out, err := runCompose(opts.ComposeFile, serviceArgs("start", opts.Services), opts.OnLine)
+	return RunResult{Output: out}, err
 }
 
 // Recreate runs docker compose up -d --force-recreate --no-deps for a service.
@@ -178,6 +262,18 @@ func Recreate(composeFile, service string, dryRun bool) error {
 		ForceRecreate: true,
 		NoDeps:        true,
 		DryRun:        dryRun,
+	})
+}
+
+// RecreateResult force-recreates a service with optional line streaming.
+func RecreateResult(composeFile, service string, dryRun bool, onLine func(string)) (RunResult, error) {
+	return UpResult(UpOptions{
+		ComposeFile:   composeFile,
+		Services:      []string{service},
+		ForceRecreate: true,
+		NoDeps:        true,
+		DryRun:        dryRun,
+		OnLine:        onLine,
 	})
 }
 

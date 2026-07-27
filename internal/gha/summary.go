@@ -3,6 +3,7 @@ package gha
 import (
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 )
 
@@ -31,6 +32,8 @@ type Summary struct {
 }
 
 // LoadSummary lists recent runs for the current branch and builds a badge summary.
+// Only the latest run per workflow counts — an older failure is ignored when a
+// newer run of the same workflow succeeded (or is pending).
 func (c *Client) LoadSummary(branch string) (*Summary, error) {
 	host := ResolveHost(c.dir)
 	sum := &Summary{
@@ -40,7 +43,7 @@ func (c *Client) LoadSummary(branch string) (*Summary, error) {
 		State:      SummaryUnknown,
 		Label:      "CI ?",
 	}
-	f := ListFilter{Branch: strings.TrimSpace(branch), Limit: 8}
+	f := ListFilter{Branch: strings.TrimSpace(branch), Limit: 20}
 	runs, err := c.ListRuns(f)
 	if err != nil {
 		return nil, err
@@ -51,7 +54,15 @@ func (c *Client) LoadSummary(branch string) (*Summary, error) {
 		sum.Message = "nenhum run recente nesta branch"
 		return sum, nil
 	}
-	for _, r := range runs {
+	return FinalizeSummary(sum, latestRunsPerWorkflow(runs)), nil
+}
+
+// FinalizeSummary applies pass/fail/pending counts and state/label to sum.
+func FinalizeSummary(sum *Summary, latest []WorkflowRun) *Summary {
+	if sum == nil {
+		sum = &Summary{State: SummaryUnknown, Label: "CI ?"}
+	}
+	for _, r := range latest {
 		switch {
 		case Failed(r.Status, r.Conclusion):
 			sum.Fail++
@@ -78,10 +89,53 @@ func (c *Client) LoadSummary(branch string) (*Summary, error) {
 		sum.State = SummaryUnknown
 		sum.Label = "CI ?"
 	}
-	if sum.Enterprise {
-		sum.Message = "host " + host
+	if sum.Enterprise && sum.Message == "" {
+		sum.Message = "host " + sum.Host
 	}
-	return sum, nil
+	return sum
+}
+
+// latestRunsPerWorkflow keeps only the newest run for each workflow.
+func latestRunsPerWorkflow(runs []WorkflowRun) []WorkflowRun {
+	if len(runs) == 0 {
+		return nil
+	}
+	ordered := append([]WorkflowRun(nil), runs...)
+	sort.SliceStable(ordered, func(i, j int) bool {
+		a, b := ordered[i], ordered[j]
+		if !a.CreatedAt.Equal(b.CreatedAt) {
+			return a.CreatedAt.After(b.CreatedAt)
+		}
+		if !a.UpdatedAt.Equal(b.UpdatedAt) {
+			return a.UpdatedAt.After(b.UpdatedAt)
+		}
+		return a.ID > b.ID
+	})
+	seen := make(map[string]struct{}, len(ordered))
+	out := make([]WorkflowRun, 0, len(ordered))
+	for _, r := range ordered {
+		key := workflowKey(r)
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, r)
+	}
+	return out
+}
+
+func workflowKey(r WorkflowRun) string {
+	if r.WorkflowID > 0 {
+		return fmt.Sprintf("id:%d", r.WorkflowID)
+	}
+	name := strings.TrimSpace(r.WorkflowName)
+	if name == "" {
+		name = strings.TrimSpace(r.Name)
+	}
+	if name == "" {
+		return fmt.Sprintf("run:%d", r.ID)
+	}
+	return "name:" + strings.ToLower(name)
 }
 
 // SummaryFromError maps classified errors to an offline/unavailable summary.

@@ -9,6 +9,7 @@ import type {
   CommitContextIndex,
   CommitPreview,
   Dashboard,
+  DockerActionResult,
   DoctorFixPlanView,
   DoctorFixStepView,
   DoctorView,
@@ -85,6 +86,12 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { useTheme } from "@/components/theme-provider"
 import { CIPanel } from "@/components/ci-panel"
+import {
+  DockerActionDialog,
+  emptyDockerActionDialog,
+  type DockerActionDialogState,
+  type DockerServiceProgress,
+} from "@/components/docker-action-dialog"
 import { DockerEnvironmentSheet } from "@/components/docker-environment-sheet"
 import { DockerGlobalPanel } from "@/components/docker-global-panel"
 import { DoctorDialog } from "@/components/DoctorDialog"
@@ -874,10 +881,19 @@ function DashboardView({
   const dockerMissing = hasCompose && !dash.docker.available
   const dockerDaemonOff =
     hasCompose && dash.docker.available && !dash.docker.daemonRunning
+  const dockerDown =
+    hasCompose && dash.docker.daemonRunning && dash.docker.total === 0
   const dockerComposeStopped =
-    hasCompose && dash.docker.daemonRunning && dash.docker.running === 0
+    hasCompose &&
+    dash.docker.daemonRunning &&
+    dash.docker.total > 0 &&
+    dash.docker.running === 0
+  const dockerRunning =
+    hasCompose && dash.docker.daemonRunning && dash.docker.running > 0
   const dockerNeedsAttention =
-    dockerMissing || dockerDaemonOff || dockerComposeStopped
+    dockerMissing || dockerDaemonOff || dockerDown || dockerComposeStopped
+  const dockerActionsEnabled =
+    hasCompose && dash.docker.available && dash.docker.daemonRunning
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-4">
@@ -963,46 +979,68 @@ function DashboardView({
                     </AlertDescription>
                   </Alert>
                 ) : null}
+                {dockerDown ? (
+                  <Alert className="border-amber-500/40 bg-amber-500/10 text-amber-950 dark:text-amber-100">
+                    <AlertTriangle className="size-4" />
+                    <AlertDescription className="text-xs leading-relaxed">
+                      Compose detectado, ambiente Down. Use <span className="font-medium">Up</span>{" "}
+                      para subir o ambiente.
+                    </AlertDescription>
+                  </Alert>
+                ) : null}
                 {dockerComposeStopped ? (
                   <Alert className="border-amber-500/40 bg-amber-500/10 text-amber-950 dark:text-amber-100">
                     <AlertTriangle className="size-4" />
                     <AlertDescription className="text-xs leading-relaxed">
-                      Compose detectado, containers parados. Use <span className="font-medium">Up</span>{" "}
-                      para subir o ambiente.
+                      Compose detectado, containers parados. Use{" "}
+                      <span className="font-medium">Start</span> para reiniciar.
                     </AlertDescription>
                   </Alert>
                 ) : null}
                 {!dockerNeedsAttention ? (
                   <p className="truncate text-xs text-muted-foreground">{dash.docker.summary}</p>
                 ) : null}
-                <div className="flex flex-wrap gap-1.5">
-                  <Button size="xs" onClick={onDockerUp} disabled={busy}>
-                    <Play />
-                    Up
-                  </Button>
-                  <Button size="xs" variant="outline" onClick={onDockerUpBuild} disabled={busy}>
-                    Up --build
-                  </Button>
-                  <Button size="xs" variant="outline" onClick={onDockerStart} disabled={busy}>
-                    Start
-                  </Button>
-                  <Button size="xs" variant="outline" onClick={onDockerStop} disabled={busy}>
-                    <Square />
-                    Stop
-                  </Button>
-                  <Button
-                    size="xs"
-                    variant="outline"
-                    onClick={onDockerRecreate}
-                    disabled={busy || !(dash.docker.services?.length)}
-                  >
-                    <RefreshCw />
-                    Recreate
-                  </Button>
-                  <Button size="xs" variant="destructive" onClick={onDockerDown} disabled={busy}>
-                    Down
-                  </Button>
-                </div>
+                {dockerActionsEnabled ? (
+                  <div className="flex flex-wrap gap-1.5">
+                    {dockerDown ? (
+                      <>
+                        <Button size="xs" onClick={onDockerUp} disabled={busy}>
+                          <Play />
+                          Up
+                        </Button>
+                        <Button size="xs" variant="outline" onClick={onDockerUpBuild} disabled={busy}>
+                          Up --build
+                        </Button>
+                      </>
+                    ) : null}
+                    {dockerComposeStopped ? (
+                      <Button size="xs" onClick={onDockerStart} disabled={busy}>
+                        <Play />
+                        Start
+                      </Button>
+                    ) : null}
+                    {dockerRunning ? (
+                      <>
+                        <Button size="xs" variant="outline" onClick={onDockerStop} disabled={busy}>
+                          <Square />
+                          Stop
+                        </Button>
+                        <Button
+                          size="xs"
+                          variant="outline"
+                          onClick={onDockerRecreate}
+                          disabled={busy || !(dash.docker.services?.length)}
+                        >
+                          <RefreshCw />
+                          Recreate
+                        </Button>
+                        <Button size="xs" variant="destructive" onClick={onDockerDown} disabled={busy}>
+                          Down
+                        </Button>
+                      </>
+                    ) : null}
+                  </div>
+                ) : null}
               </>
             )}
           </CardContent>
@@ -1415,6 +1453,9 @@ function App() {
   const [commitOpen, setCommitOpen] = useState(false)
   const [prOpen, setPrOpen] = useState(false)
   const [recreateOpen, setRecreateOpen] = useState(false)
+  const [dockerActionDlg, setDockerActionDlg] = useState<DockerActionDialogState>(
+    emptyDockerActionDialog,
+  )
   const [recreateService, setRecreateService] = useState("")
   const [dockerEnvOpen, setDockerEnvOpen] = useState(false)
   const [ciOpen, setCiOpen] = useState(false)
@@ -2362,16 +2403,130 @@ function App() {
     setRecreateOpen(true)
   }
 
-  const dockerAction = async (fn: () => Promise<unknown>) => {
+  const dockerAction = async (
+    actionLabel: string,
+    fn: () => Promise<unknown>,
+  ) => {
+    const seedServices: DockerServiceProgress[] = (dash?.docker?.services ?? [])
+      .filter((s) => s.name?.trim())
+      .map((s) => ({ name: s.name, status: "pending" as const }))
+
+    setDockerActionDlg({
+      open: true,
+      action: actionLabel,
+      running: true,
+      ok: null,
+      message: `Executando docker ${actionLabel}…`,
+      lines: [],
+      services: seedServices,
+    })
     setBusy(true)
     setError(null)
+
+    const upsertService = (
+      name: string,
+      status: DockerServiceProgress["status"],
+      detail?: string,
+    ) => {
+      if (!name || name === "_") return
+      setDockerActionDlg((prev) => {
+        const services = [...prev.services]
+        const idx = services.findIndex((s) => s.name === name)
+        if (idx >= 0) {
+          services[idx] = {
+            ...services[idx],
+            status,
+            detail: detail || services[idx].detail,
+          }
+        } else {
+          services.push({ name, status, detail })
+        }
+        return { ...prev, services }
+      })
+    }
+
+    const offLine = Events.On("docker:line", (ev) => {
+      const line = String(wailsEventData<string>(ev) ?? "")
+      if (!line) return
+      setDockerActionDlg((prev) => ({
+        ...prev,
+        lines: [...prev.lines, line],
+      }))
+    })
+    const offService = Events.On("docker:service", (ev) => {
+      const raw = wailsEventData<{ name?: string; status?: string; detail?: string }>(ev)
+      if (!raw?.name) return
+      const status = (raw.status || "running") as DockerServiceProgress["status"]
+      upsertService(raw.name, status, raw.detail)
+    })
+    const offDone = Events.On("docker:done", (ev) => {
+      const res = wailsEventData<DockerActionResult>(ev)
+      if (!res) return
+      setDockerActionDlg((prev) => {
+        let lines = prev.lines
+        if (res.output && lines.length === 0) {
+          lines = res.output.split("\n")
+        }
+        let services = prev.services
+        if (res.ok && services.length > 0) {
+          services = services.map((s) =>
+            s.status === "error" ? s : { ...s, status: "ok" as const },
+          )
+        }
+        if (!res.ok && services.length > 0) {
+          // Keep parsed errors; mark still-pending as error with message.
+          services = services.map((s) =>
+            s.status === "pending" || s.status === "running"
+              ? { ...s, status: "error" as const, detail: s.detail || res.message }
+              : s,
+          )
+        }
+        return {
+          ...prev,
+          running: false,
+          ok: res.ok,
+          message: res.message || (res.ok ? `docker ${actionLabel} ok` : "falhou"),
+          lines,
+          services,
+        }
+      })
+      if (res.dashboard) applyDashboard(res.dashboard)
+    })
+
     try {
-      const res = (await fn()) as { dashboard?: Dashboard | null } | null
+      const res = (await fn()) as DockerActionResult | null
       if (res?.dashboard) applyDashboard(res.dashboard)
-      else await refresh()
+      else if (!res) await refresh()
+      setDockerActionDlg((prev) => {
+        if (!prev.running) return prev
+        return {
+          ...prev,
+          running: false,
+          ok: res?.ok ?? true,
+          message: res?.message || `docker ${actionLabel} ok`,
+        }
+      })
     } catch (e) {
-      setError(errText(e))
+      const msg = errText(e)
+      setError(msg)
+      setDockerActionDlg((prev) => {
+        if (!prev.running) return { ...prev, message: prev.message || msg }
+        return {
+          ...prev,
+          running: false,
+          ok: false,
+          message: msg,
+        }
+      })
+      try {
+        await refresh()
+      } catch {
+        /* ignore */
+      }
     } finally {
+      offLine()
+      offService()
+      offDone()
       setBusy(false)
     }
   }
@@ -2383,7 +2538,7 @@ function App() {
       return
     }
     setRecreateOpen(false)
-    await dockerAction(() => AppService.DockerRecreate(svc))
+    await dockerAction("recreate", () => AppService.DockerRecreate(svc))
   }
 
   const openDockerShell = (service: string, presetId?: string) => {
@@ -2711,7 +2866,7 @@ function App() {
     startPR,
     openSettings,
     refreshStatuses,
-    dockerUp: () => dockerAction(() => AppService.DockerUp(false)),
+    dockerUp: () => dockerAction("up", () => AppService.DockerUp(false)),
   })
   actionsRef.current = {
     openDialog,
@@ -2720,7 +2875,7 @@ function App() {
     startPR,
     openSettings,
     refreshStatuses,
-    dockerUp: () => dockerAction(() => AppService.DockerUp(false)),
+    dockerUp: () => dockerAction("up", () => AppService.DockerUp(false)),
   }
 
   useEffect(() => {
@@ -3312,12 +3467,12 @@ function App() {
               onRecommendCommit={() => void startCommit()}
               onMarkPRReady={() => void markPRReady()}
               onOpenDockerEnv={() => setDockerEnvOpen(true)}
-              onDockerUp={() => void dockerAction(() => AppService.DockerUp(false))}
-              onDockerUpBuild={() => void dockerAction(() => AppService.DockerUp(true))}
-              onDockerStart={() => void dockerAction(() => AppService.DockerStart())}
-              onDockerStop={() => void dockerAction(() => AppService.DockerStop())}
+              onDockerUp={() => void dockerAction("up", () => AppService.DockerUp(false))}
+              onDockerUpBuild={() => void dockerAction("up --build", () => AppService.DockerUp(true))}
+              onDockerStart={() => void dockerAction("start", () => AppService.DockerStart())}
+              onDockerStop={() => void dockerAction("stop", () => AppService.DockerStop())}
               onDockerRecreate={() => openRecreate()}
-              onDockerDown={() => void dockerAction(() => AppService.DockerDown())}
+              onDockerDown={() => void dockerAction("down", () => AppService.DockerDown())}
               onToggleActivityAuthor={() => setActivityAuthorOnly((v) => !v)}
             />
           </>
@@ -4618,6 +4773,14 @@ function App() {
         <CIPanel open={ciOpen} onOpenChange={setCiOpen} projectPath={dash.path} />
       ) : null}
 
+      <DockerActionDialog
+        state={dockerActionDlg}
+        onOpenChange={(open) => {
+          if (!open && dockerActionDlg.running) return
+          setDockerActionDlg((prev) => (open ? prev : emptyDockerActionDialog()))
+        }}
+      />
+
       <DockerEnvironmentSheet
         open={dockerEnvOpen}
         onOpenChange={setDockerEnvOpen}
@@ -4696,7 +4859,11 @@ function App() {
         onOpenFix={() => void openDoctorFix()}
         onDockerUp={() => {
           setDoctorOpen(false)
-          void dockerAction(() => AppService.DockerUp(false))
+          void dockerAction("up", () => AppService.DockerUp(false))
+        }}
+        onDockerStart={() => {
+          setDoctorOpen(false)
+          void dockerAction("start", () => AppService.DockerStart())
         }}
       />
 

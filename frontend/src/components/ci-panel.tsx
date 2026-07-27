@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 
 import { AppService } from "../../bindings/github.com/laerciocrestani/openbench"
 import type {
+  CIDispatchInputView,
   CIDispatchPreviewView,
   CIFixPreviewView,
   CILogView,
@@ -27,8 +28,16 @@ import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
+import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { ScrollArea } from "@/components/ui/scroll-area"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import {
   Sheet,
   SheetContent,
@@ -132,6 +141,85 @@ function ActionsUsageBanner({
   )
 }
 
+function DispatchInputField({
+  input,
+  value,
+  onChange,
+  disabled,
+}: {
+  input: CIDispatchInputView
+  value: string
+  onChange: (value: string) => void
+  disabled?: boolean
+}) {
+  const label = input.description?.trim() || input.id
+  const type = (input.type || "string").toLowerCase()
+
+  if (type === "boolean") {
+    const checked = value === "true"
+    return (
+      <div className="flex items-center gap-2">
+        <Checkbox
+          id={`dispatch-${input.id}`}
+          checked={checked}
+          disabled={disabled}
+          onCheckedChange={(v) => onChange(v === true ? "true" : "false")}
+        />
+        <Label htmlFor={`dispatch-${input.id}`} className="text-sm">
+          {label}
+          {input.required ? " *" : ""}
+        </Label>
+      </div>
+    )
+  }
+
+  if (type === "choice" && (input.options?.length ?? 0) > 0) {
+    return (
+      <div className="flex flex-col gap-1.5">
+        <Label htmlFor={`dispatch-${input.id}`} className="text-sm">
+          {label}
+          {input.required ? " *" : ""}
+        </Label>
+        <Select
+          value={value || undefined}
+          onValueChange={(v) => onChange(String(v ?? ""))}
+          disabled={disabled}
+        >
+          <SelectTrigger id={`dispatch-${input.id}`} className="w-full">
+            <SelectValue placeholder="Selecione…" />
+          </SelectTrigger>
+          <SelectContent>
+            {input.options!.map((opt) => (
+              <SelectItem key={opt} value={opt}>
+                {opt}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <span className="font-mono text-[10px] text-muted-foreground">{input.id}</span>
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex flex-col gap-1.5">
+      <Label htmlFor={`dispatch-${input.id}`} className="text-sm">
+        {label}
+        {input.required ? " *" : ""}
+      </Label>
+      <Input
+        id={`dispatch-${input.id}`}
+        value={value}
+        disabled={disabled}
+        type={type === "number" ? "number" : "text"}
+        placeholder={input.default || input.id}
+        onChange={(e) => onChange(e.target.value)}
+      />
+      <span className="font-mono text-[10px] text-muted-foreground">{input.id}</span>
+    </div>
+  )
+}
+
 export function CIPanel({
   open,
   onOpenChange,
@@ -156,8 +244,27 @@ export function CIPanel({
   )
   const [dispatchPreview, setDispatchPreview] =
     useState<CIDispatchPreviewView | null>(null)
+  const [dispatchFields, setDispatchFields] = useState<Record<string, string>>(
+    {},
+  )
   const [fixPreview, setFixPreview] = useState<CIFixPreviewView | null>(null)
   const [fixMessage, setFixMessage] = useState("")
+
+  const dispatchInputs = dispatchPreview?.inputs ?? []
+  const dispatchMissingRequired = useMemo(() => {
+    return dispatchInputs
+      .filter((inp) => inp.required && !(dispatchFields[inp.id] ?? "").trim())
+      .map((inp) => inp.id)
+  }, [dispatchInputs, dispatchFields])
+
+  const setDispatchField = (id: string, value: string) => {
+    setDispatchFields((prev) => ({ ...prev, [id]: value }))
+  }
+
+  const fieldsToPairs = (fields: Record<string, string>): string[] =>
+    Object.entries(fields)
+      .filter(([k, v]) => k.trim() && v.trim() !== "")
+      .map(([k, v]) => `${k}=${v}`)
 
   const refresh = useCallback(async () => {
     if (!projectPath) return
@@ -251,6 +358,19 @@ export function CIPanel({
     try {
       const prev = await AppService.PreviewCIDispatch(workflow, "", [])
       setDispatchPreview(prev ?? null)
+      const seed: Record<string, string> = {}
+      if (prev?.fields) {
+        for (const [k, v] of Object.entries(prev.fields)) {
+          if (k && v != null) seed[k] = String(v)
+        }
+      }
+      for (const inp of prev?.inputs ?? []) {
+        if (seed[inp.id] != null && seed[inp.id] !== "") continue
+        if (inp.default) seed[inp.id] = inp.default
+        else if (inp.type === "choice" && inp.options?.[0]) seed[inp.id] = inp.options[0]
+        else if (inp.type === "boolean") seed[inp.id] = "false"
+      }
+      setDispatchFields(seed)
     } catch (e) {
       setError(errText(e))
     } finally {
@@ -260,15 +380,22 @@ export function CIPanel({
 
   const confirmDispatch = async () => {
     if (!dispatchPreview) return
+    if (dispatchMissingRequired.length > 0) {
+      setError(
+        `Informe o(s) input(s) obrigatório(s): ${dispatchMissingRequired.join(", ")}`,
+      )
+      return
+    }
     setMutateBusy(true)
     setError(null)
     try {
       await AppService.ConfirmCIDispatch(
         dispatchPreview.workflow,
         dispatchPreview.ref ?? "",
-        [],
+        fieldsToPairs(dispatchFields),
       )
       setDispatchPreview(null)
+      setDispatchFields({})
       await refresh()
     } catch (e) {
       setError(errText(e))
@@ -713,7 +840,10 @@ export function CIPanel({
       <AlertDialog
         open={!!dispatchPreview}
         onOpenChange={(v) => {
-          if (!v) setDispatchPreview(null)
+          if (!v) {
+            setDispatchPreview(null)
+            setDispatchFields({})
+          }
         }}
       >
         <AlertDialogContent className="sm:max-w-md">
@@ -731,13 +861,26 @@ export function CIPanel({
               </span>
             </AlertDialogDescription>
           </AlertDialogHeader>
+          {dispatchInputs.length > 0 ? (
+            <div className="flex flex-col gap-3 py-1">
+              {dispatchInputs.map((inp) => (
+                <DispatchInputField
+                  key={inp.id}
+                  input={inp}
+                  value={dispatchFields[inp.id] ?? ""}
+                  onChange={(v) => setDispatchField(inp.id, v)}
+                  disabled={mutateBusy}
+                />
+              ))}
+            </div>
+          ) : null}
           {dispatchPreview?.usage && (
             <ActionsUsageBanner usage={dispatchPreview.usage} />
           )}
           <AlertDialogFooter>
             <AlertDialogCancel disabled={mutateBusy}>Cancelar</AlertDialogCancel>
             <AlertDialogAction
-              disabled={mutateBusy}
+              disabled={mutateBusy || dispatchMissingRequired.length > 0}
               onClick={(e) => {
                 e.preventDefault()
                 void confirmDispatch()

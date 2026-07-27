@@ -172,7 +172,9 @@ export function DockerEnvironmentSheet({
                 <Alert className="border-amber-500/40 bg-amber-500/10 text-amber-950 dark:text-amber-100">
                   <AlertDescription className="text-xs leading-relaxed">
                     {docker?.composeFile
-                      ? "Compose detectado, containers parados. Rode Up no card Docker e atualize."
+                      ? docker.total > 0
+                        ? "Containers parados. Use Start no card Docker e atualize."
+                        : "Ambiente Down. Use Up no card Docker e atualize."
                       : "Nenhum container listado. Rode Up no card Docker e atualize."}
                   </AlertDescription>
                 </Alert>

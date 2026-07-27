@@ -1,4 +1,4 @@
-import { Bot, MessageSquare, X } from "lucide-react"
+import { Bot, Sparkles, X } from "lucide-react"
 
 import { ProjectChatPanel } from "@/components/project-chat-panel"
 import { Button } from "@/components/ui/button"
@@ -48,15 +48,21 @@ export function FloatingChat({
           </div>
         </div>
       ) : (
-        <Button
-          size="lg"
-          className="fixed right-4 bottom-4 z-50 h-12 gap-2 rounded-full px-4 shadow-lg"
+        <button
+          type="button"
+          className={cn(
+            "fixed right-4 bottom-4 z-50 rounded-full p-[2px] shadow-md",
+            "bg-[linear-gradient(90deg,#14b8a6_0%,#84cc16_50%,#eab308_100%)]",
+            "hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+          )}
           onClick={() => onOpenChange(true)}
           title="Abrir chat com a IA"
         >
-          <MessageSquare className="size-4" />
-          Chat IA
-        </Button>
+          <span className="flex h-10 items-center gap-1.5 rounded-full bg-white px-4 text-black">
+            <Sparkles className="size-4 fill-black" />
+            <span className="text-sm font-semibold tracking-wide">AI</span>
+          </span>
+        </button>
       )}
     </>
   )

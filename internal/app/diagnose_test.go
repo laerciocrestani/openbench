@@ -161,11 +161,24 @@ func TestAnalyzeDockerHealth_onlyWhenComposePresent(t *testing.T) {
 		ComposeFile:   "/tmp/compose.yaml",
 		Containers:    nil,
 	})
-	if len(issues) != 1 || issues[0].Code != "docker_stopped" {
-		t.Fatalf("expected docker_stopped, got %#v", issues)
+	if len(issues) != 1 || issues[0].Code != "docker_down" {
+		t.Fatalf("expected docker_down, got %#v", issues)
 	}
 	if len(recs) != 1 || recs[0] != "ob docker up" {
 		t.Fatalf("expected ob docker up, got %#v", recs)
+	}
+
+	issues, recs = analyzeDockerHealth(&dockerpkg.Overview{
+		Available:     true,
+		DaemonRunning: true,
+		ComposeFile:   "/tmp/compose.yaml",
+		Containers:    []dockerpkg.ContainerSummary{{Service: "app", State: "exited"}},
+	})
+	if len(issues) != 1 || issues[0].Code != "docker_stopped" {
+		t.Fatalf("expected docker_stopped, got %#v", issues)
+	}
+	if len(recs) != 1 || recs[0] != "ob docker start" {
+		t.Fatalf("expected ob docker start, got %#v", recs)
 	}
 
 	issues, _ = analyzeDockerHealth(&dockerpkg.Overview{

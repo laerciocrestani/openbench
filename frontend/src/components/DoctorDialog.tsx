@@ -50,6 +50,7 @@ export function DoctorDialog({
   onStartCommit,
   onOpenFix,
   onDockerUp,
+  onDockerStart,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -61,6 +62,7 @@ export function DoctorDialog({
   onStartCommit: () => void
   onOpenFix: () => void
   onDockerUp?: () => void
+  onDockerStart?: () => void
 }) {
   const meta = overallMeta(report?.overall || "ok")
   const OverallIcon = meta.Icon
@@ -152,9 +154,15 @@ export function DoctorDialog({
                       </Button>
                     )}
                   {onDockerUp &&
-                    issues.some((i) => i.code === "docker_stopped") && (
+                    issues.some((i) => i.code === "docker_down") && (
                       <Button size="sm" variant="outline" onClick={onDockerUp}>
                         Docker Up
+                      </Button>
+                    )}
+                  {onDockerStart &&
+                    issues.some((i) => i.code === "docker_stopped") && (
+                      <Button size="sm" variant="outline" onClick={onDockerStart}>
+                        Docker Start
                       </Button>
                     )}
                   {issues.some((i) =>

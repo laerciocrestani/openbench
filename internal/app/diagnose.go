@@ -434,7 +434,7 @@ func analyzeActionsHealth(workDir, branch string) ([]healthIssue, []string) {
 			Level:  gitpkg.HealthCritical,
 			Code:   "actions_failing",
 			Title:  fmt.Sprintf("CI falhando nesta branch (%s)", sum.Label),
-			Detail: fmt.Sprintf("%d run(s) com falha recente · host %s", sum.Fail, host),
+			Detail: fmt.Sprintf("%d workflow(s) com falha no último run · host %s", sum.Fail, host),
 		})
 		recs = append(recs, "Abra o painel CI / ob ci status e corrija (ob ci fix) ou re-execute flaky jobs")
 	} else if sum.Pending > 0 {
@@ -816,13 +816,23 @@ func analyzeDockerHealth(ov *dockerpkg.Overview) ([]healthIssue, []string) {
 		return issues, recs
 	}
 	if !dockerpkg.HasRunningContainers(ov.Containers) {
-		issues = append(issues, healthIssue{
-			Level:  gitpkg.HealthWarn,
-			Code:   "docker_stopped",
-			Title:  "Compose detectado, containers parados",
-			Detail: ov.ComposeFile,
-		})
-		recs = append(recs, "ob docker up")
+		if len(ov.Containers) == 0 {
+			issues = append(issues, healthIssue{
+				Level:  gitpkg.HealthWarn,
+				Code:   "docker_down",
+				Title:  "Compose detectado, ambiente Down",
+				Detail: ov.ComposeFile,
+			})
+			recs = append(recs, "ob docker up")
+		} else {
+			issues = append(issues, healthIssue{
+				Level:  gitpkg.HealthWarn,
+				Code:   "docker_stopped",
+				Title:  "Compose detectado, containers parados",
+				Detail: ov.ComposeFile,
+			})
+			recs = append(recs, "ob docker start")
+		}
 	}
 	return issues, recs
 }
