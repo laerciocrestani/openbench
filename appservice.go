@@ -24,6 +24,7 @@ type AppService struct {
 	pendingTool      *pendingChatTool
 	repoWatch        *desktop.RepoWatcher
 	doctorFixSession *desktop.DoctorFixSession
+	dockerFixSession *desktop.DockerFixSession
 }
 
 func (s *AppService) setApp(app *application.App) {
@@ -70,7 +71,8 @@ func (s *AppService) setProjectPath(path string) {
 	s.mu.Unlock()
 
 	if changed && strings.TrimSpace(path) != "" {
-		s.startRepoWatch(path)
+		// Watcher setup must not block OpenProject (fsnotify add can hitch on large repos).
+		go s.startRepoWatch(path)
 	}
 }
 
@@ -225,9 +227,12 @@ func (s *AppService) OpenProject(path string) (*desktop.Dashboard, error) {
 		return nil, err
 	}
 	s.setProjectPath(dash.Path)
-	_, _ = desktop.RememberProject(dash.Path)
-	s.syncHubFromPrefs()
-	s.refreshTray()
+	// Prefs / hub / tray are not needed to paint the shell — do them off the critical path.
+	go func(p string) {
+		_, _ = desktop.RememberProject(p)
+		s.syncHubFromPrefs()
+		s.refreshTray()
+	}(dash.Path)
 	return dash, nil
 }
 
@@ -238,9 +243,11 @@ func (s *AppService) SwitchProject(path string) (*desktop.Dashboard, error) {
 		return nil, err
 	}
 	s.setProjectPath(dash.Path)
-	_, _ = desktop.RememberProject(dash.Path)
-	s.syncHubFromPrefs()
-	s.refreshTray()
+	go func(p string) {
+		_, _ = desktop.RememberProject(p)
+		s.syncHubFromPrefs()
+		s.refreshTray()
+	}(dash.Path)
 	return dash, nil
 }
 
@@ -265,7 +272,7 @@ func (s *AppService) UnpinProject(path string) (*desktop.Dashboard, error) {
 	return s.RefreshDashboard()
 }
 
-// RefreshDashboard reloads status for the current project.
+// RefreshDashboard reloads status for the current project (shell only; UI enriches async).
 func (s *AppService) RefreshDashboard() (*desktop.Dashboard, error) {
 	path := s.currentPath()
 	if path == "" {
@@ -276,9 +283,20 @@ func (s *AppService) RefreshDashboard() (*desktop.Dashboard, error) {
 		return nil, err
 	}
 	s.setProjectPath(dash.Path)
-	s.syncHubFromPrefs()
-	s.refreshTray()
+	go func() {
+		s.syncHubFromPrefs()
+		s.refreshTray()
+	}()
 	return dash, nil
+}
+
+// RefreshGitStatus loads dirty/ahead/behind/base/files for the open project (medium path).
+func (s *AppService) RefreshGitStatus() (*desktop.Dashboard, error) {
+	path := s.currentPath()
+	if path == "" {
+		return nil, fmt.Errorf("no project open")
+	}
+	return desktop.LoadGitStatus(path)
 }
 
 // GetUsageReport returns AI token usage for the chart UI (ledger-based, like `ob report`).
@@ -295,6 +313,29 @@ func (s *AppService) RefreshDockerStatus() (desktop.DockerStatus, error) {
 // RefreshOpenPR loads the open PR for the current branch (gh CLI; slow path).
 func (s *AppService) RefreshOpenPR() (*desktop.PRStatus, error) {
 	return desktop.LoadOpenPR(s.currentPath())
+}
+
+// RefreshHygieneCounts loads prune-candidate counts (slow path; many git cherry calls).
+func (s *AppService) RefreshHygieneCounts(baseBranch string) (*desktop.HygieneCountsView, error) {
+	path := s.currentPath()
+	if path == "" {
+		return nil, fmt.Errorf("no project open")
+	}
+	baseBranch = strings.TrimSpace(baseBranch)
+	if baseBranch == "" {
+		baseBranch = doctorBaseBranch()
+	}
+	return desktop.LoadHygieneCounts(path, baseBranch)
+}
+
+// RefreshCIBadge loads CI status for the current branch (gh CLI; slow path).
+func (s *AppService) RefreshCIBadge(branch string) (*desktop.CIBadgeView, error) {
+	return desktop.LoadCIBadge(s.currentPath(), branch)
+}
+
+// RefreshChangedFiles reloads the file list with +/- stats (slow path on large diffs).
+func (s *AppService) RefreshChangedFiles() (*desktop.ChangedFilesView, error) {
+	return desktop.LoadChangedFiles(s.currentPath())
 }
 
 // LoadCommitActivity returns a GitHub-style commit calendar for the open project.

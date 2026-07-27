@@ -50,7 +50,19 @@ type Overview struct {
 	FileChanges        []FileChange
 }
 
+// OverviewOpts controls optional expensive collectors inside Overview.
+type OverviewOpts struct {
+	SkipBranches      bool
+	SkipStashes       bool
+	SkipRecentCommits bool
+	SkipFileNumstat   bool // list files from porcelain; skip diff --numstat
+}
+
 func (r *Repo) Overview(baseBranch string) (*Overview, error) {
+	return r.OverviewWithOpts(baseBranch, OverviewOpts{})
+}
+
+func (r *Repo) OverviewWithOpts(baseBranch string, opts OverviewOpts) (*Overview, error) {
 	o := &Overview{BaseBranch: baseBranch}
 
 	root, err := r.run("rev-parse", "--show-toplevel")
@@ -107,22 +119,28 @@ func (r *Repo) Overview(baseBranch string) (*Overview, error) {
 	o.Modified = modified
 	o.Untracked = untracked
 
-	branches, err := r.listBranches()
-	if err != nil {
-		return nil, err
-	}
-	o.Branches = branches
-
-	log, err := r.run("log", "-3", "--oneline", "--decorate")
-	if err == nil && log != "" {
-		o.RecentCommits = strings.Split(log, "\n")
+	if !opts.SkipBranches {
+		branches, err := r.listBranches()
+		if err != nil {
+			return nil, err
+		}
+		o.Branches = branches
 	}
 
-	if stashes, err := r.listStashes(); err == nil {
-		o.Stashes = stashes
+	if !opts.SkipRecentCommits {
+		log, err := r.run("log", "-3", "--oneline", "--decorate")
+		if err == nil && log != "" {
+			o.RecentCommits = strings.Split(log, "\n")
+		}
 	}
 
-	if changes, err := r.fileChanges(); err == nil {
+	if !opts.SkipStashes {
+		if stashes, err := r.listStashes(); err == nil {
+			o.Stashes = stashes
+		}
+	}
+
+	if changes, err := r.fileChanges(!opts.SkipFileNumstat); err == nil {
 		o.FileChanges = changes
 	}
 
@@ -175,43 +193,50 @@ func (r *Repo) listStashes() ([]StashInfo, error) {
 	return stashes, nil
 }
 
-func (r *Repo) fileChanges() ([]FileChange, error) {
+// FileChanges returns porcelain paths with optional +/- from diff --numstat.
+func (r *Repo) FileChanges(withNumstat bool) ([]FileChange, error) {
+	return r.fileChanges(withNumstat)
+}
+
+func (r *Repo) fileChanges(withNumstat bool) ([]FileChange, error) {
 	porcelain, err := r.run("status", "--porcelain")
 	if err != nil {
 		return nil, err
 	}
 
 	stats := map[string][2]int{}
-	for _, source := range []struct {
-		staged bool
-	}{
-		{staged: false},
-		{staged: true},
-	} {
-		args := []string{"diff", "--numstat"}
-		if source.staged {
-			args = []string{"diff", "--cached", "--numstat"}
-		}
-		out, err := r.run(args...)
-		if err != nil {
-			continue
-		}
-		for _, line := range strings.Split(out, "\n") {
-			line = strings.TrimSpace(line)
-			if line == "" {
+	if withNumstat {
+		for _, source := range []struct {
+			staged bool
+		}{
+			{staged: false},
+			{staged: true},
+		} {
+			args := []string{"diff", "--numstat"}
+			if source.staged {
+				args = []string{"diff", "--cached", "--numstat"}
+			}
+			out, err := r.run(args...)
+			if err != nil {
 				continue
 			}
-			parts := strings.Split(line, "\t")
-			if len(parts) < 3 {
-				continue
+			for _, line := range strings.Split(out, "\n") {
+				line = strings.TrimSpace(line)
+				if line == "" {
+					continue
+				}
+				parts := strings.Split(line, "\t")
+				if len(parts) < 3 {
+					continue
+				}
+				add, _ := strconv.Atoi(parts[0])
+				del, _ := strconv.Atoi(parts[1])
+				path := parts[2]
+				cur := stats[path]
+				cur[0] += add
+				cur[1] += del
+				stats[path] = cur
 			}
-			add, _ := strconv.Atoi(parts[0])
-			del, _ := strconv.Atoi(parts[1])
-			path := parts[2]
-			cur := stats[path]
-			cur[0] += add
-			cur[1] += del
-			stats[path] = cur
 		}
 	}
 
@@ -324,6 +349,11 @@ func (r *Repo) worktreeCounts() (staged, modified, untracked int, err error) {
 		}
 	}
 	return staged, modified, untracked, nil
+}
+
+// WorktreeCounts returns staged / modified / untracked counts from porcelain status.
+func (r *Repo) WorktreeCounts() (staged, modified, untracked int, err error) {
+	return r.worktreeCounts()
 }
 
 func (r *Repo) listBranches() ([]BranchInfo, error) {

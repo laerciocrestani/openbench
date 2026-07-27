@@ -22,6 +22,7 @@ type Provider interface {
 	SuggestPR(ctx context.Context, diff, branch, base, lang, commitLog string) (*PRSuggestion, error)
 	ExplainHealth(ctx context.Context, facts, lang string) (*HealthExplanation, error)
 	SuggestCIFix(ctx context.Context, logWindow, lang, branch string) (*CIFixSuggestion, error)
+	SuggestDockerFix(ctx context.Context, fc DockerFixContext, lang string) (*DockerFixSuggestion, error)
 	UsageStats() UsageSummary
 }
 

@@ -6,7 +6,9 @@ import (
 	"strings"
 
 	"github.com/laerciocrestani/openbench/internal/app"
+	"github.com/laerciocrestani/openbench/internal/config"
 	dockerpkg "github.com/laerciocrestani/openbench/internal/docker"
+	gitpkg "github.com/laerciocrestani/openbench/internal/git"
 	prpkg "github.com/laerciocrestani/openbench/internal/pr"
 )
 
@@ -110,31 +112,313 @@ type NextStepView struct {
 	Note    string `json:"note"`
 }
 
-// LoadDashboard builds a desktop dashboard for projectPath.
-// Docker and open-PR checks are skipped here (slow CLI); refresh them via
-// LoadDockerStatus / LoadOpenPR after the UI is shown.
+// LoadDashboard returns an instant shell dashboard (path/branch/HEAD only).
+// Enrich via LoadGitStatus / LoadDockerStatus / LoadOpenPR / LoadHygieneCounts /
+// LoadCIBadge / LoadChangedFiles after the UI is shown.
 func LoadDashboard(projectPath string) (*Dashboard, error) {
-	snap, err := app.LoadWorkspaceSnapshotAtOpts(projectPath, nil, app.SnapshotOpts{
-		SkipDocker: true,
-		SkipPR:     true,
-	})
+	return LoadDashboardShell(projectPath)
+}
+
+// LoadDashboardShell validates the git repo and returns identity fields only.
+// Target: a handful of fast git calls — no status, no diff, no network.
+func LoadDashboardShell(projectPath string) (*Dashboard, error) {
+	if strings.TrimSpace(projectPath) == "" {
+		return nil, fmt.Errorf("no project open")
+	}
+	abs, err := filepath.Abs(projectPath)
 	if err != nil {
 		return nil, err
 	}
-	d := FromSnapshot(projectPath, snap)
-	if d.HasDocker {
+	repo, err := gitpkg.Open(abs)
+	if err != nil {
+		return nil, err
+	}
+	// Shell's rev-parse --show-toplevel fails if not a git repo (avoids extra IsRepo call).
+	shell, err := repo.Shell()
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", abs, err)
+	}
+
+	d := &Dashboard{
+		Path:         shell.Root,
+		RepoName:     filepath.Base(shell.Root),
+		Branch:       shell.Branch,
+		Detached:     shell.Detached,
+		HeadHash:     shell.HeadHash,
+		StatusLabel:  "…",
+		BaseBranch:   "main",
+		ChangedFiles: []ChangedFileView{},
+		NextSteps:    []NextStepView{},
+		HasGH:        false,
+		HasDocker:    false,
+	}
+	if shell.Detached {
+		d.Branch = "detached HEAD"
+	}
+
+	if cfg, cfgErr := config.Load(); cfgErr == nil && cfg != nil {
+		if strings.TrimSpace(cfg.BaseBranch) != "" {
+			d.BaseBranch = cfg.BaseBranch
+		}
+		d.Provider = string(cfg.Provider)
+		d.Model = cfg.Model
+		d.AIReady = strings.TrimSpace(cfg.APIKey) != ""
+	}
+
+	// Root-only compose detect (no upward walk) — cheap enough for the shell.
+	if compose := dockerpkg.DetectComposeFile(shell.Root); compose != "" {
+		d.HasDocker = true
 		d.Docker = DockerStatus{
-			Available: true,
-			Visible:   true,
-			Summary:   "carregando…",
-			Services:  []DockerServiceView{},
+			Visible:     true,
+			ComposeFile: compose,
+			Summary:     "carregando…",
+			Services:    []DockerServiceView{},
 		}
 	}
-	if local, remote, err := app.CountHygieneCandidates(d.Path, d.BaseBranch); err == nil {
-		d.HygieneLocal = local
-		d.HygieneRemote = remote
-	}
+
 	return d, nil
+}
+
+// LoadGitStatus enriches the dashboard with dirty/ahead/behind/base/files (no numstat).
+// Safe to call after the shell is on screen; still skips Docker/PR/hygiene/CI/numstat.
+func LoadGitStatus(projectPath string) (*Dashboard, error) {
+	if strings.TrimSpace(projectPath) == "" {
+		return nil, fmt.Errorf("no project open")
+	}
+	abs, err := filepath.Abs(projectPath)
+	if err != nil {
+		return nil, err
+	}
+	repo, err := gitpkg.Open(abs)
+	if err != nil {
+		return nil, err
+	}
+	if err := repo.IsRepo(); err != nil {
+		return nil, fmt.Errorf("%s: %w", abs, err)
+	}
+
+	base := "main"
+	var cfg *config.Config
+	if c, err := config.Load(); err == nil && c != nil {
+		cfg = c
+		if strings.TrimSpace(c.BaseBranch) != "" {
+			base = c.BaseBranch
+		}
+	}
+
+	st, err := repo.LoadStatus(base, true)
+	if err != nil {
+		return nil, err
+	}
+
+	d := &Dashboard{
+		Path:               st.Root,
+		RepoName:           filepath.Base(st.Root),
+		Branch:             st.Branch,
+		Detached:           st.Detached,
+		Dirty:              st.Staged > 0 || st.Modified > 0 || st.Untracked > 0,
+		Staged:             st.Staged,
+		Modified:           st.Modified,
+		Untracked:          st.Untracked,
+		Ahead:              st.Ahead,
+		Behind:             st.Behind,
+		HasUpstream:        strings.TrimSpace(st.Upstream) != "",
+		BaseBranch:         base,
+		CommitsAheadOfBase: st.CommitsAheadOfBase,
+		HasBranchDiff:      st.HasBranchDiff,
+		BaseBehind:         st.BaseBehind,
+		HeadHash:           st.HeadHash,
+		RemoteURL:          st.RemoteURL,
+		StatusLabel:        statusLabel(st.Staged > 0 || st.Modified > 0 || st.Untracked > 0, st.Staged, st.Modified, st.Untracked),
+		ChangedFiles:       mapChangedFiles(st.FileChanges),
+		NextSteps:          []NextStepView{},
+		AIReady:            cfg != nil && strings.TrimSpace(cfg.APIKey) != "",
+	}
+	if st.Detached {
+		d.Branch = "detached HEAD"
+	}
+	if cfg != nil {
+		d.Provider = string(cfg.Provider)
+		d.Model = cfg.Model
+	}
+	if d.ChangedFiles == nil {
+		d.ChangedFiles = []ChangedFileView{}
+	}
+
+	ov := &gitpkg.Overview{
+		Staged:      st.Staged,
+		Modified:    st.Modified,
+		Untracked:   st.Untracked,
+		FileChanges: st.FileChanges,
+	}
+	if idx := app.BuildCommitContextIndex(ov, cfg); idx != nil {
+		ci := &CommitContextIndex{
+			Score:           idx.Score,
+			Level:           idx.Level,
+			Label:           idx.Label,
+			RecommendCommit: idx.RecommendCommit,
+			FileCount:       idx.FileCount,
+			Insertions:      idx.Insertions,
+			Deletions:       idx.Deletions,
+			AreaCount:       idx.AreaCount,
+			EstimatedBytes:  idx.EstimatedBytes,
+			MaxDiffBytes:    idx.MaxDiffBytes,
+			NearTruncate:    idx.NearTruncate,
+		}
+		if cfg != nil {
+			ci.Model = cfg.Model
+			ci.ModelContextWindow = app.ModelContextWindow(cfg.Model)
+		}
+		d.ContextIndex = ci
+	}
+
+	applyCICache(d)
+
+	if compose := dockerpkg.DetectComposeFile(d.Path); compose != "" {
+		d.HasDocker = true
+		d.Docker = DockerStatus{
+			Visible:     true,
+			ComposeFile: compose,
+			Summary:     "carregando…",
+			Services:    []DockerServiceView{},
+		}
+	}
+
+	return d, nil
+}
+
+// HygieneCountsView is local/remote prune candidate counts for the hygiene badge.
+type HygieneCountsView struct {
+	Local  int `json:"hygieneLocal"`
+	Remote int `json:"hygieneRemote"`
+}
+
+// CIBadgeView is the CI status chip for the dashboard.
+type CIBadgeView struct {
+	CIState     string `json:"ciState,omitempty"`
+	CILabel     string `json:"ciLabel,omitempty"`
+	CIFromCache bool   `json:"ciFromCache,omitempty"`
+	CIHost      string `json:"ciHost,omitempty"`
+}
+
+// ChangedFilesView is the enriched file list (+/- and context index).
+type ChangedFilesView struct {
+	ChangedFiles []ChangedFileView   `json:"changedFiles"`
+	ContextIndex *CommitContextIndex `json:"contextIndex,omitempty"`
+}
+
+// LoadHygieneCounts runs the (potentially slow) prune-candidate scan.
+func LoadHygieneCounts(projectPath, baseBranch string) (*HygieneCountsView, error) {
+	if strings.TrimSpace(projectPath) == "" {
+		return nil, fmt.Errorf("no project open")
+	}
+	baseBranch = strings.TrimSpace(baseBranch)
+	if baseBranch == "" {
+		baseBranch = "main"
+	}
+	local, remote, err := app.CountHygieneCandidates(projectPath, baseBranch)
+	if err != nil {
+		return nil, err
+	}
+	return &HygieneCountsView{Local: local, Remote: remote}, nil
+}
+
+// LoadCIBadge fetches live CI summary (falls back to disk cache on error).
+func LoadCIBadge(projectPath, branch string) (*CIBadgeView, error) {
+	if strings.TrimSpace(projectPath) == "" {
+		return nil, fmt.Errorf("no project open")
+	}
+	sum := LoadCISummaryForProject(projectPath, branch)
+	if sum == nil {
+		return &CIBadgeView{}, nil
+	}
+	return &CIBadgeView{
+		CIState:     sum.State,
+		CILabel:     sum.Label,
+		CIFromCache: sum.FromCache,
+		CIHost:      sum.Host,
+	}, nil
+}
+
+// LoadChangedFiles reloads porcelain + numstat and rebuilds the context index.
+func LoadChangedFiles(projectPath string) (*ChangedFilesView, error) {
+	if strings.TrimSpace(projectPath) == "" {
+		return nil, fmt.Errorf("no project open")
+	}
+	repo, err := gitpkg.Open(projectPath)
+	if err != nil {
+		return nil, err
+	}
+	if err := repo.IsRepo(); err != nil {
+		return nil, err
+	}
+	changes, err := repo.FileChanges(true)
+	if err != nil {
+		return nil, err
+	}
+	staged, modified, untracked, err := repo.WorktreeCounts()
+	if err != nil {
+		// Fall back to deriving dirty from file list length.
+		staged, modified, untracked = 0, 0, 0
+		for _, c := range changes {
+			switch strings.ToLower(c.Status) {
+			case "untracked":
+				untracked++
+			case "staged", "new", "renamed":
+				staged++
+			default:
+				modified++
+			}
+		}
+	}
+	cfg, _ := config.Load()
+	ov := &gitpkg.Overview{
+		Staged:      staged,
+		Modified:    modified,
+		Untracked:   untracked,
+		FileChanges: changes,
+	}
+	view := &ChangedFilesView{
+		ChangedFiles: mapChangedFiles(changes),
+	}
+	if idx := app.BuildCommitContextIndex(ov, cfg); idx != nil {
+		ci := &CommitContextIndex{
+			Score:           idx.Score,
+			Level:           idx.Level,
+			Label:           idx.Label,
+			RecommendCommit: idx.RecommendCommit,
+			FileCount:       idx.FileCount,
+			Insertions:      idx.Insertions,
+			Deletions:       idx.Deletions,
+			AreaCount:       idx.AreaCount,
+			EstimatedBytes:  idx.EstimatedBytes,
+			MaxDiffBytes:    idx.MaxDiffBytes,
+			NearTruncate:    idx.NearTruncate,
+		}
+		if cfg != nil {
+			ci.Model = cfg.Model
+			ci.ModelContextWindow = app.ModelContextWindow(cfg.Model)
+		}
+		view.ContextIndex = ci
+	}
+	if view.ChangedFiles == nil {
+		view.ChangedFiles = []ChangedFileView{}
+	}
+	return view, nil
+}
+
+func applyCICache(d *Dashboard) {
+	if d == nil {
+		return
+	}
+	sum := loadCISummaryCache(d.Path)
+	if sum == nil {
+		return
+	}
+	d.CIState = sum.State
+	d.CILabel = sum.Label
+	d.CIFromCache = sum.FromCache
+	d.CIHost = sum.Host
 }
 
 // LoadOpenPR returns the open PR for the current branch, if any.
@@ -251,13 +535,6 @@ func FromSnapshot(projectPath string, snap *app.WorkspaceSnapshot) *Dashboard {
 
 	if snap.OpenPR != nil {
 		d.OpenPR = mapPRStatus(snap.OpenPR)
-	}
-
-	if sum := LoadCISummaryForProject(projectPath, d.Branch); sum != nil {
-		d.CIState = sum.State
-		d.CILabel = sum.Label
-		d.CIFromCache = sum.FromCache
-		d.CIHost = sum.Host
 	}
 
 	for _, step := range snap.NextSteps {

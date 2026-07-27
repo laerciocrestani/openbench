@@ -24,10 +24,14 @@ type WorkspaceSnapshot struct {
 	HasDocker bool
 }
 
-// SnapshotOpts controls optional expensive collectors (Docker / gh).
+// SnapshotOpts controls optional expensive collectors (Docker / gh / git extras).
 type SnapshotOpts struct {
-	SkipDocker bool
-	SkipPR     bool
+	SkipDocker        bool
+	SkipPR            bool
+	SkipBranches      bool
+	SkipStashes       bool
+	SkipRecentCommits bool
+	SkipFileNumstat   bool
 }
 
 // LoadWorkspaceSnapshot coleta overview, Docker, PR aberto, config e próximos passos
@@ -94,7 +98,12 @@ func LoadWorkspaceSnapshotAtOpts(workDir string, prog Progress, opts SnapshotOpt
 	var overview *gitpkg.Overview
 	if err := step("Reading workspace", func() error {
 		var err error
-		overview, err = repo.Overview(baseBranch)
+		overview, err = repo.OverviewWithOpts(baseBranch, gitpkg.OverviewOpts{
+			SkipBranches:      opts.SkipBranches,
+			SkipStashes:       opts.SkipStashes,
+			SkipRecentCommits: opts.SkipRecentCommits,
+			SkipFileNumstat:   opts.SkipFileNumstat,
+		})
 		return err
 	}); err != nil {
 		return nil, err

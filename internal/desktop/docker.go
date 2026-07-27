@@ -3,6 +3,7 @@ package desktop
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	dockerpkg "github.com/laerciocrestani/openbench/internal/docker"
 )
@@ -195,8 +196,153 @@ func runDockerAction(
 		// Prefer returning the result so the UI can show output; still signal failure.
 		return res, fmt.Errorf("%s", msg)
 	}
+
+	// Compose often prints "Started" even when the process exits right after
+	// (e.g. nginx upstream DNS). Re-check container state and attach logs.
+	if shouldVerifyComposeHealth(action) {
+		if report := verifyComposeAfterUp(ov.ComposeFile, hooks); report != nil {
+			// Refresh status after settle so dashboard matches reality.
+			if docker2, err2 := LoadDockerStatus(projectPath); err2 == nil {
+				res.Docker = docker2
+				dash.Docker = docker2
+				dash.HasDocker = docker2.Available
+				res.Dashboard = dash
+			}
+			res.OK = false
+			res.Output = joinDockerOutput(res.Output, report.ExtraOutput)
+			res.Message = report.Message
+			return res, fmt.Errorf("%s", report.Message)
+		}
+	}
+
 	res.Message = fmt.Sprintf("docker %s ok", action)
 	return res, nil
+}
+
+func shouldVerifyComposeHealth(action string) bool {
+	a := strings.ToLower(strings.TrimSpace(action))
+	switch a {
+	case "start", "up", "up --build", "recreate":
+		return true
+	default:
+		return strings.HasPrefix(a, "up")
+	}
+}
+
+type composeHealthReport struct {
+	Message     string
+	ExtraOutput string
+	Services    []string
+}
+
+// verifyComposeAfterUp waits briefly, then flags services that exited/died
+// after a successful compose start/up. Emits progress hooks for the UI.
+func verifyComposeAfterUp(composeFile string, hooks DockerProgressHooks) *composeHealthReport {
+	if strings.TrimSpace(composeFile) == "" {
+		return nil
+	}
+	// Give short-lived crash loops (nginx emerg, etc.) time to exit.
+	time.Sleep(900 * time.Millisecond)
+
+	containers, err := dockerpkg.ListComposeContainers(composeFile)
+	if err != nil || len(containers) == 0 {
+		return nil
+	}
+
+	var failed []dockerpkg.ContainerSummary
+	for _, c := range containers {
+		if containerFailedAfterStart(c) {
+			failed = append(failed, c)
+		}
+	}
+	if len(failed) == 0 {
+		return nil
+	}
+
+	var names []string
+	var logBlocks []string
+	emitLine := func(line string) {
+		if hooks.OnLine != nil {
+			hooks.OnLine(line)
+		}
+	}
+	emitLine("")
+	emitLine("── verificação pós-start ──")
+	for _, c := range failed {
+		svc := c.Service
+		if svc == "" {
+			svc = c.Name
+		}
+		names = append(names, svc)
+		detail := fmt.Sprintf("%s (%s)", c.Name, c.State)
+		if c.Health != "" {
+			detail += " health=" + c.Health
+		}
+		if hooks.OnService != nil {
+			hooks.OnService(svc, "error", detail)
+		}
+		emitLine(fmt.Sprintf("serviço %s não ficou Up: %s", svc, detail))
+
+		logs, logErr := dockerpkg.LogsOutput(dockerpkg.LogsOptions{
+			ComposeFile: composeFile,
+			Service:     svc,
+			Tail:        80,
+		})
+		block := fmt.Sprintf("--- logs: %s ---", svc)
+		if logErr != nil {
+			block += "\n(falha ao ler logs: " + logErr.Error() + ")"
+		} else {
+			logs = strings.TrimSpace(logs)
+			if logs == "" {
+				block += "\n(sem logs)"
+			} else {
+				block += "\n" + logs
+			}
+		}
+		logBlocks = append(logBlocks, block)
+		for _, line := range strings.Split(block, "\n") {
+			emitLine(line)
+		}
+	}
+
+	msg := fmt.Sprintf(
+		"%s saiu após o start — compose reportou Started, mas o container não ficou Up",
+		strings.Join(names, ", "),
+	)
+	if len(names) == 1 {
+		msg = fmt.Sprintf(
+			"%s saiu após o start — compose reportou Started, mas o container não ficou Up",
+			names[0],
+		)
+	}
+	return &composeHealthReport{
+		Message:     msg,
+		ExtraOutput: strings.Join(logBlocks, "\n\n"),
+		Services:    names,
+	}
+}
+
+func containerFailedAfterStart(c dockerpkg.ContainerSummary) bool {
+	state := strings.ToLower(strings.TrimSpace(c.State))
+	if state == "exited" || state == "dead" || strings.HasPrefix(state, "exit") {
+		return true
+	}
+	if strings.EqualFold(strings.TrimSpace(c.Health), "unhealthy") {
+		return true
+	}
+	return false
+}
+
+func joinDockerOutput(base, extra string) string {
+	base = strings.TrimSpace(base)
+	extra = strings.TrimSpace(extra)
+	if base == "" {
+		return extra
+	}
+	if extra == "" {
+		return base
+	}
+	return base + "\n\n" + extra
 }
 
 func summarizeDockerError(output string, err error) string {

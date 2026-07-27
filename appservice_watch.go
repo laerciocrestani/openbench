@@ -55,7 +55,7 @@ func (s *AppService) emitDashboardRefresh(path string) {
 		return
 	}
 
-	dash, err := desktop.LoadDashboard(path)
+	dash, err := desktop.LoadGitStatus(path)
 	if err != nil || dash == nil {
 		return
 	}

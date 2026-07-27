@@ -1,0 +1,43 @@
+OpenBench Proprietary License
+Copyright (c) OpenBench contributors. All rights reserved.
+
+1. Grant of use
+
+You may use the OpenBench software ("Software"), personally or within
+an organization (corporate/internal use), solely by obtaining it from
+this official repository and building or installing it for your own use.
+
+2. Restrictions
+
+Except as expressly permitted below, you may NOT:
+
+  a) redistribute, publish, sell, sublicense, or otherwise make available
+     copies of the Software, in source or binary form, for personal or
+     commercial purposes;
+  b) clone, fork, or copy the Software into another repository, product,
+     or distribution channel for the purpose of reworking, maintaining,
+     or releasing a derivative outside this official repository;
+  c) create and distribute a competing product based on the Software
+     outside this official repository.
+
+3. Contributions and community improvements
+
+The intended model is: use this repository, and contribute improvements
+back to it (for example via pull requests), so that new implementations
+benefit the community in the same place.
+
+Contributions submitted to this repository are accepted under the terms
+of this License, unless otherwise agreed in writing by the copyright
+holders.
+
+4. No warranty
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, AND NONINFRINGEMENT.
+IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+CLAIM, DAMAGES, OR OTHER LIABILITY ARISING FROM USE OF THE SOFTWARE.
+
+5. Reservation of rights
+
+All rights not expressly granted in this License are reserved.

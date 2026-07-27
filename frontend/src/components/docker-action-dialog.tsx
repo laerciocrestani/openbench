@@ -4,6 +4,7 @@ import {
   Circle,
   Container,
   Loader2,
+  Sparkles,
   XCircle,
 } from "lucide-react"
 
@@ -17,7 +18,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import { ScrollArea } from "@/components/ui/scroll-area"
 import { cn } from "@/lib/utils"
 
 export type DockerServiceProgress = {
@@ -65,9 +65,11 @@ function statusLabel(status: DockerServiceProgress["status"]) {
 export function DockerActionDialog({
   state,
   onOpenChange,
+  onFixWithAI,
 }: {
   state: DockerActionDialogState
   onOpenChange: (open: boolean) => void
+  onFixWithAI?: () => void
 }) {
   const logEndRef = useRef<HTMLDivElement | null>(null)
 
@@ -76,7 +78,8 @@ export function DockerActionDialog({
   }, [state.lines.length])
 
   const title = state.action ? `docker ${state.action}` : "Docker"
-  const canClose = !state.running
+  const failed = !state.running && state.ok === false
+  const showFix = failed && !!onFixWithAI
 
   return (
     <Dialog
@@ -114,41 +117,46 @@ export function DockerActionDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden px-4 py-3">
-          {state.services.length > 0 ? (
-            <ul className="shrink-0 space-y-1.5 rounded-lg border p-2">
-              {state.services.map((svc) => (
-                <li
-                  key={svc.name}
-                  className="flex items-start gap-2 rounded-md px-1.5 py-1 text-sm"
-                >
-                  <span className="mt-0.5">{statusIcon(svc.status)}</span>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="font-mono text-xs font-medium">{svc.name}</span>
-                      <span className="text-[11px] text-muted-foreground">
-                        {statusLabel(svc.status)}
-                      </span>
+        <div
+          className={cn(
+            "min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-3",
+            showFix ? "max-h-[calc(85vh-8.5rem)]" : "max-h-[calc(85vh-5.5rem)]",
+          )}
+        >
+          <div className="flex flex-col gap-3">
+            {state.services.length > 0 ? (
+              <ul className="space-y-1.5 rounded-lg border p-2">
+                {state.services.map((svc) => (
+                  <li
+                    key={svc.name}
+                    className="flex items-start gap-2 rounded-md px-1.5 py-1 text-sm"
+                  >
+                    <span className="mt-0.5">{statusIcon(svc.status)}</span>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="font-mono text-xs font-medium">{svc.name}</span>
+                        <span className="text-[11px] text-muted-foreground">
+                          {statusLabel(svc.status)}
+                        </span>
+                      </div>
+                      {svc.detail ? (
+                        <p
+                          className={cn(
+                            "mt-0.5 break-words font-mono text-[11px] text-muted-foreground",
+                            svc.status === "error" && "text-destructive",
+                          )}
+                          title={svc.detail}
+                        >
+                          {svc.detail}
+                        </p>
+                      ) : null}
                     </div>
-                    {svc.detail ? (
-                      <p
-                        className={cn(
-                          "mt-0.5 truncate font-mono text-[11px] text-muted-foreground",
-                          svc.status === "error" && "text-destructive",
-                        )}
-                        title={svc.detail}
-                      >
-                        {svc.detail}
-                      </p>
-                    ) : null}
-                  </div>
-                </li>
-              ))}
-            </ul>
-          ) : null}
+                  </li>
+                ))}
+              </ul>
+            ) : null}
 
-          <ScrollArea className="min-h-[12rem] flex-1 rounded-lg border bg-muted/30">
-            <pre className="whitespace-pre-wrap break-words p-3 font-mono text-[11px] leading-relaxed text-foreground/90">
+            <pre className="whitespace-pre-wrap break-words rounded-lg border bg-muted/30 p-3 font-mono text-[11px] leading-relaxed text-foreground/90">
               {state.lines.length === 0
                 ? state.running
                   ? "Aguardando output do Docker Compose…"
@@ -156,18 +164,17 @@ export function DockerActionDialog({
                 : state.lines.join("\n")}
               <div ref={logEndRef} />
             </pre>
-          </ScrollArea>
+          </div>
         </div>
 
-        <DialogFooter className="shrink-0 border-t px-4 py-3">
-          <Button
-            variant="outline"
-            disabled={!canClose}
-            onClick={() => onOpenChange(false)}
-          >
-            Fechar
-          </Button>
-        </DialogFooter>
+        {showFix ? (
+          <DialogFooter className="mx-0 mb-0 shrink-0 rounded-none border-t bg-transparent px-4 py-3 sm:justify-end">
+            <Button onClick={() => onFixWithAI?.()}>
+              <Sparkles className="size-4" />
+              Corrigir com IA
+            </Button>
+          </DialogFooter>
+        ) : null}
       </DialogContent>
     </Dialog>
   )

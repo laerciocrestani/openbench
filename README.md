@@ -1040,4 +1040,14 @@ If local commits contain real work, prefer `git rebase origin/main` or a feature
 
 ## License
 
-MIT
+**Proprietary — use allowed, redistribution and external forks not allowed.**
+
+Full text: [`LICENSE`](./LICENSE).
+
+| Allowed | Not allowed |
+|---------|-------------|
+| Personal use | Redistributing copies (personal or commercial) |
+| Corporate / internal use | Cloning or reworking the project **outside** this repository |
+| Contributing improvements back here (PRs) | Publishing a competing fork or derivative elsewhere |
+
+The intended model is: **use this repository** and **submit new implementations here**, so the community benefits from a single shared codebase.

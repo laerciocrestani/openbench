@@ -92,6 +92,10 @@ func (c *openAIClient) SuggestCIFix(ctx context.Context, logWindow, lang, branch
 	return suggestCIFixWithRetry(ctx, logWindow, lang, branch, c.chat)
 }
 
+func (c *openAIClient) SuggestDockerFix(ctx context.Context, fc DockerFixContext, lang string) (*DockerFixSuggestion, error) {
+	return suggestDockerFixWithRetry(ctx, fc, lang, c.chat)
+}
+
 func (c *openAIClient) chat(ctx context.Context, prompt, label string) (string, error) {
 	return withModelFallback(ctx, c.cfg, c.cfg.Model, func(model string) (string, error) {
 		return callWithRetry(ctx, c.providerName(), func() (string, error) {

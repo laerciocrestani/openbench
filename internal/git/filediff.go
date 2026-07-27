@@ -32,7 +32,7 @@ func (r *Repo) DiffFile(path string) (*FileDiff, error) {
 
 	status := "modified"
 	var insertions, deletions int
-	if changes, err := r.fileChanges(); err == nil {
+	if changes, err := r.fileChanges(true); err == nil {
 		for _, c := range changes {
 			if c.Path == rel {
 				status = c.Status

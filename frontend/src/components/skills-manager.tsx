@@ -107,7 +107,9 @@ export function SkillsManager({ active }: { active: boolean }) {
       <p className="text-[11px] text-muted-foreground">
         Skills ativas entram no system prompt do Chat IA. A builtin{" "}
         <span className="font-medium text-foreground">docker-debug</span> ajuda a
-        depurar containers Compose.
+        depurar containers Compose e orienta o fluxo{" "}
+        <span className="font-medium text-foreground">Corrigir com IA</span> após
+        falha de orquestração.
       </p>
 
       {error && (

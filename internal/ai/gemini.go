@@ -95,6 +95,10 @@ func (c *geminiClient) SuggestCIFix(ctx context.Context, logWindow, lang, branch
 	return suggestCIFixWithRetry(ctx, logWindow, lang, branch, c.generate)
 }
 
+func (c *geminiClient) SuggestDockerFix(ctx context.Context, fc DockerFixContext, lang string) (*DockerFixSuggestion, error) {
+	return suggestDockerFixWithRetry(ctx, fc, lang, c.generate)
+}
+
 func (c *geminiClient) generate(ctx context.Context, prompt, label string) (string, error) {
 	return withModelFallback(ctx, c.cfg, c.cfg.Model, func(model string) (string, error) {
 		return callWithRetry(ctx, "Gemini", func() (string, error) {

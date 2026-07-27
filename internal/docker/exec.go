@@ -254,6 +254,22 @@ func StartResult(opts ServiceOptions) (RunResult, error) {
 	return RunResult{Output: out}, err
 }
 
+// RmResult runs docker compose rm -f for one or more services.
+func RmResult(opts ServiceOptions) (RunResult, error) {
+	if opts.ComposeFile == "" {
+		return RunResult{}, fmt.Errorf("compose file não encontrado")
+	}
+	if len(opts.Services) == 0 {
+		return RunResult{}, fmt.Errorf("serviço não informado")
+	}
+	if opts.DryRun {
+		return RunResult{}, nil
+	}
+	args := append([]string{"rm", "-f"}, opts.Services...)
+	out, err := runCompose(opts.ComposeFile, args, opts.OnLine)
+	return RunResult{Output: out}, err
+}
+
 // Recreate runs docker compose up -d --force-recreate --no-deps for a service.
 func Recreate(composeFile, service string, dryRun bool) error {
 	return Up(UpOptions{

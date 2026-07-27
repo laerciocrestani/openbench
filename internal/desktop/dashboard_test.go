@@ -26,7 +26,22 @@ func TestLoadDashboard_openbenchRepo(t *testing.T) {
 	if dash.RepoName == "" || dash.Branch == "" {
 		t.Fatalf("incomplete dashboard: %+v", dash)
 	}
+	// Shell returns placeholder status until RefreshGitStatus.
 	if dash.StatusLabel == "" {
 		t.Fatal("missing status label")
+	}
+}
+
+func TestLoadGitStatus_openbenchRepo(t *testing.T) {
+	root, err := filepath.Abs("../..")
+	if err != nil {
+		t.Fatal(err)
+	}
+	dash, err := LoadGitStatus(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if dash.RepoName == "" || dash.Branch == "" || dash.StatusLabel == "" || dash.StatusLabel == "…" {
+		t.Fatalf("incomplete git status: %+v", dash)
 	}
 }

@@ -92,6 +92,11 @@ import {
   type DockerActionDialogState,
   type DockerServiceProgress,
 } from "@/components/docker-action-dialog"
+import {
+  DockerFixDialog,
+  type DockerFixPlanView as LocalDockerFixPlanView,
+  type DockerFixStepView as LocalDockerFixStepView,
+} from "@/components/docker-fix-dialog"
 import { DockerEnvironmentSheet } from "@/components/docker-environment-sheet"
 import { DockerGlobalPanel } from "@/components/docker-global-panel"
 import { DoctorDialog } from "@/components/DoctorDialog"
@@ -747,12 +752,14 @@ function prMergeBlocked(dash: Dashboard | null): string | undefined {
 }
 
 /**
- * LoadDashboard skips open PR (slow gh). Keep the last known PR/docker while the
- * same branch is open so toolbar next-step doesn't flicker to "Pull Request".
+ * Merge a new dashboard into the previous one.
+ * Shell payloads (statusLabel === "…") preserve enriched git/PR/docker/CI so
+ * refresh doesn't blank the toolbar while background loaders re-run.
  */
 function mergeFastDashboard(prev: Dashboard | null, next: Dashboard): Dashboard {
   if (!prev || prev.path !== next.path) return next
   const sameBranch = prev.branch === next.branch && !next.detached
+  const isShell = next.statusLabel === "…"
   const dockerStub =
     next.hasDocker &&
     (!next.docker || next.docker.summary === "carregando…" || next.docker.total === 0)
@@ -763,6 +770,39 @@ function mergeFastDashboard(prev: Dashboard | null, next: Dashboard): Dashboard 
       ? preservedPR
       : undefined)
   const preserveCI = sameBranch && !next.ciLabel && !!prev.ciLabel
+
+  if (isShell && sameBranch) {
+    return {
+      ...prev,
+      ...next,
+      dirty: prev.dirty,
+      staged: prev.staged,
+      modified: prev.modified,
+      untracked: prev.untracked,
+      ahead: prev.ahead,
+      behind: prev.behind,
+      hasUpstream: prev.hasUpstream,
+      commitsAheadOfBase: prev.commitsAheadOfBase,
+      hasBranchDiff: prev.hasBranchDiff,
+      baseBehind: prev.baseBehind,
+      statusLabel: prev.statusLabel === "…" ? "…" : prev.statusLabel,
+      changedFiles: prev.changedFiles?.length ? prev.changedFiles : next.changedFiles,
+      contextIndex: prev.contextIndex ?? next.contextIndex,
+      hygieneLocal: prev.hygieneLocal,
+      hygieneRemote: prev.hygieneRemote,
+      openPR,
+      docker: dockerStub && prev.docker?.total ? prev.docker : next.docker ?? prev.docker,
+      ...(preserveCI
+        ? {
+            ciState: prev.ciState,
+            ciLabel: prev.ciLabel,
+            ciFromCache: prev.ciFromCache,
+            ciHost: prev.ciHost,
+          }
+        : {}),
+    }
+  }
+
   return {
     ...next,
     openPR,
@@ -779,8 +819,14 @@ function mergeFastDashboard(prev: Dashboard | null, next: Dashboard): Dashboard 
 }
 
 /** Single recommended toolbar action based on repo state. */
-function nextToolbarStep(dash: Dashboard | null, openPRReady = true): NextToolbarStep {
+function nextToolbarStep(
+  dash: Dashboard | null,
+  openPRReady = true,
+  hygieneReady = true,
+  gitReady = true,
+): NextToolbarStep {
   if (!dash || dash.detached) return null
+  if (!gitReady) return null
   if (dash.dirty) return "commit"
   const pushCount = dash.hasUpstream ? dash.ahead : dash.commitsAheadOfBase
   if (pushCount > 0) return "push"
@@ -802,7 +848,7 @@ function nextToolbarStep(dash: Dashboard | null, openPRReady = true): NextToolba
   if (dash.openPR?.url && !prMergeBlocked(dash)) {
     return "merge"
   }
-  if (hygieneNeedsAttention(dash)) return "hygiene"
+  if (hygieneReady && hygieneNeedsAttention(dash)) return "hygiene"
   return null
 }
 
@@ -833,6 +879,9 @@ function DashboardView({
   prManageBusy,
   dockerVisible,
   dockerLoading,
+  ciLoading,
+  filesLoading,
+  gitLoading,
   commitActivity,
   activityLoading,
   activityAuthorOnly,
@@ -855,6 +904,9 @@ function DashboardView({
   prManageBusy: boolean
   dockerVisible: boolean
   dockerLoading: boolean
+  ciLoading: boolean
+  filesLoading: boolean
+  gitLoading: boolean
   commitActivity: CommitActivityView | null
   activityLoading: boolean
   activityAuthorOnly: boolean
@@ -1105,7 +1157,14 @@ function DashboardView({
           </CardHeader>
           <CardContent className="flex flex-col gap-2">
             <div className="flex flex-wrap items-center gap-2">
-              <StatusBadge label={dash.statusLabel} dirty={dash.dirty} />
+              {gitLoading ? (
+                <Badge variant="outline" className="gap-1 font-normal">
+                  <Loader2 className="size-3 animate-spin" />
+                  git
+                </Badge>
+              ) : (
+                <StatusBadge label={dash.statusLabel} dirty={dash.dirty} />
+              )}
               <DiffStat
                 insertions={
                   dash.contextIndex?.insertions ??
@@ -1117,6 +1176,18 @@ function DashboardView({
                 }
                 className="text-xs"
               />
+              {filesLoading ? (
+                <Badge variant="outline" className="gap-1 font-normal">
+                  <Loader2 className="size-3 animate-spin" />
+                  diffs
+                </Badge>
+              ) : null}
+              {ciLoading && !dash.ciLabel ? (
+                <Badge variant="outline" className="gap-1 font-normal">
+                  <Loader2 className="size-3 animate-spin" />
+                  CI
+                </Badge>
+              ) : null}
               {dash.ciLabel && (
                 <Badge
                   variant={
@@ -1134,6 +1205,7 @@ function DashboardView({
                   <Workflow className="size-3" />
                   {dash.ciLabel}
                   {dash.ciFromCache ? " · off" : ""}
+                  {ciLoading ? <Loader2 className="size-3 animate-spin opacity-60" /> : null}
                 </Badge>
               )}
               <Button
@@ -1234,6 +1306,12 @@ function DashboardView({
           <CardTitle className="flex items-center gap-2 text-sm">
             <FileText className="size-4 text-muted-foreground" />
             Arquivos alterados ({files.length})
+            {filesLoading ? (
+              <Badge variant="outline" className="gap-1 font-normal">
+                <Loader2 className="size-3 animate-spin" />
+                +/-
+              </Badge>
+            ) : null}
           </CardTitle>
           {contextIndex && (
             <ContextIndexPanel
@@ -1411,11 +1489,21 @@ function App() {
   const [prefs, setPrefs] = useState<Prefs | null>(null)
   const [dash, setDash] = useState<Dashboard | null>(null)
   const [openPRReady, setOpenPRReady] = useState(false)
+  const [hygieneReady, setHygieneReady] = useState(false)
+  const [ciReady, setCiReady] = useState(false)
+  const [filesReady, setFilesReady] = useState(false)
+  const [gitReady, setGitReady] = useState(false)
+  /** Bumps on open/switch/refresh so background loaders re-run even if headHash is unchanged. */
+  const [dashEpoch, setDashEpoch] = useState(0)
 
   const applyDashboard = useCallback((next: Dashboard | null) => {
     if (!next) {
       setDash(null)
       setOpenPRReady(false)
+      setHygieneReady(false)
+      setCiReady(false)
+      setFilesReady(false)
+      setGitReady(false)
       return
     }
     setDash((prev) => mergeFastDashboard(prev, next))
@@ -1556,6 +1644,17 @@ function App() {
   const [doctorFixRunning, setDoctorFixRunning] = useState(false)
   const [doctorFixLiveSteps, setDoctorFixLiveSteps] = useState<DoctorFixStepView[]>([])
 
+  const [dockerFixOpen, setDockerFixOpen] = useState(false)
+  const [dockerFixPlan, setDockerFixPlan] = useState<LocalDockerFixPlanView | null>(null)
+  const [dockerFixPlanBusy, setDockerFixPlanBusy] = useState(false)
+  const [dockerFixPlanError, setDockerFixPlanError] = useState<string | null>(null)
+  const [dockerFixRunning, setDockerFixRunning] = useState(false)
+  const [dockerFixLiveSteps, setDockerFixLiveSteps] = useState<LocalDockerFixStepView[]>([])
+  const lastDockerActionRef = useRef<{
+    label: string
+    fn: () => Promise<unknown>
+  } | null>(null)
+
   /* --------------------------- data loaders --------------------------- */
 
   const refreshStatuses = async () => {
@@ -1585,9 +1684,14 @@ function App() {
       const d = await AppService.OpenProjectDialog()
       if (d) {
         setOpenPRReady(false)
+        setHygieneReady(false)
+        setCiReady(Boolean(d.ciLabel))
+        setFilesReady(false)
+        setGitReady(false)
         applyDashboard(d)
-        await refreshStatuses()
-        await reloadPrefs()
+        setDashEpoch((n) => n + 1)
+        void refreshStatuses()
+        void reloadPrefs()
       }
     } catch (e) {
       setError(errText(e))
@@ -1603,9 +1707,14 @@ function App() {
       const d = await AppService.OpenProject(path)
       if (d) {
         setOpenPRReady(false)
+        setHygieneReady(false)
+        setCiReady(Boolean(d.ciLabel))
+        setFilesReady(false)
+        setGitReady(false)
         applyDashboard(d)
-        await refreshStatuses()
-        await reloadPrefs()
+        setDashEpoch((n) => n + 1)
+        void refreshStatuses()
+        void reloadPrefs()
       }
     } catch (e) {
       setError(errText(e))
@@ -1621,10 +1730,15 @@ function App() {
       const d = await AppService.SwitchProject(path)
       if (d) {
         setOpenPRReady(false)
+        setHygieneReady(false)
+        setCiReady(Boolean(d.ciLabel))
+        setFilesReady(false)
+        setGitReady(false)
         applyDashboard(d)
+        setDashEpoch((n) => n + 1)
       }
-      await refreshStatuses()
-      await reloadPrefs()
+      void refreshStatuses()
+      void reloadPrefs()
     } catch (e) {
       setError(errText(e))
     } finally {
@@ -1659,13 +1773,14 @@ function App() {
     setError(null)
     try {
       const d = await AppService.RefreshDashboard()
-      if (d) applyDashboard(d)
-      try {
-        const pr = await AppService.RefreshOpenPR()
-        setDash((prev) => (prev ? { ...prev, openPR: pr ?? undefined } : prev))
-        setOpenPRReady(true)
-      } catch {
-        setOpenPRReady(true)
+      if (d) {
+        setOpenPRReady(false)
+        setHygieneReady(false)
+        setCiReady(Boolean(d.ciLabel))
+        setFilesReady(false)
+        setGitReady(false)
+        applyDashboard(d)
+        setDashEpoch((n) => n + 1)
       }
       await AppService.RefreshProjectStatuses()
       await refreshStatuses()
@@ -2266,7 +2381,7 @@ function App() {
       : dash.commitsAheadOfBase
     : 0
   const canPushOnly = Boolean(dash) && !dash!.detached && pushAheadCount > 0
-  const suggestedStep = nextToolbarStep(dash, openPRReady)
+  const suggestedStep = nextToolbarStep(dash, openPRReady, hygieneReady, gitReady)
   const commitDoctorGate = doctorGate(doctorReport, "commit")
   const pushDoctorGate = doctorGate(doctorReport, "push")
   const prDoctorGate = doctorGate(doctorReport, "pr")
@@ -2407,6 +2522,7 @@ function App() {
     actionLabel: string,
     fn: () => Promise<unknown>,
   ) => {
+    lastDockerActionRef.current = { label: actionLabel, fn }
     const seedServices: DockerServiceProgress[] = (dash?.docker?.services ?? [])
       .filter((s) => s.name?.trim())
       .map((s) => ({ name: s.name, status: "pending" as const }))
@@ -2468,18 +2584,48 @@ function App() {
           lines = res.output.split("\n")
         }
         let services = prev.services
+        const badState = (state?: string) => {
+          const s = (state || "").toLowerCase()
+          return s === "exited" || s === "dead" || s.startsWith("exit") || s === "unhealthy"
+        }
         if (res.ok && services.length > 0) {
           services = services.map((s) =>
             s.status === "error" ? s : { ...s, status: "ok" as const },
           )
         }
-        if (!res.ok && services.length > 0) {
-          // Keep parsed errors; mark still-pending as error with message.
-          services = services.map((s) =>
-            s.status === "pending" || s.status === "running"
-              ? { ...s, status: "error" as const, detail: s.detail || res.message }
-              : s,
+        if (!res.ok) {
+          const byName = new Map(
+            (res.docker?.services ?? []).map((s) => [s.name, s] as const),
           )
+          services = services.map((s) => {
+            const live = byName.get(s.name)
+            if (live && (badState(live.state) || badState(live.health))) {
+              return {
+                ...s,
+                status: "error" as const,
+                detail:
+                  s.detail ||
+                  `${live.container || live.name} (${live.state}${live.health ? ` health=${live.health}` : ""})`,
+              }
+            }
+            if (s.status === "pending" || s.status === "running") {
+              return {
+                ...s,
+                status: "error" as const,
+                detail: s.detail || res.message,
+              }
+            }
+            return s
+          })
+          for (const live of res.docker?.services ?? []) {
+            if (!badState(live.state) && !badState(live.health)) continue
+            if (services.some((s) => s.name === live.name)) continue
+            services.push({
+              name: live.name,
+              status: "error",
+              detail: `${live.container || live.name} (${live.state})`,
+            })
+          }
         }
         return {
           ...prev,
@@ -2528,6 +2674,104 @@ function App() {
       offService()
       offDone()
       setBusy(false)
+    }
+  }
+
+  const openDockerFix = async () => {
+    const snap = dockerActionDlg
+    if (snap.ok !== false) return
+    setDockerFixOpen(true)
+    setDockerFixPlan(null)
+    setDockerFixPlanError(null)
+    setDockerFixLiveSteps([])
+    setDockerFixPlanBusy(true)
+    try {
+      const plan = (await AppService.PlanDockerFix({
+        action: snap.action,
+        message: snap.message,
+        lines: snap.lines,
+        services: snap.services.map((s) => ({
+          name: s.name,
+          status: s.status,
+          detail: s.detail || "",
+        })),
+      })) as LocalDockerFixPlanView | null
+      setDockerFixPlan(plan)
+      if (!plan?.canFix) {
+        setDockerFixPlanError(
+          plan?.message || "Não foi possível montar um plano de correção.",
+        )
+      }
+    } catch (e) {
+      setDockerFixPlanError(errText(e))
+      setDockerFixPlan(null)
+    } finally {
+      setDockerFixPlanBusy(false)
+    }
+  }
+
+  const runDockerFix = async (opts: {
+    enabledStepIDs: string[]
+    enabledFilePaths: string[]
+  }) => {
+    setError(null)
+    setDockerFixRunning(true)
+    try {
+      const plan = (await AppService.BeginDockerFix(
+        opts.enabledStepIDs,
+        opts.enabledFilePaths,
+      )) as LocalDockerFixPlanView | null
+      const execSteps = plan?.steps ?? []
+      if (plan) setDockerFixPlan(plan)
+      setDockerFixLiveSteps(
+        execSteps.map((s, i) => ({
+          ...s,
+          status: i === 0 ? "running" : "pending",
+        })),
+      )
+
+      let idx = 0
+      let success = false
+      while (idx < execSteps.length + 4) {
+        setDockerFixLiveSteps((prev) =>
+          prev.map((s, i) => ({
+            ...s,
+            status: i === idx ? "running" : i < idx ? s.status || "ok" : "pending",
+          })),
+        )
+        const adv = await AppService.AdvanceDockerFix()
+        if (!adv?.step) break
+        const step = adv.step as LocalDockerFixStepView
+        setDockerFixLiveSteps((prev) => {
+          const next = prev.slice()
+          const at = next.findIndex((s) => s.id === step.id)
+          if (at >= 0) next[at] = { ...next[at], ...step }
+          else next.push(step)
+          return next
+        })
+        if (!adv.ok || step.status === "error") {
+          if (adv.message) setError(adv.message)
+          break
+        }
+        idx++
+        if (adv.done) {
+          success = true
+          break
+        }
+      }
+
+      if (success) {
+        setDockerFixOpen(false)
+        setDockerActionDlg(emptyDockerActionDialog())
+        const last = lastDockerActionRef.current
+        if (last) {
+          await dockerAction(last.label, last.fn)
+        }
+      }
+    } catch (e) {
+      setError(errText(e))
+    } finally {
+      setDockerFixRunning(false)
     }
   }
 
@@ -2672,10 +2916,14 @@ function App() {
     setDockerShellReq(null)
   }, [dash?.path])
 
-  // After the fast dashboard lands, load Docker + open PR + commit calendar off the critical path.
+  // After the shell dashboard lands, enrich git status first, then Docker/PR/…
   useEffect(() => {
     if (!dash?.path) {
       setOpenPRReady(false)
+      setHygieneReady(false)
+      setCiReady(false)
+      setFilesReady(false)
+      setGitReady(false)
       setDockerLoading(false)
       setCommitActivity(null)
       setTimeline(null)
@@ -2683,22 +2931,58 @@ function App() {
       return
     }
     const path = dash.path
-    const token = `${path}|${dash.headHash}|${dash.branch}`
+    const token = `${path}|${dash.headHash}|${dash.branch}|${dashEpoch}`
     let cancelled = false
     setOpenPRReady(false)
-    setDockerLoading(!!dash.hasDocker)
+    setHygieneReady(false)
+    setCiReady(Boolean(dash.ciLabel))
+    setFilesReady(false)
+    setGitReady(false)
+    setDockerLoading(!!(dash.hasDocker || dash.docker?.visible))
     setActivityLoading(true)
     setTimelineLimit(10)
     ;(async () => {
       try {
         const tasks: Promise<void>[] = []
-        if (dash.hasDocker) {
+        tasks.push(
+          AppService.RefreshGitStatus()
+            .then((git) => {
+              if (cancelled || !git) return
+              setDash((prev) => {
+                if (!prev || prev.path !== path) return prev
+                if (`${prev.path}|${prev.headHash}|${prev.branch}|${dashEpoch}` !== token) return prev
+                return {
+                  ...prev,
+                  ...git,
+                  path: prev.path,
+                  openPR: prev.openPR ?? git.openPR,
+                  docker:
+                    prev.docker?.total || prev.docker?.summary === "carregando…"
+                      ? prev.docker
+                      : (git.docker ?? prev.docker),
+                  hygieneLocal: prev.hygieneLocal,
+                  hygieneRemote: prev.hygieneRemote,
+                  ciState: prev.ciState || git.ciState,
+                  ciLabel: prev.ciLabel || git.ciLabel,
+                  ciFromCache: prev.ciLabel ? prev.ciFromCache : git.ciFromCache,
+                  ciHost: prev.ciHost || git.ciHost,
+                }
+              })
+            })
+            .catch(() => {
+              /* shell stays until retry */
+            })
+            .finally(() => {
+              if (!cancelled) setGitReady(true)
+            }),
+        )
+        if (dash.hasDocker || dash.docker?.visible) {
           tasks.push(
             AppService.RefreshDockerStatus().then((docker) => {
               if (cancelled || !docker) return
               setDash((prev) => {
                 if (!prev || prev.path !== path) return prev
-                if (`${prev.path}|${prev.headHash}|${prev.branch}` !== token) return prev
+                if (`${prev.path}|${prev.headHash}|${prev.branch}|${dashEpoch}` !== token) return prev
                 return { ...prev, docker, hasDocker: docker.available }
               })
             }),
@@ -2710,7 +2994,7 @@ function App() {
               if (cancelled) return
               setDash((prev) => {
                 if (!prev || prev.path !== path) return prev
-                if (`${prev.path}|${prev.headHash}|${prev.branch}` !== token) return prev
+                if (`${prev.path}|${prev.headHash}|${prev.branch}|${dashEpoch}` !== token) return prev
                 return { ...prev, openPR: pr ?? undefined }
               })
             })
@@ -2719,6 +3003,71 @@ function App() {
             })
             .finally(() => {
               if (!cancelled) setOpenPRReady(true)
+            }),
+        )
+        tasks.push(
+          AppService.RefreshHygieneCounts(dash.baseBranch || "")
+            .then((counts) => {
+              if (cancelled || !counts) return
+              setDash((prev) => {
+                if (!prev || prev.path !== path) return prev
+                if (`${prev.path}|${prev.headHash}|${prev.branch}|${dashEpoch}` !== token) return prev
+                return {
+                  ...prev,
+                  hygieneLocal: counts.hygieneLocal ?? 0,
+                  hygieneRemote: counts.hygieneRemote ?? 0,
+                }
+              })
+            })
+            .catch(() => {
+              /* badge stays at 0 */
+            })
+            .finally(() => {
+              if (!cancelled) setHygieneReady(true)
+            }),
+        )
+        tasks.push(
+          AppService.RefreshCIBadge(dash.branch || "")
+            .then((badge) => {
+              if (cancelled || !badge) return
+              setDash((prev) => {
+                if (!prev || prev.path !== path) return prev
+                if (`${prev.path}|${prev.headHash}|${prev.branch}|${dashEpoch}` !== token) return prev
+                return {
+                  ...prev,
+                  ciState: badge.ciState,
+                  ciLabel: badge.ciLabel,
+                  ciFromCache: badge.ciFromCache,
+                  ciHost: badge.ciHost,
+                }
+              })
+            })
+            .catch(() => {
+              /* keep cache label if any */
+            })
+            .finally(() => {
+              if (!cancelled) setCiReady(true)
+            }),
+        )
+        tasks.push(
+          AppService.RefreshChangedFiles()
+            .then((files) => {
+              if (cancelled || !files) return
+              setDash((prev) => {
+                if (!prev || prev.path !== path) return prev
+                if (`${prev.path}|${prev.headHash}|${prev.branch}|${dashEpoch}` !== token) return prev
+                return {
+                  ...prev,
+                  changedFiles: files.changedFiles ?? [],
+                  contextIndex: files.contextIndex,
+                }
+              })
+            })
+            .catch(() => {
+              /* keep porcelain list without +/- */
+            })
+            .finally(() => {
+              if (!cancelled) setFilesReady(true)
             }),
         )
         tasks.push(
@@ -2734,13 +3083,17 @@ function App() {
         if (!cancelled) {
           setDockerLoading(false)
           setActivityLoading(false)
+          setHygieneReady(true)
+          setCiReady(true)
+          setFilesReady(true)
+          setGitReady(true)
         }
       }
     })()
     return () => {
       cancelled = true
     }
-  }, [dash?.path, dash?.headHash, dash?.branch, dash?.hasDocker, activityAuthorOnly])
+  }, [dash?.path, dash?.headHash, dash?.branch, dash?.hasDocker, dash?.baseBranch, dash?.docker?.visible, dashEpoch, activityAuthorOnly])
 
   // Timeline loads separately so "load more" only refetches activity events.
   useEffect(() => {
@@ -3412,14 +3765,20 @@ function App() {
                 title={
                   suggestedStep === "hygiene"
                     ? nextStepTitle("hygiene")
-                    : hygieneNeedsAttention(dash)
-                      ? `Hygiene: ${dash.hygieneLocal || 0} local · ${dash.hygieneRemote || 0} remoto`
-                      : "Limpar branches mergeadas"
+                    : !hygieneReady
+                      ? "Calculando candidatos de hygiene…"
+                      : hygieneNeedsAttention(dash)
+                        ? `Hygiene: ${dash.hygieneLocal || 0} local · ${dash.hygieneRemote || 0} remoto`
+                        : "Limpar branches mergeadas"
                 }
               >
-                {hygieneBusy ? <Loader2 className="animate-spin" /> : <Trash2 />}
+                {hygieneBusy || !hygieneReady ? (
+                  <Loader2 className="animate-spin" />
+                ) : (
+                  <Trash2 />
+                )}
                 Hygiene
-                {(suggestedStep === "hygiene" || hygieneNeedsAttention(dash)) && (
+                {hygieneReady && (suggestedStep === "hygiene" || hygieneNeedsAttention(dash)) && (
                   <Badge variant="secondary" className="ml-1 h-5 px-1.5 text-[10px]">
                     {suggestedStep === "hygiene" ? "próximo" : hygieneBadgeLabel(dash)}
                   </Badge>
@@ -3452,6 +3811,9 @@ function App() {
               prManageBusy={prManageBusy}
               dockerVisible={dockerVisible}
               dockerLoading={dockerLoading}
+              ciLoading={!ciReady}
+              filesLoading={!filesReady}
+              gitLoading={!gitReady}
               commitActivity={commitActivity}
               activityLoading={activityLoading}
               activityAuthorOnly={activityAuthorOnly}
@@ -4779,6 +5141,18 @@ function App() {
           if (!open && dockerActionDlg.running) return
           setDockerActionDlg((prev) => (open ? prev : emptyDockerActionDialog()))
         }}
+        onFixWithAI={() => void openDockerFix()}
+      />
+
+      <DockerFixDialog
+        open={dockerFixOpen}
+        onOpenChange={setDockerFixOpen}
+        plan={dockerFixPlan}
+        loadingPlan={dockerFixPlanBusy}
+        planError={dockerFixPlanError}
+        running={dockerFixRunning}
+        liveSteps={dockerFixLiveSteps}
+        onConfirm={(opts) => void runDockerFix(opts)}
       />
 
       <DockerEnvironmentSheet
