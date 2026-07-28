@@ -22,6 +22,8 @@ func (c *Client) UsageForRuns(runs []WorkflowRun, owner string) ActionsUsage {
 	}
 	if window > 0 {
 		usage.WindowMinutes = floatPtr(window)
+	} else if len(runs) == 0 {
+		usage.Message = "nenhum workflow run listado neste repositório/branch"
 	} else {
 		usage.Message = "sem duração calculável nos runs listados"
 	}
@@ -33,16 +35,7 @@ func (c *Client) UsageForRuns(runs []WorkflowRun, owner string) ActionsUsage {
 
 	orgUsage, err := c.orgBilling(owner)
 	if err != nil || orgUsage == nil {
-		// Keep repo_window; annotate if we tried.
-		if err != nil && usage.WindowMinutes == nil {
-			return ActionsUsage{
-				State:   UsageStateUnavailable,
-				Message: unavailableReason(err),
-			}
-		}
-		if err != nil {
-			usage.Message = usage.Message + " · billing org: " + unavailableReason(err)
-		}
+		// Billing is optional chrome — never surface it in the CI banner.
 		return usage
 	}
 
@@ -120,8 +113,8 @@ func unavailableReason(err error) string {
 	}
 	low := strings.ToLower(err.Error())
 	switch {
-	case strings.Contains(low, "403") || strings.Contains(low, "forbidden") || strings.Contains(low, "sem permissão"):
-		return "forbidden — sem permissão de billing"
+	case isOptionalBillingErr(err):
+		return "billing da org indisponível (permissão opcional)"
 	case strings.Contains(low, "404") || strings.Contains(low, "not found"):
 		return "enterprise_unsupported ou owner não é org"
 	case strings.Contains(low, "auth"):
@@ -129,6 +122,22 @@ func unavailableReason(err error) string {
 	default:
 		return "api_error — " + err.Error()
 	}
+}
+
+// isOptionalBillingErr reports org billing failures that are expected without admin:org.
+func isOptionalBillingErr(err error) bool {
+	if err == nil {
+		return false
+	}
+	low := strings.ToLower(err.Error())
+	return strings.Contains(low, "403") ||
+		strings.Contains(low, "forbidden") ||
+		strings.Contains(low, "sem permissão") ||
+		strings.Contains(low, "admin:org") ||
+		strings.Contains(low, "auth refresh") ||
+		strings.Contains(low, "billing") ||
+		strings.Contains(low, "actions policies") ||
+		strings.Contains(low, "fine-grained permission")
 }
 
 func floatPtr(v float64) *float64 { return &v }

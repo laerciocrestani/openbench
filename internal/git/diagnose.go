@@ -53,6 +53,7 @@ type HealthSnapshot struct {
 	CommitsAheadOfBase int
 	BaseDivergence     *DivergenceReport
 	BranchDivergence   *DivergenceReport
+	UnpushedBlockers   *UnpushedBlockers
 }
 
 var buildArtifactSegments = []string{
@@ -119,6 +120,11 @@ func (r *Repo) CollectHealthSnapshot(base string) (*HealthSnapshot, error) {
 			div, err := r.DivergenceReport(localBase, remoteBase)
 			if err == nil && (div.LocalAhead > 0 || div.RemoteAhead > 0) {
 				snap.BaseDivergence = div
+			}
+			if err == nil && div != nil && div.LocalAhead > 0 {
+				if blockers, scanErr := r.ScanUnpushedBlockers(remoteBase, localBase); scanErr == nil {
+					snap.UnpushedBlockers = blockers
+				}
 			}
 		}
 	}

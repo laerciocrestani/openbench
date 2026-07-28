@@ -35,9 +35,11 @@ Regras:
 	b.WriteString(`
 - steps: 2-5 passos acionáveis; prefira comandos git/ob quando aplicável
 - se commits locais parecem artefatos de build, sugira descartá-los com cautela
+- se houver issue unpushed_blocked (arquivo >100MB, node_modules, .env, .dmg no histórico local não publicado), oriente a usar o Doctor Fix com ação "limpeza" (git reset --mixed origin/<base>, sem soft reset e sem git add .) e NÃO sugerir push direto
 - marque reset --hard ou branch -D em warnings, nunca como passo casual
 - não invente arquivos ou commits que não aparecem nos fatos
 - risk=low quando working tree limpa e sincronizado
+- risk=high quando unpushed_blocked ou push seria rejeitado pelo GitHub
 - se a PR estiver MERGED: NÃO sugira push/PR de novo na mesma branch; oriente salvar o work (commit/stash), atualizar a base (Pull/Sync) e criar uma NOVA feature branch a partir da base
 - se o ÚNICO problema for working tree dirty numa feature branch (PR não MERGED): NÃO sugira stash push/pop; oriente Commit → push → abrir/atualizar PR
 - stash só quando for necessário limpar a tree para outra operação (pull/rebase/troca de branch), nunca como passo principal isolado

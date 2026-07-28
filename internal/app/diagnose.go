@@ -336,6 +336,36 @@ func analyzeHealthIssues(snap *gitpkg.HealthSnapshot, currentPR *prpkg.PRView) [
 		}
 	}
 
+	if blockers := snap.UnpushedBlockers; blockers != nil && blockers.HasBlockers() {
+		detailParts := make([]string, 0, 2)
+		if len(blockers.LargeFiles) > 0 {
+			hit := blockers.LargeFiles[0]
+			detailParts = append(detailParts, fmt.Sprintf(
+				"%s (%.1f MB) — GitHub rejeita >100 MB",
+				hit.Path, float64(hit.Size)/(1024*1024),
+			))
+			if len(blockers.LargeFiles) > 1 {
+				detailParts = append(detailParts, fmt.Sprintf("+%d arquivo(s) grande(s)", len(blockers.LargeFiles)-1))
+			}
+		}
+		if n := len(blockers.JunkPaths); n > 0 {
+			max := n
+			if max > 5 {
+				max = 5
+			}
+			detailParts = append(detailParts, "lixo/sensível: "+strings.Join(blockers.JunkPaths[:max], ", "))
+			if n > max {
+				detailParts = append(detailParts, fmt.Sprintf("+%d path(s)", n-max))
+			}
+		}
+		issues = append(issues, healthIssue{
+			Level:  gitpkg.HealthCritical,
+			Code:   "unpushed_blocked",
+			Title:  "Commits locais bloqueiam o push (arquivo grande ou lixo no histórico)",
+			Detail: strings.Join(detailParts, " · "),
+		})
+	}
+
 	if snap.OnBase && snap.CommitsAheadOfBase == 0 && !snap.IsDirty && snap.Ahead == 0 && snap.Behind == 0 {
 		if snap.BaseDivergence == nil {
 			// healthy base — no issue
@@ -478,8 +508,24 @@ func buildHealthRecommendations(snap *gitpkg.HealthSnapshot, issues []healthIssu
 			add(fmt.Sprintf("Evite push/PR de novo em %s — a PR já foi mergeada", snap.Branch))
 		case "dirty_tree":
 			if !mergedBranch {
-				add("Commit as alterações nesta branch (botão Commit / ob commit)")
-				add("Depois: push e abra (ou atualize) a Pull Request")
+				if snap.OnBase {
+					hasBaseDiv := false
+					for _, iss := range issues {
+						if iss.Code == "base_diverged" {
+							hasBaseDiv = true
+							break
+						}
+					}
+					if hasBaseDiv {
+						add("Há WIP na base — use “Ajustar com o Doctor” para mover commits + WIP para uma feature branch")
+					} else {
+						add(fmt.Sprintf("Crie uma feature branch a partir de %s (não versione direto na base)", snap.Base))
+						add("Depois: Commit na feature branch, push e abra a Pull Request")
+					}
+				} else {
+					add("Commit as alterações nesta branch (botão Commit / ob commit)")
+					add("Depois: push e abra (ou atualize) a Pull Request")
+				}
 			}
 		case "behind_remote":
 			if !snap.IsDirty {
@@ -501,11 +547,20 @@ func buildHealthRecommendations(snap *gitpkg.HealthSnapshot, issues []healthIssu
 					add(fmt.Sprintf("git fetch origin && git rebase origin/%s  # se os commits locais têm valor", snap.Base))
 					add(fmt.Sprintf("git fetch origin && git reset --hard origin/%s  # se os commits locais são descartáveis", snap.Base))
 				} else if div.LocalAhead > 0 {
-					add(fmt.Sprintf("git push origin %s  # se os commits locais devem ir ao remoto", snap.Base))
+					if snap.OnBase {
+						add(fmt.Sprintf("Mova os commits locais para uma feature branch e alinhe %s com origin/%s", snap.Base, snap.Base))
+						add(fmt.Sprintf("Alternativa: git push origin %s — só se a intenção for publicar direto na base", snap.Base))
+					} else {
+						add(fmt.Sprintf("git push origin %s  # se os commits locais devem ir ao remoto", snap.Base))
+					}
 				} else if div.RemoteAhead > 0 {
 					add("ob sync")
 				}
 			}
+		case "unpushed_blocked":
+			add("Use “Ajustar com o Doctor” → ação limpeza: git reset --mixed origin/<base> (desfaz commits locais; arquivos ficam no disco, fora do stage)")
+			add("Depois: git add só do código útil (nunca git add .), Commit, feature branch + PR")
+			add("Não versione node_modules, vendor, .env, .dmg, composer.phar")
 		case "branch_diverged":
 			add("git fetch origin")
 			add("git rebase @{u}  # ou git merge @{u}")
@@ -589,6 +644,17 @@ func formatHealthFacts(
 
 	appendDivergenceFacts(&b, "Base divergence", snap.BaseDivergence)
 	appendDivergenceFacts(&b, "Branch divergence", snap.BranchDivergence)
+
+	if blockers := snap.UnpushedBlockers; blockers != nil && blockers.HasBlockers() {
+		b.WriteString("\nUnpushed push blockers:\n")
+		for _, hit := range blockers.LargeFiles {
+			fmt.Fprintf(&b, "  large file: %s (%.1f MB)\n", hit.Path, float64(hit.Size)/(1024*1024))
+		}
+		for _, p := range blockers.JunkPaths {
+			fmt.Fprintf(&b, "  junk/sensitive path: %s\n", p)
+		}
+		b.WriteString("  suggested doctor action: cleanup (stash → reset --soft origin/<base> → git rm --cached)\n")
+	}
 
 	if len(issues) > 0 {
 		b.WriteString("\nIssues:\n")

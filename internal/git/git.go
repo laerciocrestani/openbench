@@ -62,6 +62,23 @@ func (r *Repo) runRaw(args ...string) (string, error) {
 	return stdout.String(), nil
 }
 
+func (r *Repo) runWithStdin(stdin string, args ...string) (string, error) {
+	cmd := exec.Command("git", args...)
+	cmd.Dir = r.dir
+	cmd.Stdin = strings.NewReader(stdin)
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		msg := strings.TrimSpace(stderr.String())
+		if msg == "" {
+			msg = err.Error()
+		}
+		return "", fmt.Errorf("git %s: %s", strings.Join(args, " "), msg)
+	}
+	return stdout.String(), nil
+}
+
 func (r *Repo) AddAll() error {
 	_, err := r.run("add", ".")
 	return err

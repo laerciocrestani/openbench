@@ -123,6 +123,10 @@ func (c *Client) ListOpenAll() ([]PRView, error) {
 		if isPRNotFound(err) {
 			return nil, nil
 		}
+		// GraphQL can 403 on some org tokens; REST usually still works.
+		if rest, restErr := c.listOpenAllREST(); restErr == nil {
+			return rest, nil
+		}
 		return nil, err
 	}
 
@@ -136,6 +140,9 @@ func (c *Client) ListOpenAll() ([]PRView, error) {
 		Mergeable   string `json:"mergeable"`
 	}
 	if err := json.Unmarshal([]byte(out), &raw); err != nil {
+		if rest, restErr := c.listOpenAllREST(); restErr == nil {
+			return rest, nil
+		}
 		return nil, err
 	}
 
@@ -149,6 +156,50 @@ func (c *Client) ListOpenAll() ([]PRView, error) {
 			IsDraft:     item.IsDraft,
 			HeadRefName: item.HeadRefName,
 			Mergeable:   item.Mergeable,
+		})
+	}
+	return list, nil
+}
+
+func (c *Client) listOpenAllREST() ([]PRView, error) {
+	out, err := c.run("api", "repos/{owner}/{repo}/pulls?state=open&per_page=30")
+	if err != nil {
+		return nil, err
+	}
+	var raw []struct {
+		Title  string `json:"title"`
+		URL    string `json:"html_url"`
+		State  string `json:"state"`
+		Number int    `json:"number"`
+		Draft  bool   `json:"draft"`
+		Head   struct {
+			Ref string `json:"ref"`
+		} `json:"head"`
+		Mergeable      *bool  `json:"mergeable"`
+		MergeableState string `json:"mergeable_state"`
+	}
+	if err := json.Unmarshal([]byte(out), &raw); err != nil {
+		return nil, err
+	}
+	list := make([]PRView, 0, len(raw))
+	for _, item := range raw {
+		mergeable := "UNKNOWN"
+		switch {
+		case item.Mergeable != nil && *item.Mergeable:
+			mergeable = "MERGEABLE"
+		case strings.EqualFold(item.MergeableState, "dirty"):
+			mergeable = "CONFLICTING"
+		case item.Mergeable != nil && !*item.Mergeable:
+			mergeable = "CONFLICTING"
+		}
+		list = append(list, PRView{
+			URL:         item.URL,
+			Title:       item.Title,
+			State:       strings.ToUpper(item.State),
+			Number:      item.Number,
+			IsDraft:     item.Draft,
+			HeadRefName: item.Head.Ref,
+			Mergeable:   mergeable,
 		})
 	}
 	return list, nil

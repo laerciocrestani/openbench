@@ -69,6 +69,26 @@ export function DoctorDialog({
   const issues = report?.issues ?? []
   const recs = report?.recommendations ?? []
   const ai = report?.ai
+  const onBase =
+    Boolean(report?.branch) &&
+    Boolean(report?.base) &&
+    report!.branch === report!.base
+  const hasDirty = issues.some((i) => i.code === "dirty_tree")
+  const hasMerged = issues.some((i) => i.code === "work_on_merged_branch")
+  const hasStructuralFix = issues.some((i) =>
+    [
+      "work_on_merged_branch",
+      "behind_remote",
+      "branch_diverged",
+      "base_diverged",
+      "commits_on_base",
+      "build_artifacts",
+      "unpushed_blocked",
+    ].includes(i.code),
+  )
+  // Commit on the base is the wrong next step — move to a feature branch first.
+  const showCommit = hasDirty && !hasMerged && !onBase
+  const showDoctorFix = hasStructuralFix || (onBase && hasDirty && !hasMerged)
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -147,12 +167,11 @@ export function DoctorDialog({
                   </>
                 )}
                 <div className="flex flex-wrap gap-1.5 pt-1">
-                  {issues.some((i) => i.code === "dirty_tree") &&
-                    !issues.some((i) => i.code === "work_on_merged_branch") && (
-                      <Button size="sm" onClick={onStartCommit}>
-                        Commit
-                      </Button>
-                    )}
+                  {showCommit && (
+                    <Button size="sm" onClick={onStartCommit}>
+                      Commit
+                    </Button>
+                  )}
                   {onDockerUp &&
                     issues.some((i) => i.code === "docker_down") && (
                       <Button size="sm" variant="outline" onClick={onDockerUp}>
@@ -165,17 +184,8 @@ export function DoctorDialog({
                         Docker Start
                       </Button>
                     )}
-                  {issues.some((i) =>
-                    [
-                      "work_on_merged_branch",
-                      "behind_remote",
-                      "branch_diverged",
-                      "base_diverged",
-                      "commits_on_base",
-                      "build_artifacts",
-                    ].includes(i.code),
-                  ) && (
-                    <Button size="sm" variant="outline" onClick={onOpenFix}>
+                  {showDoctorFix && (
+                    <Button size="sm" variant={showCommit ? "outline" : "default"} onClick={onOpenFix}>
                       Ajustar com o Doctor
                     </Button>
                   )}

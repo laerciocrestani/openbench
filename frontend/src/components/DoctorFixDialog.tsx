@@ -50,6 +50,38 @@ function riskBadge(risk: string) {
   return null
 }
 
+function baseActionLabel(opt: string): string {
+  switch (opt) {
+    case "cleanup":
+      return "limpeza"
+    case "branch":
+      return "feature branch"
+    case "push":
+      return "push"
+    case "reset":
+      return "reset"
+    case "rebase":
+      return "rebase"
+    case "update":
+      return "update"
+    default:
+      return opt
+  }
+}
+
+function isPushBlockedFailure(step: DoctorFixStepView | undefined): boolean {
+  if (!step) return false
+  const text = `${step.detail || ""} ${step.manualHint || ""}`.toLowerCase()
+  return (
+    text.includes("gh001") ||
+    text.includes("file size limit") ||
+    text.includes("large files") ||
+    text.includes("git-lfs") ||
+    text.includes("100 mb") ||
+    text.includes(">100")
+  )
+}
+
 export function DoctorFixDialog({
   open,
   onOpenChange,
@@ -121,9 +153,12 @@ export function DoctorFixDialog({
   const canConfirm =
     !!plan?.canAutoFix &&
     !running &&
+    !loadingPlan &&
     !allOk &&
     (!plan.needsBranchName || newBranch.trim().length > 0) &&
     (!plan.needsDestructiveConfirm || confirmDestructive)
+
+  const controlsBusy = running || loadingPlan
 
   const startFix = () => {
     if (!canConfirm) return
@@ -185,7 +220,7 @@ export function DoctorFixDialog({
               <Tabs
                 value={mergedAction || plan.suggestedMergedAction || plan.mergedActionOptions![0]}
                 onValueChange={(opt) => {
-                  if (running || !opt) return
+                  if (controlsBusy || !opt) return
                   setMergedAction(opt)
                   setConfirmDestructive(false)
                   onReplan({
@@ -197,13 +232,16 @@ export function DoctorFixDialog({
                 className="gap-3"
               >
                 <div className="space-y-1.5">
-                  <Label>O que fazer agora?</Label>
+                  <Label className="flex items-center gap-1.5">
+                    O que fazer agora?
+                    {loadingPlan ? <Loader2 className="size-3 animate-spin text-muted-foreground" /> : null}
+                  </Label>
                   <TabsList className="grid w-full grid-cols-2">
                     {plan.mergedActionOptions!.map((opt) => (
                       <TabsTrigger
                         key={opt}
                         value={opt}
-                        disabled={running}
+                        disabled={controlsBusy}
                         className="text-xs sm:text-sm"
                       >
                         {mergedLabel(opt)}
@@ -242,14 +280,14 @@ export function DoctorFixDialog({
                   value={newBranch}
                   onChange={(e) => setNewBranch(e.target.value)}
                   onBlur={() => {
-                    if (!running)
+                    if (!controlsBusy)
                       onReplan({
                         newBranch: newBranch.trim(),
                         baseAction,
                         mergedAction,
                       })
                   }}
-                  disabled={running}
+                  disabled={controlsBusy}
                   placeholder="feature/minha-alteracao"
                 />
               </div>
@@ -257,29 +295,52 @@ export function DoctorFixDialog({
 
             {plan?.needsBaseAction && (plan.baseActionOptions?.length ?? 0) > 0 ? (
               <div className="space-y-1.5">
-                <Label>Ação na base ({plan.base})</Label>
+                <Label className="flex items-center gap-1.5">
+                  Ação na base ({plan.base})
+                  {loadingPlan ? <Loader2 className="size-3 animate-spin text-muted-foreground" /> : null}
+                </Label>
                 <div className="flex flex-wrap gap-1.5">
-                  {plan.baseActionOptions!.map((opt) => (
-                    <Button
-                      key={opt}
-                      size="sm"
-                      type="button"
-                      variant={baseAction === opt ? "default" : "outline"}
-                      disabled={running}
-                      onClick={() => {
-                        setBaseAction(opt)
-                        setConfirmDestructive(false)
-                        onReplan({
-                          newBranch: newBranch.trim(),
-                          baseAction: opt,
-                          mergedAction,
-                        })
-                      }}
-                    >
-                      {opt}
-                    </Button>
-                  ))}
+                  {plan.baseActionOptions!.map((opt) => {
+                    const selected = baseAction === opt
+                    return (
+                      <Button
+                        key={opt}
+                        size="sm"
+                        type="button"
+                        variant={selected ? "default" : "outline"}
+                        disabled={controlsBusy}
+                        onClick={() => {
+                          if (opt === baseAction || controlsBusy) return
+                          setBaseAction(opt)
+                          setConfirmDestructive(false)
+                          onReplan({
+                            newBranch: newBranch.trim(),
+                            baseAction: opt,
+                            mergedAction,
+                          })
+                        }}
+                      >
+                        {loadingPlan && selected ? (
+                          <Loader2 className="size-3.5 animate-spin" />
+                        ) : null}
+                        {baseActionLabel(opt)}
+                      </Button>
+                    )
+                  })}
                 </div>
+                {baseAction === "cleanup" || (!baseAction && plan.suggestedBaseAction === "cleanup") ? (
+                  <p className="text-xs text-muted-foreground">
+                    Recomendado: <code className="text-[11px]">git reset --mixed origin/{plan.base}</code> —
+                    desfaz commits locais bloqueadores, deixa o index limpo e mantém os arquivos no disco
+                    (fora do stage) para você adicionar só o código útil.
+                  </p>
+                ) : null}
+                {baseAction === "branch" || (!baseAction && plan.suggestedBaseAction === "branch") ? (
+                  <p className="text-xs text-muted-foreground">
+                    Recomendado: leva os commits locais para uma feature branch e alinha{" "}
+                    <code className="text-[11px]">{plan.base}</code> com origin — sem push direto na base.
+                  </p>
+                ) : null}
               </div>
             ) : null}
 
@@ -287,13 +348,23 @@ export function DoctorFixDialog({
               <label className="flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm">
                 <Checkbox
                   checked={confirmDestructive}
-                  disabled={running}
+                  disabled={controlsBusy}
                   onCheckedChange={(v) => setConfirmDestructive(v === true)}
                   className="mt-0.5"
                 />
                 <span>
-                  Confirmo o reset destrutivo da base <code className="text-xs">{plan.base}</code>{" "}
-                  (descarta commits locais da base).
+                  {baseAction === "cleanup" || plan.suggestedBaseAction === "cleanup" ? (
+                    <>
+                      Confirmo a <strong>limpeza</strong> do histórico local não publicado (
+                      <code className="text-xs">reset --mixed origin/{plan.base}</code>). Os commits locais
+                      são desfeitos; arquivos ficam no disco, sem stage automático.
+                    </>
+                  ) : (
+                    <>
+                      Confirmo o reset destrutivo da base <code className="text-xs">{plan.base}</code>{" "}
+                      (descarta commits locais da base).
+                    </>
+                  )}
                 </span>
               </label>
             ) : null}
@@ -312,6 +383,12 @@ export function DoctorFixDialog({
             <section className="space-y-2">
               <div className="flex items-center justify-between gap-2">
                 <h3 className="text-xs font-medium text-muted-foreground">Timeline de comandos</h3>
+                {loadingPlan && !running ? (
+                  <span className="flex items-center gap-1.5 text-xs text-sky-700 dark:text-sky-300">
+                    <Loader2 className="size-3 animate-spin" />
+                    Atualizando plano…
+                  </span>
+                ) : null}
                 {running ? (
                   <span className="flex items-center gap-1.5 text-xs text-sky-700 dark:text-sky-300">
                     <Loader2 className="size-3 animate-spin" />
@@ -325,7 +402,7 @@ export function DoctorFixDialog({
                   </span>
                 ) : null}
               </div>
-              <ol className="space-y-2">
+              <ol className={cn("space-y-2", loadingPlan && !running && "opacity-60")}>
                 {timeline.map((step, idx) => {
                   const isRunning = step.status === "running"
                   return (
@@ -377,9 +454,31 @@ export function DoctorFixDialog({
             </section>
 
             {failed ? (
-              <p className="text-sm text-muted-foreground">
-                O Doctor parou neste passo. Siga a orientação manual e rode o Doctor de novo depois.
-              </p>
+              <div className="space-y-2">
+                <p className="text-sm text-muted-foreground">
+                  O Doctor parou neste passo. Siga a orientação manual e rode o Doctor de novo depois.
+                </p>
+                {isPushBlockedFailure(failed) ? (
+                  <Button
+                    size="sm"
+                    type="button"
+                    disabled={controlsBusy}
+                    onClick={() => {
+                      setBaseAction("cleanup")
+                      setConfirmDestructive(false)
+                      setHydrated(true)
+                      onReplan({
+                        newBranch: newBranch.trim(),
+                        baseAction: "cleanup",
+                        mergedAction,
+                      })
+                    }}
+                  >
+                    {loadingPlan ? <Loader2 className="size-3.5 animate-spin" /> : null}
+                    Oferecer limpeza do histórico
+                  </Button>
+                ) : null}
+              </div>
             ) : null}
             {allOk ? (
               <p className="text-sm text-emerald-700 dark:text-emerald-300">

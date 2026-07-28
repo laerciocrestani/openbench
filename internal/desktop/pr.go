@@ -148,21 +148,18 @@ func MergePR(projectPath string, number int, method string) (*PROutcome, error) 
 
 	var view *prpkg.PRView
 	if number > 0 {
-		list, err := client.ListOpenAll()
-		if err != nil {
-			return nil, err
-		}
-		for i := range list {
-			if list[i].Number == number {
-				view = &list[i]
-				break
-			}
-		}
-		if view == nil {
-			return nil, fmt.Errorf("PR #%d não encontrado entre os PRs abertos", number)
-		}
+		// Prefer merge by number directly — listing can fail on GraphQL while merge still works.
 		if _, err := client.MergeNumber(number, method); err != nil {
 			return nil, err
+		}
+		view = &prpkg.PRView{Number: number, Title: fmt.Sprintf("PR #%d", number)}
+		if list, listErr := client.ListOpenAll(); listErr == nil {
+			for i := range list {
+				if list[i].Number == number {
+					view = &list[i]
+					break
+				}
+			}
 		}
 	} else {
 		view, err = client.ViewCurrent()

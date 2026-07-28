@@ -1851,6 +1851,7 @@ function App() {
   const loadDoctorFixPlan = async (newBranch = "", baseAction = "", mergedAction = "") => {
     setDoctorFixPlanBusy(true)
     setDoctorFixPlanError(null)
+    setDoctorFixLiveSteps([])
     setError(null)
     let timeoutId = 0
     try {
@@ -2134,7 +2135,21 @@ function App() {
     setMergePRsLoading(true)
     setError(null)
     try {
-      const list = (await AppService.ListOpenPRs()) ?? []
+      let list = (await AppService.ListOpenPRs()) ?? []
+      // If listing fails/empty but dashboard already knows the branch PR, keep merge usable.
+      if (list.length === 0 && dash?.openPR?.number) {
+        list = [
+          {
+            number: dash.openPR.number,
+            title: dash.openPR.title || `PR #${dash.openPR.number}`,
+            url: dash.openPR.url,
+            state: dash.openPR.state || "OPEN",
+            isDraft: Boolean(dash.openPR.isDraft),
+            headRefName: dash.branch,
+            mergeable: dash.openPR.mergeable,
+          } as PRStatus,
+        ]
+      }
       setMergePRs(list)
       const current = dash?.openPR?.number ?? 0
       const preferred =
@@ -2144,12 +2159,32 @@ function App() {
       const fallback =
         current > 0 && list.some((p) => p.number === current)
           ? current
-          : (list[0]?.number ?? 0)
+          : list[0]?.number || preferredNumber || 0
       setSelectedMergePR(preferred || fallback)
+      if ((preferred || fallback) <= 0) {
+        setError("Nenhum PR aberto encontrado para mergear")
+      }
     } catch (e) {
-      setMergePRs([])
-      setSelectedMergePR(0)
-      setError(errText(e))
+      // Still allow merge of the known open PR from the dashboard.
+      const current = dash?.openPR
+      if (current?.number) {
+        setMergePRs([
+          {
+            number: current.number,
+            title: current.title || `PR #${current.number}`,
+            url: current.url,
+            state: current.state || "OPEN",
+            isDraft: Boolean(current.isDraft),
+            headRefName: dash?.branch,
+            mergeable: current.mergeable,
+          } as PRStatus,
+        ])
+        setSelectedMergePR(current.number)
+      } else {
+        setMergePRs([])
+        setSelectedMergePR(0)
+        setError(errText(e))
+      }
     } finally {
       setMergePRsLoading(false)
     }
