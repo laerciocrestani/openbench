@@ -2,6 +2,7 @@ package desktop
 
 import (
 	"fmt"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -11,6 +12,12 @@ import (
 	gitpkg "github.com/laerciocrestani/openbench/internal/git"
 	prpkg "github.com/laerciocrestani/openbench/internal/pr"
 )
+
+// hasGHCLI reports whether the GitHub CLI is on PATH (cheap LookPath).
+func hasGHCLI() bool {
+	_, err := exec.LookPath("gh")
+	return err == nil
+}
 
 // Dashboard is a JSON-friendly view model for the desktop UI.
 type Dashboard struct {
@@ -151,8 +158,9 @@ func LoadDashboardShell(projectPath string) (*Dashboard, error) {
 		BaseBranch:   "main",
 		ChangedFiles: []ChangedFileView{},
 		NextSteps:    []NextStepView{},
-		HasGH:        false,
-		HasDocker:    false,
+		// LookPath is cheap — set early so Merge PR isn't disabled while openPR loads.
+		HasGH:     hasGHCLI(),
+		HasDocker: false,
 	}
 	if shell.Detached {
 		d.Branch = "detached HEAD"
@@ -239,6 +247,7 @@ func LoadGitStatus(projectPath string) (*Dashboard, error) {
 		StatusLabel:        statusLabel(st.Staged > 0 || st.Modified > 0 || st.Untracked > 0, st.Staged, st.Modified, st.Untracked),
 		ChangedFiles:       mapChangedFiles(st.FileChanges),
 		NextSteps:          []NextStepView{},
+		HasGH:              hasGHCLI(),
 		AIReady:            cfg != nil && strings.TrimSpace(cfg.APIKey) != "",
 	}
 	if st.Detached {

@@ -105,6 +105,7 @@ import { DoctorDialog } from "@/components/DoctorDialog"
 import { DoctorFixDialog } from "@/components/DoctorFixDialog"
 import { DoctorGateAlert } from "@/components/DoctorGateAlert"
 import { doctorBlocksAction, doctorGate } from "@/lib/doctor-gate"
+import { mergeFastDashboard } from "@/lib/merge-dashboard"
 import { FloatingChat } from "@/components/floating-chat"
 import { StatusBar } from "@/components/status-bar"
 import { SkillsManager } from "@/components/skills-manager"
@@ -825,75 +826,6 @@ function prMergeBlocked(dash: Dashboard | null): string | undefined {
   return undefined
 }
 
-/**
- * Merge a new dashboard into the previous one.
- * Shell payloads (statusLabel === "…") preserve enriched git/PR/docker/CI so
- * refresh doesn't blank the toolbar while background loaders re-run.
- */
-function mergeFastDashboard(prev: Dashboard | null, next: Dashboard): Dashboard {
-  if (!prev || prev.path !== next.path) return next
-  const sameBranch = prev.branch === next.branch && !next.detached
-  const isShell = next.statusLabel === "…"
-  const dockerStub =
-    next.hasDocker &&
-    (!next.docker || next.docker.summary === "carregando…" || next.docker.total === 0)
-  const preservedPR = sameBranch ? prev.openPR : undefined
-  const openPR =
-    next.openPR ??
-    (preservedPR && (!preservedPR.state || String(preservedPR.state).toUpperCase().startsWith("OPEN"))
-      ? preservedPR
-      : undefined)
-  const preserveCI = sameBranch && !next.ciLabel && !!prev.ciLabel
-
-  if (isShell && sameBranch) {
-    return {
-      ...prev,
-      ...next,
-      dirty: prev.dirty,
-      staged: prev.staged,
-      modified: prev.modified,
-      untracked: prev.untracked,
-      ahead: prev.ahead,
-      behind: prev.behind,
-      hasUpstream: prev.hasUpstream,
-      unpublished: next.unpublished ?? prev.unpublished,
-      commitsAheadOfBase: prev.commitsAheadOfBase,
-      hasBranchDiff: prev.hasBranchDiff,
-      baseBehind: prev.baseBehind,
-      statusLabel: prev.statusLabel === "…" ? "…" : prev.statusLabel,
-      changedFiles: prev.changedFiles?.length ? prev.changedFiles : next.changedFiles,
-      contextIndex: prev.contextIndex ?? next.contextIndex,
-      hygieneLocal: prev.hygieneLocal,
-      hygieneRemote: prev.hygieneRemote,
-      remoteURL: next.remoteURL || prev.remoteURL,
-      openPR,
-      docker: dockerStub && prev.docker?.total ? prev.docker : next.docker ?? prev.docker,
-      ...(preserveCI
-        ? {
-            ciState: prev.ciState,
-            ciLabel: prev.ciLabel,
-            ciFromCache: prev.ciFromCache,
-            ciHost: prev.ciHost,
-          }
-        : {}),
-    }
-  }
-
-  return {
-    ...next,
-    openPR,
-    docker: dockerStub && prev.docker?.total ? prev.docker : next.docker,
-    ...(preserveCI
-      ? {
-          ciState: prev.ciState,
-          ciLabel: prev.ciLabel,
-          ciFromCache: prev.ciFromCache,
-          ciHost: prev.ciHost,
-        }
-      : {}),
-  }
-}
-
 /** Single recommended toolbar action based on repo state. */
 function nextToolbarStep(
   dash: Dashboard | null,
@@ -923,7 +855,7 @@ function nextToolbarStep(
     if (!openPRReady) return null
     return "pr"
   }
-  if (dash.openPR?.url && !prMergeBlocked(dash)) {
+  if (dash.openPR?.url && dash.hasGH && !prMergeBlocked(dash)) {
     return "merge"
   }
   if (hygieneReady && hygieneNeedsAttention(dash)) return "hygiene"
@@ -2964,6 +2896,9 @@ function App() {
                   ...prev,
                   ...git,
                   path: prev.path,
+                  // LoadGitStatus used to omit HasGH (false zero); don't disable Merge PR.
+                  hasGH: Boolean(git.hasGH || prev.hasGH),
+                  hasDocker: Boolean(git.hasDocker || prev.hasDocker),
                   openPR: prev.openPR ?? git.openPR,
                   docker:
                     prev.docker?.total || prev.docker?.summary === "carregando…"
