@@ -15,6 +15,7 @@ type ShellInfo struct {
 }
 
 // Shell loads only toplevel + branch + short HEAD (few git calls).
+// Supports unborn HEAD (fresh `git init` with no commits yet).
 func (r *Repo) Shell() (*ShellInfo, error) {
 	root, err := r.run("rev-parse", "--show-toplevel")
 	if err != nil {
@@ -22,7 +23,11 @@ func (r *Repo) Shell() (*ShellInfo, error) {
 	}
 	branch, err := r.CurrentBranch()
 	if err != nil {
-		return nil, err
+		// Unborn HEAD: rev-parse HEAD fails; symbolic-ref still names the branch.
+		branch, err = r.run("symbolic-ref", "--short", "HEAD")
+		if err != nil {
+			branch = "main"
+		}
 	}
 	info := &ShellInfo{
 		Root:     root,
@@ -46,14 +51,16 @@ type StatusSnapshot struct {
 	Untracked          int
 	FileChanges        []FileChange
 	CommitsAheadOfBase int
-	HasBranchDiff      bool
-	BaseBehind         int
-	BaseBranch         string
-	HeadHash           string
-	HeadFullHash       string
-	RemoteURL          string
-	Detached           bool
-	Root               string
+	// Unpublished is commits on HEAD when there is no upstream (first-push candidates).
+	Unpublished   int
+	HasBranchDiff bool
+	BaseBehind    int
+	BaseBranch    string
+	HeadHash      string
+	HeadFullHash  string
+	RemoteURL     string
+	Detached      bool
+	Root          string
 }
 
 // LoadStatus builds a dashboard-ready git status without branch lists / numstat / hygiene.
@@ -67,7 +74,10 @@ func (r *Repo) LoadStatus(baseBranch string, withFiles bool) (*StatusSnapshot, e
 
 	branch, err := r.CurrentBranch()
 	if err != nil {
-		return nil, err
+		branch, err = r.run("symbolic-ref", "--short", "HEAD")
+		if err != nil {
+			branch = "main"
+		}
 	}
 	s.Branch = branch
 	s.Detached = branch == "HEAD"
@@ -83,6 +93,7 @@ func (r *Repo) LoadStatus(baseBranch string, withFiles bool) (*StatusSnapshot, e
 	}
 
 	// Single porcelain --branch: "## branch...upstream [ahead N, behind M]" + file lines.
+	// Works on unborn HEAD (fresh git init).
 	out, err := r.runRaw("status", "--porcelain=v1", "--branch")
 	if err != nil {
 		return nil, err
@@ -101,6 +112,13 @@ func (r *Repo) LoadStatus(baseBranch string, withFiles bool) (*StatusSnapshot, e
 		}
 		if n, err := r.BaseBehindOrigin(baseBranch); err == nil {
 			s.BaseBehind = n
+		}
+	}
+
+	// First push: no upstream yet, but HEAD has commits (common after git init + remote).
+	if strings.TrimSpace(s.Upstream) == "" && s.HeadHash != "" {
+		if count, err := r.run("rev-list", "--count", "HEAD"); err == nil {
+			s.Unpublished, _ = strconv.Atoi(count)
 		}
 	}
 

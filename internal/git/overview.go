@@ -39,15 +39,17 @@ type Overview struct {
 	Behind             int
 	BaseBranch         string
 	CommitsAheadOfBase int
-	HasBranchDiff      bool // true when base...HEAD has at least one file
-	BaseBehind         int  // local base behind origin/<base>
-	Staged             int
-	Modified           int
-	Untracked          int
-	Branches           []BranchInfo
-	RecentCommits      []string
-	Stashes            []StashInfo
-	FileChanges        []FileChange
+	// Unpublished is commits on HEAD when there is no upstream (first-push candidates).
+	Unpublished   int
+	HasBranchDiff bool // true when base...HEAD has at least one file
+	BaseBehind    int  // local base behind origin/<base>
+	Staged        int
+	Modified      int
+	Untracked     int
+	Branches      []BranchInfo
+	RecentCommits []string
+	Stashes       []StashInfo
+	FileChanges   []FileChange
 }
 
 // OverviewOpts controls optional expensive collectors inside Overview.
@@ -94,6 +96,10 @@ func (r *Repo) OverviewWithOpts(baseBranch string, opts OverviewOpts) (*Overview
 		if ahead, behind, err := r.aheadBehind(upstream); err == nil {
 			o.Ahead = ahead
 			o.Behind = behind
+		}
+	} else if o.HeadHash != "" {
+		if count, err := r.run("rev-list", "--count", "HEAD"); err == nil {
+			o.Unpublished, _ = strconv.Atoi(count)
 		}
 	}
 

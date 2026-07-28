@@ -14,40 +14,42 @@ import (
 
 // Dashboard is a JSON-friendly view model for the desktop UI.
 type Dashboard struct {
-	Path               string              `json:"path"`
-	RepoName           string              `json:"repoName"`
-	Branch             string              `json:"branch"`
-	Detached           bool                `json:"detached"`
-	Dirty              bool                `json:"dirty"`
-	Staged             int                 `json:"staged"`
-	Modified           int                 `json:"modified"`
-	Untracked          int                 `json:"untracked"`
-	Ahead              int                 `json:"ahead"`
-	Behind             int                 `json:"behind"`
-	HasUpstream        bool                `json:"hasUpstream"`
-	BaseBranch         string              `json:"baseBranch"`
-	CommitsAheadOfBase int                 `json:"commitsAheadOfBase"`
-	HasBranchDiff      bool                `json:"hasBranchDiff"`
-	BaseBehind         int                 `json:"baseBehind"`
-	HygieneLocal       int                 `json:"hygieneLocal"`
-	HygieneRemote      int                 `json:"hygieneRemote"`
-	HeadHash           string              `json:"headHash"`
-	RemoteURL          string              `json:"remoteURL"`
-	StatusLabel        string              `json:"statusLabel"`
-	HasGH              bool                `json:"hasGH"`
-	HasDocker          bool                `json:"hasDocker"`
-	Docker             DockerStatus        `json:"docker"`
-	OpenPR             *PRStatus           `json:"openPR,omitempty"`
-	CIState            string              `json:"ciState,omitempty"`
-	CILabel            string              `json:"ciLabel,omitempty"`
-	CIFromCache        bool                `json:"ciFromCache,omitempty"`
-	CIHost             string              `json:"ciHost,omitempty"`
-	AIReady            bool                `json:"aiReady"`
-	Provider           string              `json:"provider"`
-	Model              string              `json:"model"`
-	NextSteps          []NextStepView      `json:"nextSteps"`
-	ChangedFiles       []ChangedFileView   `json:"changedFiles"`
-	ContextIndex       *CommitContextIndex `json:"contextIndex,omitempty"`
+	Path               string `json:"path"`
+	RepoName           string `json:"repoName"`
+	Branch             string `json:"branch"`
+	Detached           bool   `json:"detached"`
+	Dirty              bool   `json:"dirty"`
+	Staged             int    `json:"staged"`
+	Modified           int    `json:"modified"`
+	Untracked          int    `json:"untracked"`
+	Ahead              int    `json:"ahead"`
+	Behind             int    `json:"behind"`
+	HasUpstream        bool   `json:"hasUpstream"`
+	BaseBranch         string `json:"baseBranch"`
+	CommitsAheadOfBase int    `json:"commitsAheadOfBase"`
+	// Unpublished is commits on HEAD with no upstream (first push after remote add).
+	Unpublished   int                 `json:"unpublished"`
+	HasBranchDiff bool                `json:"hasBranchDiff"`
+	BaseBehind    int                 `json:"baseBehind"`
+	HygieneLocal  int                 `json:"hygieneLocal"`
+	HygieneRemote int                 `json:"hygieneRemote"`
+	HeadHash      string              `json:"headHash"`
+	RemoteURL     string              `json:"remoteURL"`
+	StatusLabel   string              `json:"statusLabel"`
+	HasGH         bool                `json:"hasGH"`
+	HasDocker     bool                `json:"hasDocker"`
+	Docker        DockerStatus        `json:"docker"`
+	OpenPR        *PRStatus           `json:"openPR,omitempty"`
+	CIState       string              `json:"ciState,omitempty"`
+	CILabel       string              `json:"ciLabel,omitempty"`
+	CIFromCache   bool                `json:"ciFromCache,omitempty"`
+	CIHost        string              `json:"ciHost,omitempty"`
+	AIReady       bool                `json:"aiReady"`
+	Provider      string              `json:"provider"`
+	Model         string              `json:"model"`
+	NextSteps     []NextStepView      `json:"nextSteps"`
+	ChangedFiles  []ChangedFileView   `json:"changedFiles"`
+	ContextIndex  *CommitContextIndex `json:"contextIndex,omitempty"`
 }
 
 // CommitContextIndex is the desktop DTO for commit-context health.
@@ -155,6 +157,10 @@ func LoadDashboardShell(projectPath string) (*Dashboard, error) {
 	if shell.Detached {
 		d.Branch = "detached HEAD"
 	}
+	// Cheap: one call so UI can prompt for origin without waiting for git status.
+	if url, err := repo.RemoteOriginURL(); err == nil {
+		d.RemoteURL = url
+	}
 
 	if cfg, cfgErr := config.Load(); cfgErr == nil && cfg != nil {
 		if strings.TrimSpace(cfg.BaseBranch) != "" {
@@ -225,6 +231,7 @@ func LoadGitStatus(projectPath string) (*Dashboard, error) {
 		HasUpstream:        strings.TrimSpace(st.Upstream) != "",
 		BaseBranch:         base,
 		CommitsAheadOfBase: st.CommitsAheadOfBase,
+		Unpublished:        st.Unpublished,
 		HasBranchDiff:      st.HasBranchDiff,
 		BaseBehind:         st.BaseBehind,
 		HeadHash:           st.HeadHash,
@@ -494,6 +501,7 @@ func FromSnapshot(projectPath string, snap *app.WorkspaceSnapshot) *Dashboard {
 		d.HasUpstream = strings.TrimSpace(o.Upstream) != ""
 		d.BaseBranch = o.BaseBranch
 		d.CommitsAheadOfBase = o.CommitsAheadOfBase
+		d.Unpublished = o.Unpublished
 		d.HasBranchDiff = o.HasBranchDiff
 		d.BaseBehind = o.BaseBehind
 		d.HeadHash = o.HeadHash

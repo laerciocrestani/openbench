@@ -79,6 +79,9 @@ func PreviewPush(projectPath string) (*PushPreview, error) {
 	hasUpstream := strings.TrimSpace(overview.Upstream) != ""
 	if !hasUpstream {
 		ahead = overview.CommitsAheadOfBase
+		if ahead <= 0 {
+			ahead = overview.Unpublished
+		}
 	}
 	def := gha.ResolveDefaultBranch(projectPath)
 	warn := gha.DefaultBranchWarning(branch, def)

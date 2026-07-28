@@ -107,6 +107,11 @@ import { FloatingChat } from "@/components/floating-chat"
 import { SkillsManager } from "@/components/skills-manager"
 import { ToolbarHelpDialog } from "@/components/ToolbarHelpDialog"
 import {
+  ProjectSetupDialog,
+  type ProjectSetupStep,
+} from "@/components/ProjectSetupDialog"
+import { RemoteOriginDialog } from "@/components/RemoteOriginDialog"
+import {
   TerminalPanel,
   type DockerShellRequest,
 } from "@/components/terminal-panel"
@@ -141,6 +146,7 @@ import {
   GitMerge,
   GitPullRequest,
   Layers,
+  Link2,
   Loader2,
   MessageSquare,
   PanelLeft,
@@ -170,6 +176,11 @@ function errText(e: unknown): string {
   } catch {
     return String(e)
   }
+}
+
+function isCancelledError(e: unknown): boolean {
+  const msg = errText(e).toLowerCase()
+  return msg === "cancelled" || msg.includes("cancelled")
 }
 
 /** Unwrap Wails event payloads (object, {data}, or {data:[payload]}). */
@@ -490,13 +501,35 @@ function ContextIndexPanel({
   )
 }
 
+function fileNeedsAdd(status: string): boolean {
+  switch ((status || "").trim().toLowerCase()) {
+    case "untracked":
+    case "modified":
+    case "staged+modified":
+    case "deleted":
+    case "changed":
+    case "renamed":
+      return true
+    default:
+      return false
+  }
+}
+
 function ChangedFilesTable({
   files,
+  busy,
   onSelect,
+  onStageFile,
+  onStageAll,
 }: {
   files: ChangedFileView[]
+  busy: boolean
   onSelect: (f: ChangedFileView) => void
+  onStageFile: (f: ChangedFileView) => void
+  onStageAll: () => void
 }) {
+  const addable = files.filter((f) => fileNeedsAdd(f.status))
+
   if (files.length === 0) {
     return (
       <p className="px-1 py-6 text-center text-sm text-muted-foreground">
@@ -506,32 +539,78 @@ function ChangedFilesTable({
   }
 
   return (
-    <Table>
-      <TableHeader className="sticky top-0 z-10 bg-card">
-        <TableRow>
-          <TableHead className="w-10">St</TableHead>
-          <TableHead>Arquivo</TableHead>
-          <TableHead className="w-24 text-right">Diff</TableHead>
-        </TableRow>
-      </TableHeader>
-      <TableBody>
-        {files.map((f) => (
-          <TableRow
-            key={f.path}
-            className="cursor-pointer"
-            onClick={() => onSelect(f)}
+    <div className="flex flex-col gap-2">
+      {addable.length > 0 ? (
+        <div className="flex flex-wrap items-center gap-2 px-1">
+          <Button
+            size="sm"
+            variant="secondary"
+            className="h-7 gap-1 px-2 text-xs"
+            disabled={busy}
+            onClick={onStageAll}
+            title="git add ."
           >
-            <TableCell>
-              <FileStatusBadge status={f.status} />
-            </TableCell>
-            <TableCell className="font-mono text-xs">{f.path}</TableCell>
-            <TableCell className="text-right">
-              <DiffStat insertions={f.insertions} deletions={f.deletions} className="justify-end" />
-            </TableCell>
+            <Plus className="size-3.5" />
+            Adicionar todos ({addable.length})
+          </Button>
+          <span className="text-xs text-muted-foreground">
+            ou adicione arquivo a arquivo na tabela
+          </span>
+        </div>
+      ) : null}
+      <Table>
+        <TableHeader className="sticky top-0 z-10 bg-card">
+          <TableRow>
+            <TableHead className="w-10">St</TableHead>
+            <TableHead>Arquivo</TableHead>
+            <TableHead className="w-24 text-right">Diff</TableHead>
+            <TableHead className="w-16 text-right">Add</TableHead>
           </TableRow>
-        ))}
-      </TableBody>
-    </Table>
+        </TableHeader>
+        <TableBody>
+          {files.map((f) => {
+            const canAdd = fileNeedsAdd(f.status)
+            return (
+              <TableRow
+                key={f.path}
+                className="cursor-pointer"
+                onClick={() => onSelect(f)}
+              >
+                <TableCell>
+                  <FileStatusBadge status={f.status} />
+                </TableCell>
+                <TableCell className="font-mono text-xs">{f.path}</TableCell>
+                <TableCell className="text-right">
+                  <DiffStat
+                    insertions={f.insertions}
+                    deletions={f.deletions}
+                    className="justify-end"
+                  />
+                </TableCell>
+                <TableCell className="text-right">
+                  {canAdd ? (
+                    <Button
+                      size="icon-xs"
+                      variant="ghost"
+                      disabled={busy}
+                      title={`git add ${f.path}`}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        onStageFile(f)
+                      }}
+                    >
+                      <Plus />
+                    </Button>
+                  ) : (
+                    <span className="text-xs text-muted-foreground">—</span>
+                  )}
+                </TableCell>
+              </TableRow>
+            )
+          })}
+        </TableBody>
+      </Table>
+    </div>
   )
 }
 
@@ -782,6 +861,7 @@ function mergeFastDashboard(prev: Dashboard | null, next: Dashboard): Dashboard 
       ahead: prev.ahead,
       behind: prev.behind,
       hasUpstream: prev.hasUpstream,
+      unpublished: next.unpublished ?? prev.unpublished,
       commitsAheadOfBase: prev.commitsAheadOfBase,
       hasBranchDiff: prev.hasBranchDiff,
       baseBehind: prev.baseBehind,
@@ -790,6 +870,7 @@ function mergeFastDashboard(prev: Dashboard | null, next: Dashboard): Dashboard 
       contextIndex: prev.contextIndex ?? next.contextIndex,
       hygieneLocal: prev.hygieneLocal,
       hygieneRemote: prev.hygieneRemote,
+      remoteURL: next.remoteURL || prev.remoteURL,
       openPR,
       docker: dockerStub && prev.docker?.total ? prev.docker : next.docker ?? prev.docker,
       ...(preserveCI
@@ -828,8 +909,10 @@ function nextToolbarStep(
   if (!dash || dash.detached) return null
   if (!gitReady) return null
   if (dash.dirty) return "commit"
-  const pushCount = dash.hasUpstream ? dash.ahead : dash.commitsAheadOfBase
-  if (pushCount > 0) return "push"
+  const pushCount = dash.hasUpstream
+    ? dash.ahead
+    : Math.max(dash.commitsAheadOfBase ?? 0, dash.unpublished ?? 0)
+  if (pushCount > 0 && (dash.hasUpstream || Boolean(dash.remoteURL))) return "push"
   if (dash.behind > 0) return "pull"
   // After a PR merge, local base usually lags origin — Sync before more work.
   if (syncNeedsAttention(dash)) return "sync"
@@ -887,6 +970,9 @@ function DashboardView({
   activityAuthorOnly,
   terminal,
   onSelectFile,
+  onStageFile,
+  onStageAll,
+  onConfigureRemote,
   onOpenBranches,
   onRecommendCommit,
   onMarkPRReady,
@@ -912,6 +998,9 @@ function DashboardView({
   activityAuthorOnly: boolean
   terminal: ReactNode
   onSelectFile: (f: ChangedFileView) => void
+  onStageFile: (f: ChangedFileView) => void
+  onStageAll: () => void
+  onConfigureRemote: () => void
   onOpenBranches: () => void
   onRecommendCommit: () => void
   onMarkPRReady: () => void
@@ -947,8 +1036,30 @@ function DashboardView({
   const dockerActionsEnabled =
     hasCompose && dash.docker.available && dash.docker.daemonRunning
 
+  const missingRemote = !String(dash.remoteURL || "").trim()
+
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-4">
+      {missingRemote ? (
+        <Alert className="shrink-0">
+          <Link2 className="size-4" />
+          <AlertDescription className="flex flex-wrap items-center justify-between gap-2">
+            <span>
+              Remote <code className="text-xs">origin</code> ausente — necessário
+              para Sync, Push e PR.
+            </span>
+            <Button
+              size="sm"
+              variant="secondary"
+              className="h-7"
+              disabled={busy}
+              onClick={onConfigureRemote}
+            >
+              Configurar remote
+            </Button>
+          </AlertDescription>
+        </Alert>
+      ) : null}
       <div className="grid shrink-0 grid-cols-1 gap-4 lg:grid-cols-3 lg:grid-rows-2">
         {/* Row 1: Docker | Branch | Calendar */}
         <Card size="sm" className="min-h-0">
@@ -1322,7 +1433,13 @@ function DashboardView({
           )}
         </CardHeader>
         <CardContent className="min-h-0 flex-1 overflow-y-auto">
-          <ChangedFilesTable files={files} onSelect={onSelectFile} />
+          <ChangedFilesTable
+            files={files}
+            busy={busy}
+            onSelect={onSelectFile}
+            onStageFile={onStageFile}
+            onStageAll={onStageAll}
+          />
         </CardContent>
       </Card>
 
@@ -1379,13 +1496,13 @@ function Welcome({
           </div>
           <h1 className="font-heading text-lg font-medium">openbench</h1>
           <p className="text-sm text-muted-foreground">
-            Abra um repositório Git para ver o dashboard.
+            Abra, crie ou clone um repositório Git para ver o dashboard.
           </p>
         </div>
 
         <Button size="lg" className="w-full sm:w-auto" onClick={onOpenDialog} disabled={busy}>
           {busy ? <Loader2 className="animate-spin" /> : <FolderOpen />}
-          Abrir projeto…
+          Projeto…
         </Button>
 
         {pinned.length > 0 && (
@@ -1512,6 +1629,25 @@ function App() {
 
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  const [projectSetupOpen, setProjectSetupOpen] = useState(false)
+  const [projectSetupStep, setProjectSetupStep] = useState<ProjectSetupStep>("choice")
+  const [projectSetupBusy, setProjectSetupBusy] = useState(false)
+  const [projectSetupError, setProjectSetupError] = useState<string | null>(null)
+  const [initGitPath, setInitGitPath] = useState<string | null>(null)
+
+  type PendingRemoteAction =
+    | "sync"
+    | "push"
+    | "pr"
+    | "commit-pr"
+    | "branch-commit-push"
+    | null
+  const [remoteOpen, setRemoteOpen] = useState(false)
+  const [remoteBusy, setRemoteBusy] = useState(false)
+  const [remoteError, setRemoteError] = useState<string | null>(null)
+  const [pendingRemoteAction, setPendingRemoteAction] =
+    useState<PendingRemoteAction>(null)
 
   // Diff sheet
   const [fileDiff, setFileDiff] = useState<FileDiffView | null>(null)
@@ -1677,45 +1813,186 @@ function App() {
 
   /* ----------------------------- actions ----------------------------- */
 
-  const openDialog = async () => {
-    setBusy(true)
+  const acceptOpenedDashboard = (d: Dashboard) => {
+    setOpenPRReady(false)
+    setHygieneReady(false)
+    setCiReady(Boolean(d.ciLabel))
+    setFilesReady(false)
+    setGitReady(false)
+    applyDashboard(d)
+    setDashEpoch((n) => n + 1)
+    void refreshStatuses()
+    void reloadPrefs()
+  }
+
+  const closeProjectSetup = () => {
+    setProjectSetupOpen(false)
+    setProjectSetupStep("choice")
+    setProjectSetupError(null)
+    setProjectSetupBusy(false)
+  }
+
+  const openDialog = () => {
     setError(null)
+    setProjectSetupError(null)
+    setProjectSetupStep("choice")
+    setInitGitPath(null)
+    setProjectSetupOpen(true)
+  }
+
+  const pickDirectory = async (title: string): Promise<string | null> => {
     try {
-      const d = await AppService.OpenProjectDialog()
-      if (d) {
-        setOpenPRReady(false)
-        setHygieneReady(false)
-        setCiReady(Boolean(d.ciLabel))
-        setFilesReady(false)
-        setGitReady(false)
-        applyDashboard(d)
-        setDashEpoch((n) => n + 1)
-        void refreshStatuses()
-        void reloadPrefs()
-      }
+      const path = await AppService.PickDirectory(title)
+      return path || null
     } catch (e) {
-      setError(errText(e))
-    } finally {
-      setBusy(false)
+      if (!isCancelledError(e)) setProjectSetupError(errText(e))
+      return null
     }
   }
 
   const openPath = async (path: string) => {
     setBusy(true)
     setError(null)
+    setProjectSetupError(null)
     try {
-      const d = await AppService.OpenProject(path)
-      if (d) {
-        setOpenPRReady(false)
-        setHygieneReady(false)
-        setCiReady(Boolean(d.ciLabel))
-        setFilesReady(false)
-        setGitReady(false)
-        applyDashboard(d)
-        setDashEpoch((n) => n + 1)
-        void refreshStatuses()
-        void reloadPrefs()
+      const res = await AppService.TryOpenProject(path)
+      if (res?.needsGitInit) {
+        setInitGitPath(res.path || path)
+        setProjectSetupOpen(false)
+        return
       }
+      if (res?.dashboard) {
+        closeProjectSetup()
+        setInitGitPath(null)
+        acceptOpenedDashboard(res.dashboard)
+      }
+    } catch (e) {
+      if (!isCancelledError(e)) setError(errText(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const switchProject = async (path: string) => {
+    await openPath(path)
+  }
+
+  const handleAbrirProject = async () => {
+    setProjectSetupBusy(true)
+    setProjectSetupError(null)
+    setError(null)
+    try {
+      const path = await pickDirectory("Abrir projeto")
+      if (!path) return
+      const res = await AppService.TryOpenProject(path)
+      if (res?.needsGitInit) {
+        setInitGitPath(res.path || path)
+        setProjectSetupOpen(false)
+        return
+      }
+      if (res?.dashboard) {
+        closeProjectSetup()
+        setInitGitPath(null)
+        acceptOpenedDashboard(res.dashboard)
+      }
+    } catch (e) {
+      if (!isCancelledError(e)) setProjectSetupError(errText(e))
+    } finally {
+      setProjectSetupBusy(false)
+    }
+  }
+
+  const handleCreateProject = async (parentDir: string, name: string) => {
+    setProjectSetupBusy(true)
+    setProjectSetupError(null)
+    try {
+      const d = await AppService.CreateProject(parentDir, name)
+      if (d) {
+        closeProjectSetup()
+        acceptOpenedDashboard(d)
+      }
+    } catch (e) {
+      setProjectSetupError(errText(e))
+    } finally {
+      setProjectSetupBusy(false)
+    }
+  }
+
+  const handleCloneProject = async (url: string, parentDir: string, name: string) => {
+    setProjectSetupBusy(true)
+    setProjectSetupError(null)
+    try {
+      const d = await AppService.CloneProject(url, parentDir, name)
+      if (d) {
+        closeProjectSetup()
+        acceptOpenedDashboard(d)
+      }
+    } catch (e) {
+      setProjectSetupError(errText(e))
+    } finally {
+      setProjectSetupBusy(false)
+    }
+  }
+
+  const handleConfirmInitGit = async (addAll: boolean) => {
+    if (!initGitPath) return
+    setProjectSetupBusy(true)
+    setProjectSetupError(null)
+    try {
+      const d = await AppService.InitGitAndOpen(initGitPath, addAll)
+      if (d) {
+        setInitGitPath(null)
+        closeProjectSetup()
+        acceptOpenedDashboard(d)
+      }
+    } catch (e) {
+      setProjectSetupError(errText(e))
+    } finally {
+      setProjectSetupBusy(false)
+    }
+  }
+
+  const refreshAfterStage = async () => {
+    try {
+      const git = await AppService.RefreshGitStatus()
+      if (git) {
+        setGitReady(false)
+        setFilesReady(false)
+        applyDashboard(git)
+      }
+      const files = await AppService.RefreshChangedFiles()
+      if (files) {
+        setDash((prev) => {
+          if (!prev) return prev
+          return {
+            ...prev,
+            changedFiles: files.changedFiles ?? [],
+            contextIndex: files.contextIndex ?? prev.contextIndex,
+            staged: git?.staged ?? prev.staged,
+            modified: git?.modified ?? prev.modified,
+            untracked: git?.untracked ?? prev.untracked,
+            dirty: git?.dirty ?? prev.dirty,
+            statusLabel: git?.statusLabel ?? prev.statusLabel,
+          }
+        })
+        setFilesReady(true)
+      }
+      setGitReady(true)
+      void refreshStatuses()
+    } catch (e) {
+      setError(errText(e))
+      setGitReady(true)
+      setFilesReady(true)
+    }
+  }
+
+  const stageAllFiles = async () => {
+    if (!dash?.path) return
+    setBusy(true)
+    setError(null)
+    try {
+      await AppService.StageAll(dash.path)
+      await refreshAfterStage()
     } catch (e) {
       setError(errText(e))
     } finally {
@@ -1723,27 +2000,24 @@ function App() {
     }
   }
 
-  const switchProject = async (path: string) => {
+  const stageOneFile = async (f: ChangedFileView) => {
+    if (!dash?.path || !f.path) return
     setBusy(true)
     setError(null)
     try {
-      const d = await AppService.SwitchProject(path)
-      if (d) {
-        setOpenPRReady(false)
-        setHygieneReady(false)
-        setCiReady(Boolean(d.ciLabel))
-        setFilesReady(false)
-        setGitReady(false)
-        applyDashboard(d)
-        setDashEpoch((n) => n + 1)
-      }
-      void refreshStatuses()
-      void reloadPrefs()
+      await AppService.StageFiles(dash.path, [f.path])
+      await refreshAfterStage()
     } catch (e) {
       setError(errText(e))
     } finally {
       setBusy(false)
     }
+  }
+
+  const handleCancelInitGit = () => {
+    if (projectSetupBusy) return
+    setInitGitPath(null)
+    setProjectSetupError(null)
   }
 
   const unpinProject = async (path: string) => {
@@ -2093,12 +2367,33 @@ function App() {
     }
   }
 
-  const runSync = async () => {
+  const hasRemoteOrigin = Boolean(String(dash?.remoteURL || "").trim())
+
+  const openRemoteDialog = (pending: PendingRemoteAction = null) => {
+    setRemoteError(null)
+    setPendingRemoteAction(pending)
+    setRemoteOpen(true)
+  }
+
+  const ensureRemoteOrigin = (pending: PendingRemoteAction): boolean => {
+    if (hasRemoteOrigin) return true
+    openRemoteDialog(pending)
+    return false
+  }
+
+  const applyRemoteDashboard = (d: Dashboard) => {
+    applyDashboard(d)
+    setDashEpoch((n) => n + 1)
+    void refreshStatuses()
+  }
+
+  const runSync = async (opts?: { skipRemoteCheck?: boolean }) => {
     if (!dash) return
     if (dash.dirty) {
       setError("Working tree dirty — commit ou stash antes de sincronizar")
       return
     }
+    if (!opts?.skipRemoteCheck && !ensureRemoteOrigin("sync")) return
     setSyncBusy(true)
     setError(null)
     setSyncResult(null)
@@ -2114,6 +2409,76 @@ function App() {
       setError(errText(e))
     } finally {
       setSyncBusy(false)
+    }
+  }
+
+  const resumeAfterRemote = async (action: PendingRemoteAction) => {
+    setPendingRemoteAction(null)
+    if (action === "sync") {
+      await runSync({ skipRemoteCheck: true })
+      return
+    }
+    if (action === "push") {
+      await runPushOnly({ skipRemoteCheck: true })
+      return
+    }
+    if (action === "pr") {
+      await startPR({ skipRemoteCheck: true })
+      return
+    }
+    if (action === "commit-pr") {
+      await startCommitAction("pr", { skipRemoteCheck: true })
+      return
+    }
+    if (action === "branch-commit-push") {
+      await startCommitAction("branch-commit-push", { skipRemoteCheck: true })
+    }
+  }
+
+  const handleSetOriginURL = async (url: string) => {
+    if (!dash?.path) return
+    setRemoteBusy(true)
+    setRemoteError(null)
+    const pending = pendingRemoteAction
+    try {
+      const d = await AppService.SetOriginRemote(dash.path, url)
+      if (d) {
+        applyRemoteDashboard(d)
+        setRemoteOpen(false)
+        await resumeAfterRemote(pending)
+      }
+    } catch (e) {
+      setRemoteError(errText(e))
+    } finally {
+      setRemoteBusy(false)
+    }
+  }
+
+  const handleCreateGitHubRepo = async (
+    name: string,
+    visibility: "public" | "private",
+    description: string,
+  ) => {
+    if (!dash?.path) return
+    setRemoteBusy(true)
+    setRemoteError(null)
+    const pending = pendingRemoteAction
+    try {
+      const d = await AppService.CreateGitHubRepo(
+        dash.path,
+        name,
+        visibility,
+        description,
+      )
+      if (d) {
+        applyRemoteDashboard(d)
+        setRemoteOpen(false)
+        await resumeAfterRemote(pending)
+      }
+    } catch (e) {
+      setRemoteError(errText(e))
+    } finally {
+      setRemoteBusy(false)
     }
   }
 
@@ -2311,11 +2676,27 @@ function App() {
     }
   }
 
-  const startCommitAction = async (action: CommitAction) => {
+  const startCommitAction = async (
+    action: CommitAction,
+    opts?: { skipRemoteCheck?: boolean },
+  ) => {
     if (!dash) return
     const needsGitHub =
       action === "push" || action === "pr" || action === "branch-commit-push"
     if (!(await ensureOnboarding(needsGitHub))) return
+    if (
+      !opts?.skipRemoteCheck &&
+      (action === "push" || action === "pr" || action === "branch-commit-push") &&
+      !ensureRemoteOrigin(
+        action === "push"
+          ? "push"
+          : action === "pr"
+            ? "commit-pr"
+            : "branch-commit-push",
+      )
+    ) {
+      return
+    }
     setCommitAction(action)
     if (action === "branch-commit" || action === "branch-commit-push") {
       setNewBranchFrom(dash.baseBranch || "main")
@@ -2349,7 +2730,7 @@ function App() {
     }
   }
 
-  const runPushOnly = async () => {
+  const runPushOnly = async (opts?: { skipRemoteCheck?: boolean }) => {
     if (!dash) return
     if (doctorBlocksAction(doctorReport, "push")) {
       setError("Doctor: resolva a branch mergeada antes de fazer push")
@@ -2357,6 +2738,7 @@ function App() {
       return
     }
     if (!(await ensureOnboarding(true))) return
+    if (!opts?.skipRemoteCheck && !ensureRemoteOrigin("push")) return
     setBusy(true)
     setError(null)
     try {
@@ -2374,13 +2756,18 @@ function App() {
     }
   }
 
-  // Push when ↑ ahead of upstream, or first push of a feature with commits vs base.
+  // Push when ↑ ahead of upstream, first feature commits vs base, or unpublished
+  // commits on a new repo (remote set, no upstream yet — e.g. after git init).
   const pushAheadCount = dash
     ? dash.hasUpstream
       ? dash.ahead
-      : dash.commitsAheadOfBase
+      : Math.max(dash.commitsAheadOfBase ?? 0, dash.unpublished ?? 0)
     : 0
-  const canPushOnly = Boolean(dash) && !dash!.detached && pushAheadCount > 0
+  const canPushOnly =
+    Boolean(dash) &&
+    !dash!.detached &&
+    pushAheadCount > 0 &&
+    (dash!.hasUpstream || Boolean(dash!.remoteURL))
   const suggestedStep = nextToolbarStep(dash, openPRReady, hygieneReady, gitReady)
   const commitDoctorGate = doctorGate(doctorReport, "commit")
   const pushDoctorGate = doctorGate(doctorReport, "push")
@@ -2449,7 +2836,7 @@ function App() {
 
   /* ------------------------------- PR ------------------------------- */
 
-  const startPR = async () => {
+  const startPR = async (opts?: { skipRemoteCheck?: boolean }) => {
     if (!dash) return
     if (doctorBlocksAction(doctorReport, "pr")) {
       setError("Doctor: resolva as recomendações antes de abrir PR")
@@ -2457,6 +2844,7 @@ function App() {
       return
     }
     if (!(await ensureOnboarding(true))) return
+    if (!opts?.skipRemoteCheck && !ensureRemoteOrigin("pr")) return
     setPrOpen(true)
     setPrPreview(null)
     setPrTitle("")
@@ -3466,9 +3854,9 @@ function App() {
 
             {/* Toolbar */}
             <div className="flex shrink-0 flex-wrap items-center gap-2">
-              <Button variant="outline" size="sm" onClick={() => void openDialog()} disabled={busy}>
+              <Button variant="outline" size="sm" onClick={() => openDialog()} disabled={busy}>
                 <FolderOpen />
-                Abrir
+                Projeto
               </Button>
               <Button variant="outline" size="sm" onClick={() => void refresh()} disabled={busy}>
                 {busy ? <Loader2 className="animate-spin" /> : <RefreshCw />}
@@ -3825,6 +4213,9 @@ function App() {
                 />
               }
               onSelectFile={(f) => void openFileDiff(f)}
+              onStageFile={(f) => void stageOneFile(f)}
+              onStageAll={() => void stageAllFiles()}
+              onConfigureRemote={() => openRemoteDialog(null)}
               onOpenBranches={() => void openBranches()}
               onRecommendCommit={() => void startCommit()}
               onMarkPRReady={() => void markPRReady()}
@@ -4672,6 +5063,44 @@ function App() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <ProjectSetupDialog
+        open={projectSetupOpen}
+        busy={projectSetupBusy || busy}
+        step={projectSetupStep}
+        initPath={initGitPath}
+        error={projectSetupError}
+        onOpenChange={(next) => {
+          if (!next) closeProjectSetup()
+          else setProjectSetupOpen(true)
+        }}
+        onStep={setProjectSetupStep}
+        onAbrir={() => void handleAbrirProject()}
+        onCreate={(parent, name) => void handleCreateProject(parent, name)}
+        onClone={(url, parent, name) => void handleCloneProject(url, parent, name)}
+        onPickDirectory={pickDirectory}
+        onConfirmInit={(addAll) => void handleConfirmInitGit(addAll)}
+        onCancelInit={handleCancelInitGit}
+      />
+
+      <RemoteOriginDialog
+        open={remoteOpen}
+        busy={remoteBusy}
+        error={remoteError}
+        defaultName={dash?.repoName || projectDisplayName(dash?.path || "")}
+        onOpenChange={(next) => {
+          if (!next && remoteBusy) return
+          setRemoteOpen(next)
+          if (!next) {
+            setRemoteError(null)
+            setPendingRemoteAction(null)
+          }
+        }}
+        onSetURL={(url) => void handleSetOriginURL(url)}
+        onCreateGitHub={(name, visibility, description) =>
+          void handleCreateGitHubRepo(name, visibility, description)
+        }
+      />
 
       {/* Onboarding dialog */}
       <Dialog open={onboardingOpen} onOpenChange={setOnboardingOpen}>

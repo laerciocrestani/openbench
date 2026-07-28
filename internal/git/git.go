@@ -205,6 +205,26 @@ func (r *Repo) RemoteOriginURL() (string, error) {
 	return r.run("remote", "get-url", "origin")
 }
 
+// HasOrigin reports whether the origin remote is configured.
+func (r *Repo) HasOrigin() bool {
+	_, err := r.RemoteOriginURL()
+	return err == nil
+}
+
+// SetOrigin adds or updates the origin remote URL.
+func (r *Repo) SetOrigin(url string) error {
+	url = strings.TrimSpace(url)
+	if url == "" {
+		return fmt.Errorf("URL do remote é obrigatória")
+	}
+	if r.HasOrigin() {
+		_, err := r.run("remote", "set-url", "origin", url)
+		return err
+	}
+	_, err := r.run("remote", "add", "origin", url)
+	return err
+}
+
 func (r *Repo) ProjectName() string {
 	if r.dir != "" {
 		if name := filepath.Base(filepath.Clean(r.dir)); name != "" && name != "." {

@@ -190,24 +190,150 @@ func (s *AppService) SetValidatePR(enabled bool) error {
 	return desktop.SavePrefs(prefs)
 }
 
-// OpenProjectDialog opens a native folder picker and loads the project.
-func (s *AppService) OpenProjectDialog() (*desktop.Dashboard, error) {
+// PickDirectory opens a native folder picker and returns the selected path.
+// Returns error "cancelled" when the user dismisses the dialog.
+func (s *AppService) PickDirectory(title string) (string, error) {
 	s.mu.RLock()
 	app := s.app
 	s.mu.RUnlock()
 	if app == nil {
-		return nil, fmt.Errorf("app not ready")
+		return "", fmt.Errorf("app not ready")
 	}
-
+	if strings.TrimSpace(title) == "" {
+		title = "Escolher pasta"
+	}
 	path, err := app.Dialog.OpenFile().
-		SetTitle("Open project").
+		SetTitle(title).
 		CanChooseDirectories(true).
 		CanChooseFiles(false).
 		PromptForSingleSelection()
 	if err != nil || path == "" {
-		return nil, fmt.Errorf("cancelled")
+		return "", fmt.Errorf("cancelled")
 	}
-	return s.OpenProject(path)
+	return path, nil
+}
+
+// OpenProjectDialog opens a native folder picker and loads the project.
+// Prefer TryOpenProject from the UI wizard (Abrir / Criar / Clonar).
+func (s *AppService) OpenProjectDialog() (*desktop.Dashboard, error) {
+	path, err := s.PickDirectory("Abrir projeto")
+	if err != nil {
+		return nil, err
+	}
+	res, err := s.TryOpenProject(path)
+	if err != nil {
+		return nil, err
+	}
+	if res != nil && res.NeedsGitInit {
+		return nil, fmt.Errorf("%s: not a git repository", res.Path)
+	}
+	if res == nil || res.Dashboard == nil {
+		return nil, fmt.Errorf("falha ao abrir projeto")
+	}
+	return res.Dashboard, nil
+}
+
+// TryOpenProject probes path: opens when it is a git repo, or signals NeedsGitInit.
+func (s *AppService) TryOpenProject(path string) (*desktop.ProjectOpenResult, error) {
+	res, err := desktop.TryOpenProject(path)
+	if err != nil {
+		return nil, err
+	}
+	if res.Dashboard != nil {
+		s.afterOpen(res.Dashboard)
+	}
+	return res, nil
+}
+
+// InitGitAndOpen runs git init (if needed) and opens the project.
+// When addAll is true, also runs git add . after init.
+func (s *AppService) InitGitAndOpen(path string, addAll bool) (*desktop.Dashboard, error) {
+	dash, err := desktop.InitGitAndOpen(path, addAll)
+	if err != nil {
+		return nil, err
+	}
+	s.afterOpen(dash)
+	return dash, nil
+}
+
+// StageAll runs git add . in the open project (or path) and returns the shell dashboard.
+func (s *AppService) StageAll(path string) (*desktop.Dashboard, error) {
+	if strings.TrimSpace(path) == "" {
+		path = s.currentPath()
+	}
+	dash, err := desktop.StageAll(path)
+	if err != nil {
+		return nil, err
+	}
+	return dash, nil
+}
+
+// StageFiles runs git add on paths in the open project (or path).
+func (s *AppService) StageFiles(path string, files []string) (*desktop.Dashboard, error) {
+	if strings.TrimSpace(path) == "" {
+		path = s.currentPath()
+	}
+	dash, err := desktop.StageFiles(path, files)
+	if err != nil {
+		return nil, err
+	}
+	return dash, nil
+}
+
+// SetOriginRemote configures git remote origin for the project (or current path).
+func (s *AppService) SetOriginRemote(path, url string) (*desktop.Dashboard, error) {
+	if strings.TrimSpace(path) == "" {
+		path = s.currentPath()
+	}
+	dash, err := desktop.SetOriginRemote(path, url)
+	if err != nil {
+		return nil, err
+	}
+	return dash, nil
+}
+
+// CreateGitHubRepo creates a GitHub repo with gh, sets origin, and returns the dashboard.
+// visibility: "public" or "private". Does not push.
+func (s *AppService) CreateGitHubRepo(path, name, visibility, description string) (*desktop.Dashboard, error) {
+	if strings.TrimSpace(path) == "" {
+		path = s.currentPath()
+	}
+	dash, err := desktop.CreateGitHubRepo(path, name, visibility, description)
+	if err != nil {
+		return nil, err
+	}
+	return dash, nil
+}
+
+// CreateProject creates parentDir/name, runs git init, and opens the project.
+func (s *AppService) CreateProject(parentDir, name string) (*desktop.Dashboard, error) {
+	dash, err := desktop.CreateProject(parentDir, name)
+	if err != nil {
+		return nil, err
+	}
+	s.afterOpen(dash)
+	return dash, nil
+}
+
+// CloneProject clones url into parentDir/name and opens the project.
+// name may be empty; it is derived from the remote URL when omitted.
+func (s *AppService) CloneProject(url, parentDir, name string) (*desktop.Dashboard, error) {
+	dash, err := desktop.CloneProject(url, parentDir, name)
+	if err != nil {
+		return nil, err
+	}
+	s.afterOpen(dash)
+	return dash, nil
+}
+
+func (s *AppService) afterOpen(dash *desktop.Dashboard) {
+	s.setProjectPath(dash.Path)
+	// Prefs / hub / tray are not needed to paint the shell — do them off the critical path.
+	go func(p string) {
+		_, _ = desktop.RememberProject(p)
+		s.syncHubFromPrefs()
+		s.refreshTray()
+	}(dash.Path)
 }
 
 // PinProject adds path to pinned shortcuts (does not open the project).
@@ -226,13 +352,7 @@ func (s *AppService) OpenProject(path string) (*desktop.Dashboard, error) {
 	if err != nil {
 		return nil, err
 	}
-	s.setProjectPath(dash.Path)
-	// Prefs / hub / tray are not needed to paint the shell — do them off the critical path.
-	go func(p string) {
-		_, _ = desktop.RememberProject(p)
-		s.syncHubFromPrefs()
-		s.refreshTray()
-	}(dash.Path)
+	s.afterOpen(dash)
 	return dash, nil
 }
 
@@ -242,12 +362,7 @@ func (s *AppService) SwitchProject(path string) (*desktop.Dashboard, error) {
 	if err != nil {
 		return nil, err
 	}
-	s.setProjectPath(dash.Path)
-	go func(p string) {
-		_, _ = desktop.RememberProject(p)
-		s.syncHubFromPrefs()
-		s.refreshTray()
-	}(dash.Path)
+	s.afterOpen(dash)
 	return dash, nil
 }
 
