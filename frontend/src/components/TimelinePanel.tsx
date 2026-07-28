@@ -154,6 +154,8 @@ export function TimelinePanel({
   actionBusy,
   className,
   compact,
+  emptyLabel,
+  paged = true,
 }: {
   timeline: TimelineView | null
   loading: boolean
@@ -164,6 +166,9 @@ export function TimelinePanel({
   actionBusy?: boolean
   className?: string
   compact?: boolean
+  emptyLabel?: string
+  /** When false, hides infinite-scroll / "load more" / end marker (day filter). */
+  paged?: boolean
 }) {
   const events = timeline?.events ?? []
   const hasMore = Boolean(timeline?.hasMore)
@@ -181,7 +186,7 @@ export function TimelinePanel({
   }, [timeline])
 
   useEffect(() => {
-    if (!hasMore || loading) return
+    if (!paged || !hasMore || loading) return
     const node = sentinelRef.current
     if (!node) return
     const root =
@@ -195,7 +200,7 @@ export function TimelinePanel({
     )
     observer.observe(node)
     return () => observer.disconnect()
-  }, [hasMore, loading, onLoadMore, events.length])
+  }, [paged, hasMore, loading, onLoadMore, events.length])
 
   const confirmCopy = useMemo(() => {
     if (!pending) return { title: "", description: "" }
@@ -266,7 +271,9 @@ export function TimelinePanel({
           Carregando…
         </div>
       ) : events.length === 0 ? (
-        <p className="text-xs text-muted-foreground">Nenhum evento recente.</p>
+        <p className="text-xs text-muted-foreground">
+          {emptyLabel ?? "Nenhum evento recente."}
+        </p>
       ) : (
         <ScrollArea className="min-h-0 flex-1">
           <ol className="relative space-y-0 border-l border-border/70 pl-4 pr-1">
@@ -281,22 +288,24 @@ export function TimelinePanel({
             ))}
           </ol>
           <div ref={sentinelRef} className="h-1 w-full" aria-hidden />
-          <div className="flex flex-col items-center gap-2 py-2">
-            {loading && (
-              <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
-                <Loader2 className="size-3 animate-spin" />
-                Carregando mais…
-              </div>
-            )}
-            {hasMore && !loading && (
-              <Button size="xs" variant="outline" onClick={onLoadMore}>
-                Carregar mais
-              </Button>
-            )}
-            {!hasMore && events.length > 0 && (
-              <span className="text-[10px] text-muted-foreground">Fim da timeline</span>
-            )}
-          </div>
+          {paged && (
+            <div className="flex flex-col items-center gap-2 py-2">
+              {loading && (
+                <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
+                  <Loader2 className="size-3 animate-spin" />
+                  Carregando mais…
+                </div>
+              )}
+              {hasMore && !loading && (
+                <Button size="xs" variant="outline" onClick={onLoadMore}>
+                  Carregar mais
+                </Button>
+              )}
+              {!hasMore && events.length > 0 && (
+                <span className="text-[10px] text-muted-foreground">Fim da timeline</span>
+              )}
+            </div>
+          )}
         </ScrollArea>
       )}
 

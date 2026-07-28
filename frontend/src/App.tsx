@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react"
+import { format, parseISO } from "date-fns"
+import { ptBR } from "date-fns/locale"
 
 import { AppService } from "../bindings/github.com/laerciocrestani/openbench"
 import type { UpdateCheckResult } from "../bindings/github.com/laerciocrestani/openbench"
@@ -123,6 +125,7 @@ import {
   type BranchTemplate,
 } from "@/lib/branch-templates"
 import { cn } from "@/lib/utils"
+import { ChangeMindMapCard } from "@/components/ChangeMindMapCard"
 import { CommitCalendarCard } from "@/components/CommitCalendarCard"
 import { TimelinePanel, type TimelineConfirmAction } from "@/components/TimelinePanel"
 import { ActivitySidebar, useActivitySidebar } from "@/components/activity-sidebar"
@@ -1389,36 +1392,44 @@ function DashboardView({
         </Card>
       </div>
 
-      <Card className="flex min-h-0 flex-1 flex-col overflow-hidden">
-        <CardHeader className="shrink-0 gap-3">
-          <CardTitle className="flex items-center gap-2 text-sm">
-            <FileText className="size-4 text-muted-foreground" />
-            Arquivos alterados ({files.length})
-            {filesLoading ? (
-              <Badge variant="outline" className="gap-1 font-normal">
-                <Loader2 className="size-3 animate-spin" />
-                +/-
-              </Badge>
-            ) : null}
-          </CardTitle>
-          {contextIndex && (
-            <ContextIndexPanel
-              index={contextIndex}
+      <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 lg:grid-cols-2">
+        <Card className="flex min-h-0 flex-col overflow-hidden">
+          <CardHeader className="shrink-0 gap-3">
+            <CardTitle className="flex items-center gap-2 text-sm">
+              <FileText className="size-4 text-muted-foreground" />
+              Arquivos alterados ({files.length})
+              {filesLoading ? (
+                <Badge variant="outline" className="gap-1 font-normal">
+                  <Loader2 className="size-3 animate-spin" />
+                  +/-
+                </Badge>
+              ) : null}
+            </CardTitle>
+            {contextIndex && (
+              <ContextIndexPanel
+                index={contextIndex}
+                busy={busy}
+                onRecommendCommit={onRecommendCommit}
+              />
+            )}
+          </CardHeader>
+          <CardContent className="min-h-0 flex-1 overflow-y-auto">
+            <ChangedFilesTable
+              files={files}
               busy={busy}
-              onRecommendCommit={onRecommendCommit}
+              onSelect={onSelectFile}
+              onStageFile={onStageFile}
+              onStageAll={onStageAll}
             />
-          )}
-        </CardHeader>
-        <CardContent className="min-h-0 flex-1 overflow-y-auto">
-          <ChangedFilesTable
-            files={files}
-            busy={busy}
-            onSelect={onSelectFile}
-            onStageFile={onStageFile}
-            onStageAll={onStageAll}
-          />
-        </CardContent>
-      </Card>
+          </CardContent>
+        </Card>
+
+        <ChangeMindMapCard
+          files={files}
+          centerLabel={dash.branch || "working tree"}
+          onSelect={onSelectFile}
+        />
+      </div>
 
       {terminal}
     </div>
@@ -1681,10 +1692,10 @@ function App() {
   const [activityLoading, setActivityLoading] = useState(false)
   const [activityAuthorOnly, setActivityAuthorOnly] = useState(true)
 
-  // Timeline (commits + PR events)
+  // Timeline (commits + PR events) — filtrada pelo dia do calendário
   const [timeline, setTimeline] = useState<TimelineView | null>(null)
   const [timelineLoading, setTimelineLoading] = useState(false)
-  const [timelineLimit, setTimelineLimit] = useState(10)
+  const [activityDay, setActivityDay] = useState(() => format(new Date(), "yyyy-MM-dd"))
   const [timelineActionBusy, setTimelineActionBusy] = useState(false)
 
   // Commit modal
@@ -1733,7 +1744,8 @@ function App() {
 
   // Floating AI chat (MessageScroller)
   const [chatOpen, setChatOpen] = useState(false)
-  const { open: activityOpen, toggle: toggleActivity } = useActivitySidebar(true)
+  const { open: activityOpen, setOpen: setActivityOpen, toggle: toggleActivity } =
+    useActivitySidebar(true)
 
   // Doctor (repository health)
   const [doctorOpen, setDoctorOpen] = useState(false)
@@ -3282,7 +3294,6 @@ function App() {
       setDockerLoading(false)
       setCommitActivity(null)
       setTimeline(null)
-      setTimelineLimit(10)
       return
     }
     const path = dash.path
@@ -3295,7 +3306,6 @@ function App() {
     setGitReady(false)
     setDockerLoading(!!(dash.hasDocker || dash.docker?.visible))
     setActivityLoading(true)
-    setTimelineLimit(10)
     ;(async () => {
       try {
         const tasks: Promise<void>[] = []
@@ -3450,7 +3460,13 @@ function App() {
     }
   }, [dash?.path, dash?.headHash, dash?.branch, dash?.hasDocker, dash?.baseBranch, dash?.docker?.visible, dashEpoch, activityAuthorOnly])
 
-  // Timeline loads separately so "load more" only refetches activity events.
+  // Ao abrir projeto, atividade começa no dia de hoje.
+  useEffect(() => {
+    if (!dash?.path) return
+    setActivityDay(format(new Date(), "yyyy-MM-dd"))
+  }, [dash?.path])
+
+  // Timeline do dia selecionado no calendário (commits + PRs daquele dia).
   useEffect(() => {
     if (!dash?.path) {
       setTimeline(null)
@@ -3460,7 +3476,7 @@ function App() {
     setTimelineLoading(true)
     ;(async () => {
       try {
-        const tl = await AppService.LoadTimeline(timelineLimit)
+        const tl = await AppService.LoadTimelineDay(activityDay)
         if (!cancelled) setTimeline(tl ?? null)
       } catch (e) {
         if (!cancelled) setError(errText(e))
@@ -3471,22 +3487,25 @@ function App() {
     return () => {
       cancelled = true
     }
-  }, [dash?.path, dash?.headHash, timelineLimit])
+  }, [dash?.path, dash?.headHash, activityDay])
 
-  const loadMoreTimeline = useCallback(() => {
-    if (timelineLoading || !timeline?.hasMore) return
-    setTimelineLimit((n) => n + 10)
-  }, [timelineLoading, timeline?.hasMore])
+  const selectActivityDay = useCallback(
+    (day: string) => {
+      setActivityDay(day)
+      setActivityOpen(true)
+    },
+    [setActivityOpen],
+  )
 
   const refreshTimelineNow = useCallback(async () => {
     if (!dash?.path) return
     try {
-      const tl = await AppService.LoadTimeline(timelineLimit)
+      const tl = await AppService.LoadTimelineDay(activityDay)
       setTimeline(tl ?? null)
     } catch (e) {
       setError(errText(e))
     }
-  }, [dash?.path, timelineLimit])
+  }, [dash?.path, activityDay])
 
   const handleTimelineConfirm = useCallback(
     async (action: TimelineConfirmAction) => {
@@ -3742,24 +3761,48 @@ function App() {
             <div className="flex h-full min-h-0 flex-col bg-background">
               <div className="flex shrink-0 items-center gap-2 border-b px-3 py-2">
                 <span className="text-sm font-medium">Atividade</span>
-                <span className="text-[11px] text-muted-foreground">commits</span>
+                <span
+                  className="truncate text-[11px] text-muted-foreground"
+                  title={activityDay}
+                >
+                  {(() => {
+                    try {
+                      return format(parseISO(activityDay), "dd MMM yyyy", { locale: ptBR })
+                    } catch {
+                      return activityDay
+                    }
+                  })()}
+                </span>
+                {activityDay !== format(new Date(), "yyyy-MM-dd") && (
+                  <Button
+                    size="xs"
+                    variant="ghost"
+                    className="ml-auto h-6 px-1.5 text-[10px]"
+                    onClick={() => selectActivityDay(format(new Date(), "yyyy-MM-dd"))}
+                  >
+                    Hoje
+                  </Button>
+                )}
               </div>
               <div className="min-h-0 flex-1 overflow-hidden p-3">
                 <TimelinePanel
                   timeline={timeline}
                   loading={timelineLoading}
-                  onLoadMore={loadMoreTimeline}
+                  onLoadMore={() => {}}
                   onConfirmAction={handleTimelineConfirm}
                   onCheckoutBranch={handleTimelineCheckout}
                   onMergePR={(number) => void openMergeDialog(number)}
                   actionBusy={timelineActionBusy}
                   compact
+                  paged={false}
                   className="h-full"
+                  emptyLabel="Nenhuma atividade neste dia."
                 />
               </div>
               <div className="flex max-h-[42%] min-h-[12rem] shrink-0 flex-col border-t">
                 <div className="flex shrink-0 items-center gap-2 border-b px-3 py-2">
                   <span className="text-sm font-medium">Calendar</span>
+                  <span className="text-[11px] text-muted-foreground">filtra o dia</span>
                 </div>
                 <div className="min-h-0 flex-1 overflow-y-auto p-3">
                   <CommitCalendarCard
@@ -3767,6 +3810,8 @@ function App() {
                     loading={activityLoading}
                     authorOnly={activityAuthorOnly}
                     onToggleAuthorOnly={() => setActivityAuthorOnly((v) => !v)}
+                    selectedDay={activityDay}
+                    onSelectDay={selectActivityDay}
                     className="min-h-0"
                   />
                 </div>

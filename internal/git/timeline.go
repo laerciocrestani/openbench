@@ -22,13 +22,38 @@ func (r *Repo) LoadTimelineCommits(limit int) ([]TimelineCommit, error) {
 	if limit <= 0 {
 		limit = 50
 	}
-	out, err := r.run(
+	return r.loadTimelineCommits(
 		"log",
 		"--all",
 		"--date-order",
 		fmt.Sprintf("-%d", limit),
 		"--pretty=format:%H%x00%h%x00%cI%x00%an%x00%P%x00%D%x00%s",
 	)
+}
+
+// LoadTimelineCommitsOnDay returns commits whose committer date falls on day (YYYY-MM-DD, local).
+func (r *Repo) LoadTimelineCommitsOnDay(day string) ([]TimelineCommit, error) {
+	day = strings.TrimSpace(day)
+	if day == "" {
+		day = time.Now().Format("2006-01-02")
+	}
+	parsed, err := time.ParseInLocation("2006-01-02", day, time.Local)
+	if err != nil {
+		return nil, fmt.Errorf("dia inválido %q: %w", day, err)
+	}
+	until := parsed.AddDate(0, 0, 1).Format("2006-01-02")
+	return r.loadTimelineCommits(
+		"log",
+		"--all",
+		"--date-order",
+		"--since="+day,
+		"--until="+until,
+		"--pretty=format:%H%x00%h%x00%cI%x00%an%x00%P%x00%D%x00%s",
+	)
+}
+
+func (r *Repo) loadTimelineCommits(args ...string) ([]TimelineCommit, error) {
+	out, err := r.run(args...)
 	if err != nil {
 		return nil, err
 	}

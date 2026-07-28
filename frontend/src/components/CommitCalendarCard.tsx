@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { format, parseISO } from "date-fns"
 import { ptBR } from "date-fns/locale"
 
@@ -9,12 +9,6 @@ import type {
 import { Calendar, CalendarDayButton } from "@/components/ui/calendar"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog"
 import { cn } from "@/lib/utils"
 import { Loader2 } from "lucide-react"
 
@@ -43,17 +37,34 @@ export function CommitCalendarCard({
   loading,
   authorOnly,
   onToggleAuthorOnly,
+  selectedDay,
+  onSelectDay,
   className,
 }: {
   activity: CommitActivityView | null
   loading: boolean
   authorOnly: boolean
   onToggleAuthorOnly: () => void
+  selectedDay: string
+  onSelectDay: (day: string) => void
   className?: string
 }) {
-  const [month, setMonth] = useState<Date>(new Date())
-  const [dialogDay, setDialogDay] = useState<DayActivityView | null>(null)
-  const [dialogOpen, setDialogOpen] = useState(false)
+  const [month, setMonth] = useState<Date>(() => {
+    try {
+      return selectedDay ? parseISO(selectedDay) : new Date()
+    } catch {
+      return new Date()
+    }
+  })
+
+  useEffect(() => {
+    if (!selectedDay) return
+    try {
+      setMonth(parseISO(selectedDay))
+    } catch {
+      /* ignore */
+    }
+  }, [selectedDay])
 
   const byDate = useMemo(() => {
     const map = new Map<string, DayActivityView>()
@@ -71,12 +82,13 @@ export function CommitCalendarCard({
     [activity],
   )
 
-  const openDay = (date: Date) => {
-    const key = dayKey(date)
-    const day = byDate.get(key) ?? { date: key, count: 0, commits: [] }
-    setDialogDay(day)
-    setDialogOpen(true)
-  }
+  const selectedDate = useMemo(() => {
+    try {
+      return selectedDay ? parseISO(selectedDay) : undefined
+    } catch {
+      return undefined
+    }
+  }, [selectedDay])
 
   return (
     <div className={cn("flex h-full min-h-0 flex-col gap-1.5", className)}>
@@ -114,8 +126,9 @@ export function CommitCalendarCard({
             locale={ptBR}
             month={month}
             onMonthChange={setMonth}
+            selected={selectedDate}
             onSelect={(date) => {
-              if (date) openDay(date)
+              if (date) onSelectDay(dayKey(date))
             }}
             showOutsideDays={false}
             className="w-full p-0 [--cell-size:1.25rem]"
@@ -141,6 +154,7 @@ export function CommitCalendarCard({
                 const heat = intensityClass(count)
                 const label =
                   count > 9 ? "9+" : count > 0 ? String(count) : ""
+                const isSelected = key === selectedDay
                 return (
                   <CalendarDayButton
                     day={day}
@@ -149,13 +163,13 @@ export function CommitCalendarCard({
                       dayClass,
                       "size-5 min-h-5 min-w-5 rounded-full border-0 p-0 text-[9px] leading-none font-semibold tabular-nums shadow-none",
                       "hover:opacity-90 focus-visible:ring-1 focus-visible:ring-ring",
-                      "data-[selected-single=true]:ring-2 data-[selected-single=true]:ring-ring",
+                      isSelected && "ring-2 ring-ring ring-offset-1 ring-offset-background",
                       heat,
                     )}
                     title={
                       count > 0
-                        ? `${count} commit${count === 1 ? "" : "s"} em ${key}`
-                        : `Nenhum commit em ${key}`
+                        ? `${count} commit${count === 1 ? "" : "s"} em ${key} — ver atividade`
+                        : `Nenhuma atividade em ${key}`
                     }
                     {...props}
                   >
@@ -185,53 +199,6 @@ export function CommitCalendarCard({
           )}
         </>
       )}
-
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="flex max-h-[85vh] w-[min(48rem,calc(100%-2rem))] max-w-none flex-col gap-4 overflow-hidden sm:max-w-none">
-          <DialogHeader>
-            <DialogTitle>
-              {dialogDay
-                ? dialogDay.count > 0
-                  ? `${dialogDay.count} commit${dialogDay.count === 1 ? "" : "s"} · ${dialogDay.date}`
-                  : `Nenhum commit · ${dialogDay.date}`
-                : "Commits"}
-            </DialogTitle>
-          </DialogHeader>
-
-          {dialogDay && dialogDay.count > 0 ? (
-            <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden rounded-lg border">
-              <table className="w-full table-fixed caption-bottom text-sm">
-                <thead className="sticky top-0 bg-popover [&_tr]:border-b">
-                  <tr className="border-b">
-                    <th className="h-10 w-24 px-3 text-left font-medium">Hash</th>
-                    <th className="h-10 px-3 text-left font-medium">Mensagem</th>
-                    <th className="h-10 w-40 px-3 text-left font-medium">Autor</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {(dialogDay.commits ?? []).map((c) => (
-                    <tr key={c.hash} className="border-b last:border-0">
-                      <td className="px-3 py-2 align-top font-mono text-xs">
-                        {c.shortHash}
-                      </td>
-                      <td className="px-3 py-2 align-top break-words whitespace-normal">
-                        {c.subject}
-                      </td>
-                      <td className="px-3 py-2 align-top text-xs break-words whitespace-normal text-muted-foreground">
-                        {c.author}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ) : (
-            <p className="text-sm text-muted-foreground">
-              Nenhum commit neste dia.
-            </p>
-          )}
-        </DialogContent>
-      </Dialog>
     </div>
   )
 }

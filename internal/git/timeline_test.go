@@ -5,6 +5,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestLoadTimelineCommits(t *testing.T) {
@@ -40,6 +41,47 @@ func TestLoadTimelineCommits(t *testing.T) {
 	}
 	if commits[0].Subject != "first" {
 		t.Fatalf("subject=%q", commits[0].Subject)
+	}
+}
+
+func TestLoadTimelineCommitsOnDay(t *testing.T) {
+	root := t.TempDir()
+	run := func(args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", args...)
+		cmd.Dir = root
+		cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	run("init")
+	run("config", "user.email", "dev@example.com")
+	run("config", "user.name", "Dev")
+	if err := os.WriteFile(filepath.Join(root, "a.txt"), []byte("a"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	run("add", ".")
+	run("commit", "-m", "today-commit")
+
+	repo, err := Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	day := time.Now().Format("2006-01-02")
+	commits, err := repo.LoadTimelineCommitsOnDay(day)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(commits) < 1 {
+		t.Fatal("expected today's commit")
+	}
+	empty, err := repo.LoadTimelineCommitsOnDay("2000-01-01")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(empty) != 0 {
+		t.Fatalf("expected no commits on empty day, got %d", len(empty))
 	}
 }
 

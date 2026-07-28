@@ -464,6 +464,11 @@ func (s *AppService) LoadTimeline(limit int) (*desktop.TimelineView, error) {
 	return desktop.LoadTimeline(s.currentPath(), limit)
 }
 
+// LoadTimelineDay returns commit + PR activity for a single calendar day (YYYY-MM-DD).
+func (s *AppService) LoadTimelineDay(day string) (*desktop.TimelineView, error) {
+	return desktop.LoadTimelineDay(s.currentPath(), day)
+}
+
 // LoadPRDetail returns conversation, commits, checks and files for a PR number.
 func (s *AppService) LoadPRDetail(number int) (*desktop.PRDetailView, error) {
 	return desktop.LoadPRDetail(s.currentPath(), number)
