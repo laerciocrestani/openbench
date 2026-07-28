@@ -1,4 +1,52 @@
-import type { Dashboard } from "../../bindings/github.com/laerciocrestani/openbench/internal/desktop"
+import type {
+  ChangedFileView,
+  CommitContextIndex,
+  Dashboard,
+} from "../../bindings/github.com/laerciocrestani/openbench/internal/desktop"
+
+/** Pick changed-files list when merging a git-status (or similar) payload. */
+export function resolveChangedFiles(
+  prev: Dashboard,
+  next: Dashboard,
+): ChangedFileView[] | null {
+  const nextDirty = Boolean(next.dirty)
+  const nextFiles = next.changedFiles ?? []
+  if (!nextDirty) return nextFiles
+  if (nextFiles.length > 0) return nextFiles
+  // Dirty payload without paths (partial) — keep porcelain list already on screen.
+  if ((prev.changedFiles?.length ?? 0) > 0) return prev.changedFiles ?? []
+  return nextFiles
+}
+
+/**
+ * Apply a RefreshChangedFiles result. Rejects a stale empty list while the
+ * dashboard still reports a dirty working tree (race with repo watcher).
+ */
+export function applyChangedFilesResult(
+  prev: Dashboard,
+  files: {
+    changedFiles?: ChangedFileView[] | null
+    contextIndex?: CommitContextIndex | null
+  },
+): Dashboard {
+  const nextFiles = files.changedFiles ?? []
+  const dirtyCounts =
+    (prev.staged ?? 0) + (prev.modified ?? 0) + (prev.untracked ?? 0)
+  const prevDirty = Boolean(prev.dirty) || dirtyCounts > 0
+
+  if (prevDirty && nextFiles.length === 0 && (prev.changedFiles?.length ?? 0) > 0) {
+    return {
+      ...prev,
+      contextIndex: files.contextIndex ?? prev.contextIndex,
+    }
+  }
+
+  return {
+    ...prev,
+    changedFiles: nextFiles,
+    contextIndex: files.contextIndex ?? prev.contextIndex,
+  }
+}
 
 /**
  * Merge a new dashboard into the previous one.
@@ -65,6 +113,7 @@ export function mergeFastDashboard(prev: Dashboard | null, next: Dashboard): Das
     hasGH,
     hasDocker,
     openPR,
+    changedFiles: resolveChangedFiles(prev, next),
     docker: dockerStub && prev.docker?.total ? prev.docker : next.docker,
     ...(preserveCI
       ? {
