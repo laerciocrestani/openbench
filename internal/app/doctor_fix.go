@@ -5,6 +5,8 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
+	"time"
 
 	gitpkg "github.com/laerciocrestani/openbench/internal/git"
 	prpkg "github.com/laerciocrestani/openbench/internal/pr"
@@ -21,8 +23,11 @@ const (
 	DoctorStepPullFF         = "pull_ff"
 	DoctorStepRebaseUpstream = "rebase_upstream"
 	DoctorStepResetBase      = "reset_base"
-	DoctorStepRebaseBase     = "rebase_base"
-	DoctorStepPushBase       = "push_base"
+	DoctorStepRebaseBase       = "rebase_base"
+	DoctorStepPushBase         = "push_base"
+	DoctorStepSoftReset        = "soft_reset"
+	DoctorStepMixedReset       = "mixed_reset"
+	DoctorStepUnstageBlockers  = "unstage_blockers"
 )
 
 // Post-merge destinations for work_on_merged_branch.
@@ -31,12 +36,22 @@ const (
 	MergedActionReturnBase = "return_base" // update base and check it out (finish / sync)
 )
 
+// Base actions for local/remote divergence on the configured base branch.
+const (
+	BaseActionUpdate  = "update"
+	BaseActionRebase  = "rebase"
+	BaseActionReset   = "reset"
+	BaseActionPush    = "push"
+	BaseActionBranch  = "branch"  // move local-ahead commits onto a feature branch
+	BaseActionCleanup = "cleanup" // soft-reset + unstage large/junk files from unpushed history
+)
+
 // DoctorFixOptions configures plan execution.
 type DoctorFixOptions struct {
 	WorkDir            string
 	Base               string
 	NewBranchName      string
-	BaseAction         string // update | rebase | reset | push
+	BaseAction         string // update | rebase | reset | push | branch | cleanup
 	MergedAction       string // continue | return_base
 	ConfirmDestructive bool
 }
@@ -49,6 +64,7 @@ type DoctorFixStep struct {
 	Command    string   `json:"command"`
 	Risk       string   `json:"risk"` // ok | warn | destructive
 	FromRef    string   `json:"fromRef,omitempty"`
+	Paths      []string `json:"paths,omitempty"`
 	IssueCodes []string `json:"issueCodes,omitempty"`
 }
 
@@ -104,8 +120,9 @@ type DoctorFixRunner struct {
 }
 
 // PlanDoctorFix builds a deterministic remediation plan from the current health snapshot.
+// Replans (action/branch toggles) reuse a short-lived context cache to avoid repeated git/gh work.
 func PlanDoctorFix(opts DoctorFixOptions) (*DoctorFixPlan, error) {
-	repo, snap, issues, _, err := loadDoctorContext(opts.WorkDir, opts.Base)
+	repo, snap, issues, _, err := loadDoctorContextCached(opts.WorkDir, opts.Base)
 	if err != nil {
 		return nil, err
 	}
@@ -114,7 +131,7 @@ func PlanDoctorFix(opts DoctorFixOptions) (*DoctorFixPlan, error) {
 
 // NewDoctorFixRunner validates options and prepares an executable step runner.
 func NewDoctorFixRunner(opts DoctorFixOptions) (*DoctorFixRunner, *DoctorFixPlan, error) {
-	repo, snap, issues, _, err := loadDoctorContext(opts.WorkDir, opts.Base)
+	repo, snap, issues, _, err := loadDoctorContextFresh(opts.WorkDir, opts.Base)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -271,6 +288,85 @@ func RunDoctorFix(opts DoctorFixOptions, onStep func(DoctorFixStepResult)) (*Doc
 }
 
 func loadDoctorContext(workDir, base string) (*gitpkg.Repo, *gitpkg.HealthSnapshot, []healthIssue, *prpkg.PRView, error) {
+	return loadDoctorContextFresh(workDir, base)
+}
+
+type doctorContextCache struct {
+	workDir string
+	base    string
+	repo    *gitpkg.Repo
+	snap    *gitpkg.HealthSnapshot
+	issues  []healthIssue
+	pr      *prpkg.PRView
+	at      time.Time
+}
+
+var (
+	doctorCtxMu    sync.Mutex
+	doctorCtxCache doctorContextCache
+)
+
+const doctorContextCacheTTL = 45 * time.Second
+
+func loadDoctorContextCached(workDir, base string) (*gitpkg.Repo, *gitpkg.HealthSnapshot, []healthIssue, *prpkg.PRView, error) {
+	workDir = strings.TrimSpace(workDir)
+	base = normalizeDoctorBase(base)
+
+	doctorCtxMu.Lock()
+	defer doctorCtxMu.Unlock()
+	if doctorCtxCache.repo != nil &&
+		doctorCtxCache.workDir == workDir &&
+		doctorCtxCache.base == base &&
+		time.Since(doctorCtxCache.at) < doctorContextCacheTTL {
+		return doctorCtxCache.repo, doctorCtxCache.snap, doctorCtxCache.issues, doctorCtxCache.pr, nil
+	}
+
+	repo, snap, issues, pr, err := loadDoctorContextUncached(workDir, base)
+	if err != nil {
+		return nil, nil, nil, nil, err
+	}
+	doctorCtxCache = doctorContextCache{
+		workDir: workDir,
+		base:    base,
+		repo:    repo,
+		snap:    snap,
+		issues:  issues,
+		pr:      pr,
+		at:      time.Now(),
+	}
+	return repo, snap, issues, pr, nil
+}
+
+func loadDoctorContextFresh(workDir, base string) (*gitpkg.Repo, *gitpkg.HealthSnapshot, []healthIssue, *prpkg.PRView, error) {
+	workDir = strings.TrimSpace(workDir)
+	base = normalizeDoctorBase(base)
+	repo, snap, issues, pr, err := loadDoctorContextUncached(workDir, base)
+	if err != nil {
+		return nil, nil, nil, nil, err
+	}
+	doctorCtxMu.Lock()
+	doctorCtxCache = doctorContextCache{
+		workDir: workDir,
+		base:    base,
+		repo:    repo,
+		snap:    snap,
+		issues:  issues,
+		pr:      pr,
+		at:      time.Now(),
+	}
+	doctorCtxMu.Unlock()
+	return repo, snap, issues, pr, nil
+}
+
+func normalizeDoctorBase(base string) string {
+	base = strings.TrimSpace(base)
+	if base == "" {
+		base = "main"
+	}
+	return strings.TrimPrefix(base, "origin/")
+}
+
+func loadDoctorContextUncached(workDir, base string) (*gitpkg.Repo, *gitpkg.HealthSnapshot, []healthIssue, *prpkg.PRView, error) {
 	repo, err := openRepo(workDir)
 	if err != nil {
 		return nil, nil, nil, nil, err
@@ -278,11 +374,7 @@ func loadDoctorContext(workDir, base string) (*gitpkg.Repo, *gitpkg.HealthSnapsh
 	if err := repo.IsRepo(); err != nil {
 		return nil, nil, nil, nil, fmt.Errorf("diretório atual não é um repositório git")
 	}
-	base = strings.TrimSpace(base)
-	if base == "" {
-		base = "main"
-	}
-	base = strings.TrimPrefix(base, "origin/")
+	base = normalizeDoctorBase(base)
 	snap, err := repo.CollectHealthSnapshot(base)
 	if err != nil {
 		return nil, nil, nil, nil, err
@@ -321,18 +413,8 @@ func buildDoctorFixPlan(repo *gitpkg.Repo, snap *gitpkg.HealthSnapshot, issues [
 	baseDiv := codes["base_diverged"] || (snap.BaseDivergence != nil &&
 		(snap.BaseDivergence.LocalAhead > 0 || snap.BaseDivergence.RemoteAhead > 0))
 	commitsOnBase := codes["commits_on_base"]
-	needsStructuralFix := merged || behind || diverged || baseDiv || commitsOnBase
-
-	// Dirty alone on a usable feature branch: Commit is the correct path (not stash/pop).
-	if dirty && !needsStructuralFix {
-		plan.CanAutoFix = false
-		plan.Summary = "Versionar o WIP com Commit nesta branch"
-		plan.BlockReason = "Working tree dirty — use Commit para versionar nesta branch. Stash/pop não é o próximo passo."
-		plan.Warnings = append(plan.Warnings,
-			"Depois do commit: push e abra (ou atualize) a Pull Request",
-		)
-		return plan
-	}
+	blockedHistory := codes["unpushed_blocked"] || (snap.UnpushedBlockers != nil && snap.UnpushedBlockers.HasBlockers())
+	needsStructuralFix := merged || behind || diverged || baseDiv || commitsOnBase || blockedHistory
 
 	exists := func(name string) bool {
 		if repo == nil {
@@ -345,8 +427,45 @@ func buildDoctorFixPlan(repo *gitpkg.Repo, snap *gitpkg.HealthSnapshot, issues [
 		plan.SuggestedBranch = name
 	}
 
-	// Stash only when we must move/sync with a dirty tree.
-	willStash := dirty && needsStructuralFix
+	// Dirty alone on the base: move WIP to a feature branch (checkout -b keeps the tree).
+	if dirty && !needsStructuralFix && snap.OnBase {
+		plan.NeedsBranchName = true
+		branchName := plan.SuggestedBranch
+		plan.Steps = []DoctorFixStep{{
+			ID:         "1-" + DoctorStepCreateBranch,
+			Kind:       DoctorStepCreateBranch,
+			Risk:       "ok",
+			Title:      "Mover WIP para feature branch",
+			Command:    fmt.Sprintf("git checkout -b %s", branchName),
+			FromRef:    "", // HEAD
+			IssueCodes: []string{"dirty_tree"},
+		}}
+		plan.Summary = "Sair da base: criar feature branch com o WIP"
+		plan.Warnings = append(plan.Warnings,
+			"Depois: Commit na feature branch, push e abra a Pull Request — não versione direto em "+snap.Base,
+		)
+		return plan
+	}
+
+	// Dirty alone on a usable feature branch: Commit is the correct path (not stash/pop).
+	if dirty && !needsStructuralFix {
+		plan.CanAutoFix = false
+		plan.Summary = "Versionar o WIP com Commit nesta branch"
+		plan.BlockReason = "Working tree dirty — use Commit para versionar nesta branch. Stash/pop não é o próximo passo."
+		plan.Warnings = append(plan.Warnings,
+			"Depois do commit: push e abra (ou atualize) a Pull Request",
+		)
+		return plan
+	}
+
+	// Soft reset keeps index+WIP; push does not need a clean tree; branch move keeps WIP via checkout -b.
+	// Cleanup must NOT stash: soft reset works with a dirty tree, and stash -u races with the desktop
+	// refresh (index.lock / "could not write index").
+	baseActionHint := previewBaseAction(snap, opts)
+	willStash := dirty && needsStructuralFix &&
+		baseActionHint != BaseActionBranch &&
+		baseActionHint != BaseActionPush &&
+		baseActionHint != BaseActionCleanup
 
 	var steps []DoctorFixStep
 	add := func(step DoctorFixStep) {
@@ -520,10 +639,11 @@ func appendBaseDivergenceSteps(
 		return
 	}
 	allDiscardable := baseCommitsDiscardable(div)
+	branchName := plan.SuggestedBranch
 
 	switch {
 	case div.RemoteAhead > 0 && div.LocalAhead == 0:
-		plan.SuggestedBaseAction = "update"
+		plan.SuggestedBaseAction = BaseActionUpdate
 		add(DoctorFixStep{
 			Kind: DoctorStepUpdateBase, Risk: "ok",
 			Title:      fmt.Sprintf("Atualizar base local %s", snap.Base),
@@ -531,7 +651,7 @@ func appendBaseDivergenceSteps(
 			IssueCodes: []string{"base_diverged"},
 		})
 	case div.LocalAhead > 0 && div.RemoteAhead == 0 && allDiscardable:
-		plan.SuggestedBaseAction = "reset"
+		plan.SuggestedBaseAction = BaseActionReset
 		plan.NeedsDestructiveConfirm = true
 		add(DoctorFixStep{
 			Kind: DoctorStepResetBase, Risk: "destructive",
@@ -542,35 +662,80 @@ func appendBaseDivergenceSteps(
 		plan.Warnings = appendUnique(plan.Warnings, "Reset da base é destrutivo — commits locais da base serão descartados")
 	case div.LocalAhead > 0 && div.RemoteAhead == 0:
 		plan.NeedsBaseAction = true
-		plan.BaseActionOptions = []string{"push", "reset"}
-		plan.SuggestedBaseAction = "push"
+		blocked := snap.UnpushedBlockers != nil && snap.UnpushedBlockers.HasBlockers()
+		if blocked {
+			plan.BaseActionOptions = []string{BaseActionCleanup, BaseActionBranch, BaseActionPush, BaseActionReset}
+			plan.SuggestedBaseAction = BaseActionCleanup
+		} else {
+			plan.BaseActionOptions = []string{BaseActionBranch, BaseActionPush, BaseActionReset}
+			plan.SuggestedBaseAction = BaseActionBranch
+		}
 		action := effectiveBaseAction(opts, plan)
-		if action == "reset" {
+		switch action {
+		case BaseActionCleanup:
+			appendCleanupHistorySteps(plan, snap, add)
+		case BaseActionReset:
 			plan.NeedsDestructiveConfirm = true
+			plan.NeedsBranchName = false
 			add(DoctorFixStep{
 				Kind: DoctorStepResetBase, Risk: "destructive",
 				Title:      fmt.Sprintf("Reset da base %s para origin", snap.Base),
 				Command:    fmt.Sprintf("git reset --hard origin/%s", snap.Base),
 				IssueCodes: []string{"base_diverged"},
 			})
-		} else {
+			plan.Summary = fmt.Sprintf("Descartar commits locais de %s e alinhar com origin", snap.Base)
+		case BaseActionPush:
+			plan.NeedsBranchName = false
 			add(DoctorFixStep{
 				Kind: DoctorStepPushBase, Risk: "warn",
 				Title:      fmt.Sprintf("Push da base %s", snap.Base),
 				Command:    fmt.Sprintf("git push -u origin %s", snap.Base),
 				IssueCodes: []string{"base_diverged"},
 			})
+			plan.Summary = fmt.Sprintf("Publicar commits locais de %s no remoto", snap.Base)
+			plan.Warnings = appendUnique(plan.Warnings,
+				"Push direto na base — use só se a intenção for publicar sem Pull Request",
+			)
+			if blocked {
+				plan.Warnings = appendUnique(plan.Warnings,
+					"Histórico local tem arquivo grande ou lixo — o push provavelmente será rejeitado; prefira limpeza",
+				)
+			}
+		default: // branch
+			plan.NeedsBranchName = true
+			add(DoctorFixStep{
+				Kind: DoctorStepCreateBranch, Risk: "ok",
+				Title:      "Mover commits para feature branch",
+				Command:    fmt.Sprintf("git checkout -b %s", branchName),
+				FromRef:    "", // HEAD (keeps dirty working tree)
+				IssueCodes: []string{"base_diverged"},
+			})
+			add(DoctorFixStep{
+				Kind: DoctorStepResetBase, Risk: "warn",
+				Title:      fmt.Sprintf("Alinhar base local %s com origin", snap.Base),
+				Command:    fmt.Sprintf("git branch -f %s origin/%s", snap.Base, snap.Base),
+				IssueCodes: []string{"base_diverged"},
+			})
+			plan.Summary = fmt.Sprintf("Mover commits de %s para feature branch e alinhar a base com origin", snap.Base)
+			plan.Warnings = appendUnique(plan.Warnings,
+				"Depois: Commit do WIP na feature, push e abra a PR — não faça push direto de "+snap.Base,
+			)
+			if blocked {
+				plan.Warnings = appendUnique(plan.Warnings,
+					"Atenção: os commits movidos ainda têm arquivo grande/lixo — limpe o histórico antes do push da feature",
+				)
+			}
 		}
 	default:
 		plan.NeedsBaseAction = true
-		plan.BaseActionOptions = []string{"rebase", "reset"}
+		plan.BaseActionOptions = []string{BaseActionRebase, BaseActionReset}
 		if allDiscardable {
-			plan.SuggestedBaseAction = "reset"
+			plan.SuggestedBaseAction = BaseActionReset
 		} else {
-			plan.SuggestedBaseAction = "rebase"
+			plan.SuggestedBaseAction = BaseActionRebase
 		}
 		action := effectiveBaseAction(opts, plan)
-		if action == "reset" {
+		if action == BaseActionReset {
 			plan.NeedsDestructiveConfirm = true
 			add(DoctorFixStep{
 				Kind: DoctorStepResetBase, Risk: "destructive",
@@ -594,6 +759,57 @@ func appendBaseDivergenceSteps(
 			})
 		}
 	}
+}
+
+// previewBaseAction returns the base action that will be used (opts override or suggestion).
+func previewBaseAction(snap *gitpkg.HealthSnapshot, opts DoctorFixOptions) string {
+	if action := strings.TrimSpace(opts.BaseAction); action != "" {
+		return action
+	}
+	div := snap.BaseDivergence
+	if div == nil {
+		return ""
+	}
+	switch {
+	case div.RemoteAhead > 0 && div.LocalAhead == 0:
+		return BaseActionUpdate
+	case div.LocalAhead > 0 && div.RemoteAhead == 0 && baseCommitsDiscardable(div):
+		return BaseActionReset
+	case div.LocalAhead > 0 && div.RemoteAhead == 0:
+		if snap.UnpushedBlockers != nil && snap.UnpushedBlockers.HasBlockers() {
+			return BaseActionCleanup
+		}
+		return BaseActionBranch
+	case baseCommitsDiscardable(div):
+		return BaseActionReset
+	default:
+		return BaseActionRebase
+	}
+}
+
+func appendCleanupHistorySteps(plan *DoctorFixPlan, snap *gitpkg.HealthSnapshot, add func(DoctorFixStep)) {
+	plan.NeedsBranchName = false
+	plan.NeedsDestructiveConfirm = true
+	// Mixed reset (not soft): moves HEAD to origin/<base>, resets the index to match,
+	// and keeps all files on disk unstaged. Soft reset was wrong — it staged ~entire trees
+	// (node_modules/vendor/etc.) and selective rm --cached often failed mid-flight.
+	add(DoctorFixStep{
+		Kind: DoctorStepMixedReset, Risk: "warn",
+		Title:      fmt.Sprintf("Desfazer commits locais (mixed reset → origin/%s)", snap.Base),
+		Command:    fmt.Sprintf("git reset --mixed origin/%s", snap.Base),
+		FromRef:    "origin/" + snap.Base,
+		IssueCodes: []string{"unpushed_blocked", "base_diverged"},
+	})
+	plan.Summary = "Limpar histórico local bloqueador (mixed reset) e preparar Commit seletivo"
+	plan.Warnings = appendUnique(plan.Warnings,
+		"Os commits locais não publicados são desfeitos; os arquivos permanecem no disco, fora do stage",
+	)
+	plan.Warnings = appendUnique(plan.Warnings,
+		"Depois: adicione só o código útil (não node_modules/.env/.dmg), Commit, depois push da feature/PR",
+	)
+	plan.Warnings = appendUnique(plan.Warnings,
+		"Não faça git add . — isso recolocaria lixo no stage",
+	)
 }
 
 func effectiveBaseAction(opts DoctorFixOptions, plan *DoctorFixPlan) string {
@@ -639,6 +855,14 @@ func appendUnique(list []string, item string) []string {
 }
 
 func executeDoctorStep(repo *gitpkg.Repo, base string, opts DoctorFixOptions, step DoctorFixStep, stashed *bool) error {
+	switch step.Kind {
+	case DoctorStepStashPush, DoctorStepStashPop, DoctorStepSoftReset, DoctorStepMixedReset,
+		DoctorStepUnstageBlockers, DoctorStepResetBase, DoctorStepCreateBranch, DoctorStepCheckout:
+		if err := repo.EnsureWritableIndex(); err != nil {
+			return err
+		}
+	}
+
 	switch step.Kind {
 	case DoctorStepStashPush:
 		if err := repo.StashPushAll("openbench-doctor-wip"); err != nil {
@@ -689,6 +913,20 @@ func executeDoctorStep(repo *gitpkg.Repo, base string, opts DoctorFixOptions, st
 		return repo.RebaseOnto("origin/" + base)
 	case DoctorStepPushBase:
 		return repo.PushBranch(base)
+	case DoctorStepSoftReset:
+		ref := strings.TrimSpace(step.FromRef)
+		if ref == "" {
+			ref = "origin/" + base
+		}
+		return repo.SoftReset(ref)
+	case DoctorStepMixedReset:
+		ref := strings.TrimSpace(step.FromRef)
+		if ref == "" {
+			ref = "origin/" + base
+		}
+		return repo.MixedReset(ref)
+	case DoctorStepUnstageBlockers:
+		return repo.RmCached(step.Paths)
 	default:
 		return fmt.Errorf("passo desconhecido: %s", step.Kind)
 	}
@@ -706,9 +944,17 @@ func manualHintForStep(kind, base, newBranch string, err error) string {
 		strings.Contains(lower, "needs merge")
 
 	switch kind {
+	case DoctorStepStashPush:
+		if strings.Contains(lower, "could not write index") || strings.Contains(lower, "index.lock") {
+			return "Git não gravou o index (.git/index.lock). Feche outros clientes git, confirme que não há operação em andamento, remova .git/index.lock se estiver órfão e rode o Doctor de novo. O app também tenta limpar lock antigo automaticamente — reinicie se ainda falhar."
+		}
+		return "Stash falhou. Verifique git status e .git/index.lock; corrija o bloqueio e rode o Doctor novamente."
 	case DoctorStepStashPop:
 		if conflict {
 			return "Conflito no stash pop. Resolva os arquivos, depois: git add <arquivos>. Se o stash ainda existir: git stash drop. Rode o Doctor de novo ao terminar."
+		}
+		if strings.Contains(lower, "could not write index") || strings.Contains(lower, "index.lock") {
+			return "Não foi possível gravar o index no stash pop. Remova .git/index.lock se estiver órfão e tente git stash pop de novo."
 		}
 		return "O stash pode continuar em git stash list. Reaplique com git stash pop quando a branch estiver pronta."
 	case DoctorStepRebaseUpstream, DoctorStepRebaseBase:
@@ -724,6 +970,23 @@ func manualHintForStep(kind, base, newBranch string, err error) string {
 		return fmt.Sprintf("Escolha outro nome (ex.: %s) ou remova a branch local conflitante se for segura.", newBranch)
 	case DoctorStepResetBase:
 		return fmt.Sprintf("Reset não aplicado. Confirme que origin/%s existe (git fetch) e que não há operação git em andamento.", base)
+	case DoctorStepPushBase:
+		if strings.Contains(lower, "gh001") ||
+			strings.Contains(lower, "file size limit") ||
+			strings.Contains(lower, "large files detected") ||
+			strings.Contains(lower, "git-lfs") {
+			return "Push rejeitado por arquivo >100MB no histórico. No Doctor Fix, escolha a ação “limpeza” (stash → reset --soft → git rm --cached) e confirme. Depois Commit limpo + feature branch/PR."
+		}
+		if strings.Contains(lower, "pre-receive hook declined") || strings.Contains(lower, "remote rejected") {
+			return "Remoto rejeitou o push. Se for arquivo grande/lixo no histórico, use a ação “limpeza” no Doctor. Caso contrário, verifique proteção de branch/permissões."
+		}
+		return fmt.Sprintf("Push de %s falhou. Verifique rede, permissões e proteção da branch; corrija e rode o Doctor de novo.", base)
+	case DoctorStepSoftReset:
+		return fmt.Sprintf("Soft reset falhou. Confirme que origin/%s existe (git fetch) e que não há rebase/merge em andamento.", base)
+	case DoctorStepMixedReset:
+		return fmt.Sprintf("Mixed reset falhou. Confirme que origin/%s existe (git fetch), remova .git/index.lock se órfão, e tente de novo.", base)
+	case DoctorStepUnstageBlockers:
+		return "Falha ao tirar paths do index. Rode git status; se .git/index.lock existir e estiver órfão, remova-o e tente de novo."
 	default:
 		return "Intervenha com git status, corrija o bloqueio e rode o Doctor novamente."
 	}
@@ -734,6 +997,9 @@ func SuggestDoctorBranchName(current, base string, exists func(string) bool) str
 	cur := strings.TrimSpace(current)
 	if cur == "" || cur == "HEAD" || cur == base {
 		cur = "feature/ajuste"
+		if exists == nil || !exists(cur) {
+			return cur
+		}
 	}
 	candidate := nextBranchName(cur)
 	if exists == nil {

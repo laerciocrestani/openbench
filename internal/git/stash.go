@@ -7,6 +7,9 @@ import (
 
 // StashPushAll saves tracked and untracked changes (does not include ignored files).
 func (r *Repo) StashPushAll(message string) error {
+	if err := r.EnsureWritableIndex(); err != nil {
+		return err
+	}
 	msg := strings.TrimSpace(message)
 	if msg == "" {
 		msg = "openbench-doctor-wip"
@@ -17,6 +20,9 @@ func (r *Repo) StashPushAll(message string) error {
 
 // StashPop applies the most recent stash.
 func (r *Repo) StashPop() error {
+	if err := r.EnsureWritableIndex(); err != nil {
+		return err
+	}
 	_, err := r.run("stash", "pop")
 	return err
 }

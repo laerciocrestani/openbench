@@ -17,6 +17,7 @@ type DoctorFixStepView struct {
 	Status     string   `json:"status,omitempty"`
 	Detail     string   `json:"detail,omitempty"`
 	ManualHint string   `json:"manualHint,omitempty"`
+	Paths      []string `json:"paths,omitempty"`
 	IssueCodes []string `json:"issueCodes,omitempty"`
 }
 
@@ -173,6 +174,7 @@ func mapDoctorFixPlan(plan *app.DoctorFixPlan) *DoctorFixPlanView {
 			Command:    s.Command,
 			Risk:       s.Risk,
 			Status:     "pending",
+			Paths:      append([]string{}, s.Paths...),
 			IssueCodes: append([]string{}, s.IssueCodes...),
 		})
 	}
