@@ -826,6 +826,15 @@ function prMergeBlocked(dash: Dashboard | null): string | undefined {
   return undefined
 }
 
+function mergePRDisabledReason(
+  dash: Dashboard | null,
+  doctorBlocked = false,
+): string | undefined {
+  if (!dash?.hasGH) return "GitHub CLI necessário para mergear PR"
+  if (doctorBlocked) return "Doctor: resolva as recomendações antes de mergear"
+  return prMergeBlocked(dash)
+}
+
 /** Single recommended toolbar action based on repo state. */
 function nextToolbarStep(
   dash: Dashboard | null,
@@ -2328,6 +2337,7 @@ function App() {
   const pushDoctorGate = doctorGate(doctorReport, "push")
   const prDoctorGate = doctorGate(doctorReport, "pr")
   const mergeDoctorGate = doctorGate(doctorReport, "merge")
+  const mergeToolbarDisabledReason = mergePRDisabledReason(dash, mergeDoctorGate.blocked)
   const selectedMergePRView = mergePRs.find((p) => p.number === selectedMergePR)
   const mergeActionDisabled =
     prManageBusy ||
@@ -3705,14 +3715,12 @@ function App() {
                 size="sm"
                 variant="default"
                 onClick={() => void openMergeDialog()}
-                disabled={busy || prManageBusy || !dash?.hasGH}
+                disabled={busy || prManageBusy || Boolean(mergeToolbarDisabledReason)}
                 className={cn(suggestedStep === "merge" && "next-step-pulse")}
                 title={
                   suggestedStep === "merge"
                     ? nextStepTitle("merge")
-                    : !dash?.hasGH
-                      ? "GitHub CLI necessário para mergear PR"
-                      : (prMergeBlocked(dash) ?? "Mergear PR no GitHub")
+                    : (mergeToolbarDisabledReason ?? "Mergear PR no GitHub")
                 }
               >
                 {prManageBusy ? <Loader2 className="animate-spin" /> : <GitMerge />}
