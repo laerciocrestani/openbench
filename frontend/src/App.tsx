@@ -105,7 +105,7 @@ import { DoctorDialog } from "@/components/DoctorDialog"
 import { DoctorFixDialog } from "@/components/DoctorFixDialog"
 import { DoctorGateAlert } from "@/components/DoctorGateAlert"
 import { doctorBlocksAction, doctorGate } from "@/lib/doctor-gate"
-import { mergeFastDashboard } from "@/lib/merge-dashboard"
+import { mergeFastDashboard, applyChangedFilesResult } from "@/lib/merge-dashboard"
 import { FloatingChat } from "@/components/floating-chat"
 import { StatusBar } from "@/components/status-bar"
 import { SkillsManager } from "@/components/skills-manager"
@@ -1140,6 +1140,8 @@ function App() {
   const [gitReady, setGitReady] = useState(false)
   /** Bumps on open/switch/refresh so background loaders re-run even if headHash is unchanged. */
   const [dashEpoch, setDashEpoch] = useState(0)
+  /** Invalidates in-flight RefreshChangedFiles when the working tree changes without a new HEAD. */
+  const filesGenRef = useRef(0)
 
   const applyDashboard = useCallback((next: Dashboard | null) => {
     if (!next) {
@@ -1152,6 +1154,25 @@ function App() {
       return
     }
     setDash((prev) => mergeFastDashboard(prev, next))
+  }, [])
+
+  const refreshChangedFilesNow = useCallback(() => {
+    const gen = ++filesGenRef.current
+    setFilesReady(false)
+    void AppService.RefreshChangedFiles()
+      .then((files) => {
+        if (!files || gen !== filesGenRef.current) return
+        setDash((prev) => {
+          if (!prev) return prev
+          return applyChangedFilesResult(prev, files)
+        })
+      })
+      .catch(() => {
+        /* keep porcelain list without +/- */
+      })
+      .finally(() => {
+        if (gen === filesGenRef.current) setFilesReady(true)
+      })
   }, [])
   const [statuses, setStatuses] = useState<ProjectStatus[]>([])
 
@@ -1489,19 +1510,19 @@ function App() {
         setFilesReady(false)
         applyDashboard(git)
       }
+      const gen = ++filesGenRef.current
       const files = await AppService.RefreshChangedFiles()
-      if (files) {
+      if (files && gen === filesGenRef.current) {
         setDash((prev) => {
           if (!prev) return prev
+          const withFiles = applyChangedFilesResult(prev, files)
           return {
-            ...prev,
-            changedFiles: files.changedFiles ?? [],
-            contextIndex: files.contextIndex ?? prev.contextIndex,
-            staged: git?.staged ?? prev.staged,
-            modified: git?.modified ?? prev.modified,
-            untracked: git?.untracked ?? prev.untracked,
-            dirty: git?.dirty ?? prev.dirty,
-            statusLabel: git?.statusLabel ?? prev.statusLabel,
+            ...withFiles,
+            staged: git?.staged ?? withFiles.staged,
+            modified: git?.modified ?? withFiles.modified,
+            untracked: git?.untracked ?? withFiles.untracked,
+            dirty: git?.dirty ?? withFiles.dirty,
+            statusLabel: git?.statusLabel ?? withFiles.statusLabel,
           }
         })
         setFilesReady(true)
@@ -2892,6 +2913,7 @@ function App() {
     setGitReady(false)
     setDockerLoading(!!(dash.hasDocker || dash.docker?.visible))
     setActivityLoading(true)
+    const filesGen = ++filesGenRef.current
     ;(async () => {
       try {
         const tasks: Promise<void>[] = []
@@ -2902,7 +2924,7 @@ function App() {
               setDash((prev) => {
                 if (!prev || prev.path !== path) return prev
                 if (`${prev.path}|${prev.headHash}|${prev.branch}|${dashEpoch}` !== token) return prev
-                return {
+                const merged = {
                   ...prev,
                   ...git,
                   path: prev.path,
@@ -2920,6 +2942,10 @@ function App() {
                   ciLabel: prev.ciLabel || git.ciLabel,
                   ciFromCache: prev.ciLabel ? prev.ciFromCache : git.ciFromCache,
                   ciHost: prev.ciHost || git.ciHost,
+                }
+                return {
+                  ...merged,
+                  changedFiles: mergeFastDashboard(prev, merged).changedFiles,
                 }
               })
             })
@@ -3007,21 +3033,18 @@ function App() {
           AppService.RefreshChangedFiles()
             .then((files) => {
               if (cancelled || !files) return
+              if (filesGen !== filesGenRef.current) return
               setDash((prev) => {
                 if (!prev || prev.path !== path) return prev
                 if (`${prev.path}|${prev.headHash}|${prev.branch}|${dashEpoch}` !== token) return prev
-                return {
-                  ...prev,
-                  changedFiles: files.changedFiles ?? [],
-                  contextIndex: files.contextIndex,
-                }
+                return applyChangedFilesResult(prev, files)
               })
             })
             .catch(() => {
               /* keep porcelain list without +/- */
             })
             .finally(() => {
-              if (!cancelled) setFilesReady(true)
+              if (!cancelled && filesGen === filesGenRef.current) setFilesReady(true)
             }),
         )
         tasks.push(
@@ -3039,7 +3062,7 @@ function App() {
           setActivityLoading(false)
           setHygieneReady(true)
           setCiReady(true)
-          setFilesReady(true)
+          if (filesGen === filesGenRef.current) setFilesReady(true)
           setGitReady(true)
         }
       }
@@ -3230,6 +3253,8 @@ function App() {
       const d = wailsEventData<Dashboard>(ev)
       if (d && typeof d === "object" && "path" in d) {
         applyDashboard(d)
+        // Working-tree edits don't change headHash — refresh +/- and invalidate stale fetches.
+        refreshChangedFilesNow()
         void actionsRef.current.refreshStatuses()
       }
     })
@@ -3263,7 +3288,7 @@ function App() {
       offUpdatePrompt()
       offCIWatch()
     }
-  }, [applyDashboard])
+  }, [applyDashboard, refreshChangedFilesNow])
 
   /* ----------------------------- render ----------------------------- */
 
