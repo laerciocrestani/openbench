@@ -26,14 +26,21 @@ const MAX_LEAVES_PER_BRANCH = 6
 const VIEW = 640
 const CX = VIEW / 2
 const CY = VIEW / 2
-const BRANCH_R = 168
-const LEAF_R = 268
+/** Distância centro → hub da área (ligações curtas) */
+const BRANCH_R = 108
+/** Distância hub → linha das folhas (ligações curtas) */
+const LEAF_FROM_HUB = 52
+/** Espaçamento fixo entre arquivos na linha da ramificação */
+const LEAF_SPACING = 44
 
 type LeafNode = {
   file: ChangedFileView
   x: number
   y: number
   label: string
+  labelX: number
+  labelY: number
+  labelAnchor: "start" | "middle" | "end"
   overflow?: number
 }
 
@@ -43,6 +50,8 @@ type BranchLayout = {
   color: string
   bx: number
   by: number
+  hubLabelX: number
+  hubLabelY: number
   leaves: LeafNode[]
   totalFiles: number
 }
@@ -51,6 +60,20 @@ function polar(cx: number, cy: number, r: number, angle: number) {
   return {
     x: cx + r * Math.cos(angle),
     y: cy + r * Math.sin(angle),
+  }
+}
+
+function labelPlacement(angle: number, x: number, y: number, dist: number) {
+  const cos = Math.cos(angle)
+  const sin = Math.sin(angle)
+  // Preferir texto para fora do grafo; âncora evita colisão lateral
+  let anchor: "start" | "middle" | "end" = "middle"
+  if (cos > 0.45) anchor = "start"
+  else if (cos < -0.45) anchor = "end"
+  return {
+    labelX: x + cos * dist,
+    labelY: y + sin * dist + (Math.abs(cos) < 0.35 ? 4 : 0),
+    labelAnchor: anchor,
   }
 }
 
@@ -68,31 +91,51 @@ function buildLayout(
     const visible = g.files.slice(0, MAX_LEAVES_PER_BRANCH)
     const overflow = g.files.length - visible.length
     const leafCount = visible.length + (overflow > 0 ? 1 : 0)
-    const fan =
-      leafCount <= 1
-        ? [0]
-        : Array.from({ length: leafCount }, (_, j) => {
-            const span = Math.min(1.1, 0.22 * leafCount)
-            return -span / 2 + (j * span) / Math.max(1, leafCount - 1)
-          })
 
-    const leaves: LeafNode[] = visible.map((file, j) => {
-      const a = angle + fan[j]!
-      const { x, y } = polar(CX, CY, LEAF_R, a)
-      return { file, x, y, label: fileBasename(file.path) }
-    })
+    // Vetores: radial (para fora) e tangente (espaça as folhas)
+    const ox = Math.cos(angle)
+    const oy = Math.sin(angle)
+    const tx = -Math.sin(angle)
+    const ty = Math.cos(angle)
+    const along0 = -((leafCount - 1) * LEAF_SPACING) / 2
 
-    if (overflow > 0) {
-      const a = angle + fan[leafCount - 1]!
-      const { x, y } = polar(CX, CY, LEAF_R, a)
-      leaves.push({
-        file: g.files[MAX_LEAVES_PER_BRANCH]!,
+    const makeLeaf = (
+      file: ChangedFileView,
+      index: number,
+      label: string,
+      isOverflow?: number,
+    ): LeafNode => {
+      const along = along0 + index * LEAF_SPACING
+      const x = bx + ox * LEAF_FROM_HUB + tx * along
+      const y = by + oy * LEAF_FROM_HUB + ty * along
+      const place = labelPlacement(angle, x, y, 16)
+      return {
+        file,
         x,
         y,
-        label: `+${overflow}`,
-        overflow,
-      })
+        label,
+        ...place,
+        overflow: isOverflow,
+      }
     }
+
+    const leaves: LeafNode[] = visible.map((file, j) =>
+      makeLeaf(file, j, fileBasename(file.path)),
+    )
+
+    if (overflow > 0) {
+      leaves.push(
+        makeLeaf(
+          g.files[MAX_LEAVES_PER_BRANCH]!,
+          leafCount - 1,
+          `+${overflow}`,
+          overflow,
+        ),
+      )
+    }
+
+    // Título da área: para dentro, entre centro e hub — não compete com folhas
+    const hubLabel = labelPlacement(angle + Math.PI, bx, by, 18)
 
     return {
       key: g.key,
@@ -100,6 +143,8 @@ function buildLayout(
       color,
       bx,
       by,
+      hubLabelX: hubLabel.labelX,
+      hubLabelY: hubLabel.labelY,
       leaves,
       totalFiles: g.files.length,
     }
@@ -109,11 +154,10 @@ function buildLayout(
 function curvePath(x1: number, y1: number, x2: number, y2: number) {
   const mx = (x1 + x2) / 2
   const my = (y1 + y2) / 2
-  // Soft quadratic control offset for organic branches
   const dx = x2 - x1
   const dy = y2 - y1
-  const cx = mx - dy * 0.12
-  const cy = my + dx * 0.12
+  const cx = mx - dy * 0.05
+  const cy = my + dx * 0.05
   return `M ${x1} ${y1} Q ${cx} ${cy} ${x2} ${y2}`
 }
 
@@ -185,9 +229,9 @@ export function ChangeMindMapCard({
                       d={curvePath(CX, CY, b.bx, b.by)}
                       fill="none"
                       stroke={b.color}
-                      strokeWidth={3.5}
+                      strokeWidth={2.8}
                       strokeLinecap="round"
-                      opacity={0.85}
+                      opacity={0.9}
                     />
                     {b.leaves.map((leaf, i) => (
                       <path
@@ -195,9 +239,9 @@ export function ChangeMindMapCard({
                         d={curvePath(b.bx, b.by, leaf.x, leaf.y)}
                         fill="none"
                         stroke={b.color}
-                        strokeWidth={1.6}
+                        strokeWidth={1.5}
                         strokeLinecap="round"
-                        opacity={0.55}
+                        opacity={0.65}
                       />
                     ))}
                   </g>
@@ -209,29 +253,30 @@ export function ChangeMindMapCard({
                     <circle
                       cx={b.bx}
                       cy={b.by}
-                      r={22}
+                      r={16}
                       fill={b.color}
-                      opacity={0.18}
+                      opacity={0.2}
                     />
                     <circle
                       cx={b.bx}
                       cy={b.by}
-                      r={7}
+                      r={5.5}
                       fill={b.color}
                       filter="url(#mm-soft)"
                     />
                     <text
-                      x={b.bx}
-                      y={b.by - 16}
+                      x={b.hubLabelX}
+                      y={b.hubLabelY}
                       textAnchor="middle"
+                      dominantBaseline="middle"
                       className="fill-foreground"
-                      style={{ fontSize: 11, fontWeight: 600 }}
+                      style={{ fontSize: 12, fontWeight: 650 }}
                     >
-                      {truncate(b.label, 16)}
+                      {truncate(b.label, 14)}
                     </text>
                     <text
-                      x={b.bx}
-                      y={b.by + 22}
+                      x={b.hubLabelX}
+                      y={b.hubLabelY + 12}
                       textAnchor="middle"
                       className="fill-muted-foreground"
                       style={{ fontSize: 9 }}
@@ -257,28 +302,25 @@ export function ChangeMindMapCard({
                         <circle
                           cx={leaf.x}
                           cy={leaf.y}
-                          r={isOverflow ? 14 : 11}
-                          fill={
-                            isOverflow
-                              ? "var(--muted)"
-                              : "var(--card)"
-                          }
+                          r={isOverflow ? 11 : 8}
+                          fill={isOverflow ? "var(--muted)" : "var(--card)"}
                           stroke={b.color}
-                          strokeWidth={active ? 2.4 : 1.5}
+                          strokeWidth={active ? 2.4 : 1.6}
                           filter="url(#mm-soft)"
                         />
                         <text
-                          x={leaf.x}
-                          y={leaf.y + (isOverflow ? 26 : 24)}
-                          textAnchor="middle"
+                          x={leaf.labelX}
+                          y={leaf.labelY}
+                          textAnchor={leaf.labelAnchor}
+                          dominantBaseline="middle"
                           className="fill-foreground"
                           style={{
-                            fontSize: 10,
+                            fontSize: 11,
                             fontFamily: "ui-monospace, monospace",
-                            fontWeight: active ? 600 : 400,
+                            fontWeight: active ? 650 : 500,
                           }}
                         >
-                          {truncate(leaf.label, 14)}
+                          {truncate(leaf.label, 16)}
                         </text>
                       </g>
                     )
@@ -290,7 +332,7 @@ export function ChangeMindMapCard({
                   <circle
                     cx={CX}
                     cy={CY}
-                    r={42}
+                    r={34}
                     className="fill-card stroke-border"
                     strokeWidth={1.5}
                     filter="url(#mm-soft)"
@@ -298,18 +340,18 @@ export function ChangeMindMapCard({
                   <circle
                     cx={CX}
                     cy={CY}
-                    r={42}
+                    r={34}
                     fill="var(--muted)"
                     opacity={0.35}
                   />
                   <foreignObject
-                    x={CX - 36}
-                    y={CY - 18}
-                    width={72}
-                    height={36}
+                    x={CX - 30}
+                    y={CY - 16}
+                    width={60}
+                    height={32}
                   >
                     <div className="flex h-full flex-col items-center justify-center gap-0.5 text-center">
-                      <GitBranch className="size-3.5 text-muted-foreground" />
+                      <GitBranch className="size-3 text-muted-foreground" />
                       <span className="max-w-full truncate px-0.5 font-mono text-[10px] font-medium leading-tight text-foreground">
                         {centerText}
                       </span>

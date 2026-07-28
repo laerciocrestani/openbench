@@ -35,21 +35,39 @@ func (r *Repo) LoadTimelineCommits(limit int) ([]TimelineCommit, error) {
 func (r *Repo) LoadTimelineCommitsOnDay(day string) ([]TimelineCommit, error) {
 	day = strings.TrimSpace(day)
 	if day == "" {
-		day = time.Now().Format("2006-01-02")
+		day = time.Now().In(time.Local).Format("2006-01-02")
 	}
-	parsed, err := time.ParseInLocation("2006-01-02", day, time.Local)
+	start, err := time.ParseInLocation("2006-01-02", day, time.Local)
 	if err != nil {
 		return nil, fmt.Errorf("dia inválido %q: %w", day, err)
 	}
-	until := parsed.AddDate(0, 0, 1).Format("2006-01-02")
-	return r.loadTimelineCommits(
+	end := start.AddDate(0, 0, 1)
+	// Two Git quirks matter here:
+	// 1) Bare YYYY-MM-DD for "today" is treated as now (not local midnight), so
+	//    --since=<today> hides all of today's commits.
+	// 2) Plain --since prunes the revwalk when a tip is older than the bound
+	//    (backdated HEAD), skipping newer parents. --since-as-filter keeps walking.
+	since := start.Format("2006-01-02 15:04:05")
+	until := end.Format("2006-01-02 15:04:05")
+	commits, err := r.loadTimelineCommits(
 		"log",
 		"--all",
 		"--date-order",
-		"--since="+day,
+		"--since-as-filter="+since,
 		"--until="+until,
 		"--pretty=format:%H%x00%h%x00%cI%x00%an%x00%P%x00%D%x00%s",
 	)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]TimelineCommit, 0, len(commits))
+	for _, c := range commits {
+		at := c.At.In(time.Local)
+		if !at.Before(start) && at.Before(end) {
+			out = append(out, c)
+		}
+	}
+	return out, nil
 }
 
 func (r *Repo) loadTimelineCommits(args ...string) ([]TimelineCommit, error) {

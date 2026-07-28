@@ -106,6 +106,7 @@ import { DoctorFixDialog } from "@/components/DoctorFixDialog"
 import { DoctorGateAlert } from "@/components/DoctorGateAlert"
 import { doctorBlocksAction, doctorGate } from "@/lib/doctor-gate"
 import { FloatingChat } from "@/components/floating-chat"
+import { StatusBar } from "@/components/status-bar"
 import { SkillsManager } from "@/components/skills-manager"
 import { ToolbarHelpDialog } from "@/components/ToolbarHelpDialog"
 import {
@@ -139,7 +140,6 @@ import {
   ChevronDown,
   ChevronLeft,
   CircleHelp,
-  Container,
   Download,
   ExternalLink,
   FileText,
@@ -155,11 +155,9 @@ import {
   PanelLeft,
   Pin,
   PinOff,
-  Play,
   Plus,
   RefreshCw,
   Settings,
-  Square,
   Stethoscope,
   Trash2,
   Terminal,
@@ -275,14 +273,6 @@ function parseUnifiedDiff(unified: string): DiffRow[] {
 /* ------------------------------------------------------------------ */
 /* Presentational sub-components                                       */
 /* ------------------------------------------------------------------ */
-
-function StatusBadge({ label, dirty }: { label: string; dirty: boolean }) {
-  return (
-    <Badge variant={dirty ? "secondary" : "outline"} className="font-normal">
-      {label || (dirty ? "dirty" : "clean")}
-    </Badge>
-  )
-}
 
 /** Compact +N −M line stats (VS Code / Cursor SCM style). */
 function DiffStat({
@@ -693,98 +683,100 @@ function DiffViewer({ diff }: { diff: FileDiffView }) {
   )
 }
 
-function ProjectTabs({
+function PinnedProjectsMenu({
   statuses,
   activePath,
+  busy,
   onSwitch,
-  onUnpin,
+  onOpenProject,
+  trigger,
 }: {
   statuses: ProjectStatus[]
-  activePath: string | null
+  activePath: string
+  busy?: boolean
   onSwitch: (path: string) => void
-  onUnpin: (path: string) => void
+  onOpenProject: () => void
+  trigger: ReactNode
 }) {
-  if (statuses.length === 0) return null
-
   return (
-    <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5">
-      {statuses.map((s) => {
-        const active = s.active || s.path === activePath
-        return (
-          <div
-            key={s.path}
-            className={`group flex items-center gap-1 rounded-lg border px-2 py-1 text-xs transition-colors ${
-              active
-                ? "border-primary/40 bg-primary/10 text-foreground"
-                : "border-border bg-background text-muted-foreground hover:bg-muted"
-            }`}
-          >
-            <button
-              type="button"
-              className="flex items-center gap-1.5 outline-none"
-              onClick={() => onSwitch(s.path)}
-              title={s.path}
-            >
-              <FolderOpen className="size-3.5 shrink-0 opacity-70" />
-              <span className="font-medium">{s.alias || s.repoName}</span>
-              <DiffStat insertions={s.insertions} deletions={s.deletions} />
-              {s.dirty && !(s.insertions > 0 || s.deletions > 0) && (
-                <span className="size-1.5 rounded-full bg-amber-500" />
-              )}
-              {s.hasOpenPR && <GitPullRequest className="size-3 text-sky-500" />}
-              {s.ciLabel && (
-                <span
-                  className={
-                    s.ciState === "fail"
-                      ? "text-destructive"
-                      : s.ciState === "pass"
-                        ? "text-emerald-600 dark:text-emerald-400"
-                        : s.ciState === "pending"
-                          ? "text-amber-600 dark:text-amber-400"
-                          : "text-muted-foreground"
-                  }
-                  title={
-                    [
-                      s.ciLabel,
-                      s.ciHost,
-                      s.ciFromCache ? "cache offline" : "",
-                    ]
-                      .filter(Boolean)
-                      .join(" · ")
-                  }
-                >
-                  <Workflow className="size-3" />
-                </span>
-              )}
-            </button>
-            <Button
-              variant="ghost"
-              size="icon-xs"
-              className="opacity-40 group-hover:opacity-100"
-              onClick={() => onUnpin(s.path)}
-              title="Desafixar projeto"
-            >
-              <PinOff />
-            </Button>
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        disabled={busy}
+        render={
+          <button
+            type="button"
+            className="pointer-events-auto relative z-10 flex max-w-full items-center gap-2 truncate rounded-md px-1.5 py-1 font-mono text-xs text-muted-foreground outline-none hover:bg-muted/60 focus-visible:ring-2 focus-visible:ring-ring [--wails-draggable:no-drag]"
+          />
+        }
+      >
+        {trigger}
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="center" className="min-w-64 max-w-[min(24rem,90vw)]">
+        <DropdownMenuLabel>Projetos pinados</DropdownMenuLabel>
+        {statuses.length === 0 ? (
+          <div className="px-2 py-1.5 text-xs text-muted-foreground">
+            Nenhum projeto pinado
           </div>
-        )
-      })}
-    </div>
+        ) : (
+          statuses.map((s) => {
+            const active = s.active || s.path === activePath
+            return (
+              <DropdownMenuItem
+                key={s.path}
+                className={cn("gap-2", active && "bg-accent text-accent-foreground")}
+                onClick={() => {
+                  if (!active) onSwitch(s.path)
+                }}
+                title={s.path}
+              >
+                <FolderOpen className="size-3.5 shrink-0 opacity-70" />
+                <span className="min-w-0 flex-1 truncate font-medium">
+                  {s.alias || s.repoName}
+                </span>
+                <DiffStat insertions={s.insertions} deletions={s.deletions} />
+                {s.dirty && !(s.insertions > 0 || s.deletions > 0) && (
+                  <span className="size-1.5 shrink-0 rounded-full bg-amber-500" />
+                )}
+                {s.hasOpenPR && <GitPullRequest className="size-3 shrink-0 text-sky-500" />}
+                {s.ciLabel && (
+                  <span
+                    className={
+                      s.ciState === "fail"
+                        ? "text-destructive"
+                        : s.ciState === "pass"
+                          ? "text-emerald-600 dark:text-emerald-400"
+                          : s.ciState === "pending"
+                            ? "text-amber-600 dark:text-amber-400"
+                            : "text-muted-foreground"
+                    }
+                    title={
+                      [s.ciLabel, s.ciHost, s.ciFromCache ? "cache offline" : ""]
+                        .filter(Boolean)
+                        .join(" · ")
+                    }
+                  >
+                    <Workflow className="size-3" />
+                  </span>
+                )}
+                {active ? <CheckCircle2 className="size-3.5 shrink-0 text-primary" /> : null}
+              </DropdownMenuItem>
+            )
+          })
+        )}
+        <DropdownMenuSeparator />
+        <DropdownMenuItem
+          className="gap-2"
+          disabled={busy}
+          onClick={onOpenProject}
+        >
+          <Plus className="size-3.5 shrink-0" />
+          Abrir / Criar projeto
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
   )
 }
 
-function canOpenPRInWeb(dash: Dashboard): boolean {
-  return Boolean(dash.openPR?.url) && dash.commitsAheadOfBase > 0 && dash.hasBranchDiff
-}
-
-function openPRDisabledReason(dash: Dashboard): string | undefined {
-  if (!dash.openPR?.url) return "Nenhum pull request aberto nesta branch"
-  if (dash.commitsAheadOfBase <= 0) return "Sem commits à frente da base"
-  if (!dash.hasBranchDiff) return "Diff vazio em relação à base"
-  return undefined
-}
-
-/** Why "Pull Request" toolbar action is unavailable (create/review flow). */
 function createPRDisabledReason(
   dash: Dashboard,
   doctorBlocked = false,
@@ -962,75 +954,26 @@ function nextStepTitle(step: NextToolbarStep): string {
 function DashboardView({
   dash,
   busy,
-  prManageBusy,
-  dockerVisible,
-  dockerLoading,
-  ciLoading,
   filesLoading,
-  gitLoading,
   terminal,
   onSelectFile,
   onStageFile,
   onStageAll,
   onConfigureRemote,
-  onOpenBranches,
   onRecommendCommit,
-  onMarkPRReady,
-  onOpenDockerEnv,
-  onDockerUp,
-  onDockerUpBuild,
-  onDockerStart,
-  onDockerStop,
-  onDockerRecreate,
-  onDockerDown,
 }: {
   dash: Dashboard
   busy: boolean
-  prManageBusy: boolean
-  dockerVisible: boolean
-  dockerLoading: boolean
-  ciLoading: boolean
   filesLoading: boolean
-  gitLoading: boolean
   terminal: ReactNode
   onSelectFile: (f: ChangedFileView) => void
   onStageFile: (f: ChangedFileView) => void
   onStageAll: () => void
   onConfigureRemote: () => void
-  onOpenBranches: () => void
   onRecommendCommit: () => void
-  onMarkPRReady: () => void
-  onOpenDockerEnv: () => void
-  onDockerUp: () => void
-  onDockerUpBuild: () => void
-  onDockerStart: () => void
-  onDockerStop: () => void
-  onDockerRecreate: () => void
-  onDockerDown: () => void
 }) {
   const files = dash.changedFiles ?? []
   const contextIndex = dash.contextIndex
-  const openPREnabled = canOpenPRInWeb(dash)
-  const openPRTitle = openPRDisabledReason(dash)
-  const pr = dash.openPR
-  const hasCompose = Boolean(dash.docker.composeFile?.trim())
-  const dockerMissing = hasCompose && !dash.docker.available
-  const dockerDaemonOff =
-    hasCompose && dash.docker.available && !dash.docker.daemonRunning
-  const dockerDown =
-    hasCompose && dash.docker.daemonRunning && dash.docker.total === 0
-  const dockerComposeStopped =
-    hasCompose &&
-    dash.docker.daemonRunning &&
-    dash.docker.total > 0 &&
-    dash.docker.running === 0
-  const dockerRunning =
-    hasCompose && dash.docker.daemonRunning && dash.docker.running > 0
-  const dockerNeedsAttention =
-    dockerMissing || dockerDaemonOff || dockerDown || dockerComposeStopped
-  const dockerActionsEnabled =
-    hasCompose && dash.docker.available && dash.docker.daemonRunning
-
   const missingRemote = !String(dash.remoteURL || "").trim()
 
   return (
@@ -1055,344 +998,8 @@ function DashboardView({
           </AlertDescription>
         </Alert>
       ) : null}
-      <div className="grid shrink-0 grid-cols-1 gap-4 sm:grid-cols-2">
-        {/* Row 1: Docker | Branch */}
-        <Card size="sm" className="min-h-0">
-          <CardHeader
-            className={cn(
-              "rounded-t-xl",
-              dockerVisible && "cursor-pointer hover:bg-muted/40",
-            )}
-            onClick={() => {
-              if (dockerVisible && !dockerLoading) onOpenDockerEnv()
-            }}
-            title={dockerVisible ? "Abrir containers, shell e presets" : undefined}
-          >
-            <CardTitle className="flex items-center gap-2 text-sm">
-              <Container className="size-4 text-muted-foreground" />
-              Docker
-              {dockerVisible ? (
-                dockerLoading ? (
-                  <Badge variant="outline" className="ml-1 gap-1 font-normal">
-                    <Loader2 className="size-3 animate-spin" />
-                    carregando
-                  </Badge>
-                ) : (
-                  <>
-                    <Badge
-                      variant="outline"
-                      className={cn(
-                        "ml-1 font-normal",
-                        dockerNeedsAttention &&
-                          "border-amber-500/50 text-amber-700 dark:text-amber-400",
-                      )}
-                    >
-                      {dash.docker.running}/{dash.docker.total}
-                    </Badge>
-                    {dockerNeedsAttention ? (
-                      <Badge
-                        variant="outline"
-                        className="ml-1 gap-1 border-amber-500/50 font-normal text-amber-700 dark:text-amber-400"
-                      >
-                        <AlertTriangle className="size-3" />
-                        parado
-                      </Badge>
-                    ) : null}
-                    <span className="ml-auto text-[11px] font-normal text-muted-foreground">
-                      containers →
-                    </span>
-                  </>
-                )
-              ) : (
-                <Badge variant="outline" className="ml-1 font-normal">
-                  indisponível
-                </Badge>
-              )}
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="flex flex-col gap-2">
-            {!dockerVisible ? (
-              <p className="text-xs text-muted-foreground">
-                Docker Compose não detectado neste projeto.
-              </p>
-            ) : dockerLoading ? (
-              <p className="text-xs text-muted-foreground">Consultando Docker / Compose…</p>
-            ) : (
-              <>
-                {dockerMissing ? (
-                  <Alert className="border-amber-500/40 bg-amber-500/10 text-amber-950 dark:text-amber-100">
-                    <AlertTriangle className="size-4" />
-                    <AlertDescription className="text-xs leading-relaxed">
-                      Compose detectado, Docker CLI não encontrado. Instale o Docker para subir o
-                      ambiente.
-                    </AlertDescription>
-                  </Alert>
-                ) : null}
-                {dockerDaemonOff ? (
-                  <Alert className="border-amber-500/40 bg-amber-500/10 text-amber-950 dark:text-amber-100">
-                    <AlertTriangle className="size-4" />
-                    <AlertDescription className="text-xs leading-relaxed">
-                      Compose detectado, Docker daemon parado. Inicie o Docker para subir o
-                      ambiente.
-                    </AlertDescription>
-                  </Alert>
-                ) : null}
-                {dockerDown ? (
-                  <Alert className="border-amber-500/40 bg-amber-500/10 text-amber-950 dark:text-amber-100">
-                    <AlertTriangle className="size-4" />
-                    <AlertDescription className="text-xs leading-relaxed">
-                      Compose detectado, ambiente Down. Use <span className="font-medium">Up</span>{" "}
-                      para subir o ambiente.
-                    </AlertDescription>
-                  </Alert>
-                ) : null}
-                {dockerComposeStopped ? (
-                  <Alert className="border-amber-500/40 bg-amber-500/10 text-amber-950 dark:text-amber-100">
-                    <AlertTriangle className="size-4" />
-                    <AlertDescription className="text-xs leading-relaxed">
-                      Compose detectado, containers parados. Use{" "}
-                      <span className="font-medium">Start</span> para reiniciar.
-                    </AlertDescription>
-                  </Alert>
-                ) : null}
-                {!dockerNeedsAttention ? (
-                  <p className="truncate text-xs text-muted-foreground">{dash.docker.summary}</p>
-                ) : null}
-                {dockerActionsEnabled ? (
-                  <div className="flex flex-wrap gap-1.5">
-                    {dockerDown ? (
-                      <>
-                        <Button size="xs" onClick={onDockerUp} disabled={busy}>
-                          <Play />
-                          Up
-                        </Button>
-                        <Button size="xs" variant="outline" onClick={onDockerUpBuild} disabled={busy}>
-                          Up --build
-                        </Button>
-                      </>
-                    ) : null}
-                    {dockerComposeStopped ? (
-                      <Button size="xs" onClick={onDockerStart} disabled={busy}>
-                        <Play />
-                        Start
-                      </Button>
-                    ) : null}
-                    {dockerRunning ? (
-                      <>
-                        <Button size="xs" variant="outline" onClick={onDockerStop} disabled={busy}>
-                          <Square />
-                          Stop
-                        </Button>
-                        <Button
-                          size="xs"
-                          variant="outline"
-                          onClick={onDockerRecreate}
-                          disabled={busy || !(dash.docker.services?.length)}
-                        >
-                          <RefreshCw />
-                          Recreate
-                        </Button>
-                        <Button size="xs" variant="destructive" onClick={onDockerDown} disabled={busy}>
-                          Down
-                        </Button>
-                      </>
-                    ) : null}
-                  </div>
-                ) : null}
-              </>
-            )}
-          </CardContent>
-        </Card>
 
-        <button
-          type="button"
-          onClick={onOpenBranches}
-          className="rounded-xl text-left transition-colors hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        >
-          <Card size="sm" className="pointer-events-none h-full">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-sm">
-                <GitBranch className="size-4 text-muted-foreground" />
-                Branch
-                <span className="ml-auto text-xs font-normal text-muted-foreground">
-                  trocar…
-                </span>
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="flex flex-col gap-1.5">
-              <span className="font-mono text-sm">
-                {dash.branch}
-                {dash.detached && " (detached)"}
-              </span>
-              <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
-                <span>base: {dash.baseBranch || "—"}</span>
-                {dash.ahead > 0 && <Badge variant="outline">↑{dash.ahead}</Badge>}
-                {dash.behind > 0 && <Badge variant="outline">↓{dash.behind}</Badge>}
-                {dash.baseBehind > 0 && (
-                  <Badge variant="outline">
-                    {dash.baseBranch || "base"} ↓{dash.baseBehind}
-                  </Badge>
-                )}
-                {dash.commitsAheadOfBase > 0 && (
-                  <Badge variant="outline">{dash.commitsAheadOfBase} vs base</Badge>
-                )}
-              </div>
-            </CardContent>
-          </Card>
-        </button>
-
-        {/* Row 2: Status | IA */}
-        <Card size="sm">
-          <CardHeader>
-            <CardTitle className="text-sm">Status</CardTitle>
-          </CardHeader>
-          <CardContent className="flex flex-col gap-2">
-            <div className="flex flex-wrap items-center gap-2">
-              {gitLoading ? (
-                <Badge variant="outline" className="gap-1 font-normal">
-                  <Loader2 className="size-3 animate-spin" />
-                  git
-                </Badge>
-              ) : (
-                <StatusBadge label={dash.statusLabel} dirty={dash.dirty} />
-              )}
-              <DiffStat
-                insertions={
-                  dash.contextIndex?.insertions ??
-                  (dash.changedFiles ?? []).reduce((a, f) => a + (f.insertions || 0), 0)
-                }
-                deletions={
-                  dash.contextIndex?.deletions ??
-                  (dash.changedFiles ?? []).reduce((a, f) => a + (f.deletions || 0), 0)
-                }
-                className="text-xs"
-              />
-              {filesLoading ? (
-                <Badge variant="outline" className="gap-1 font-normal">
-                  <Loader2 className="size-3 animate-spin" />
-                  diffs
-                </Badge>
-              ) : null}
-              {ciLoading && !dash.ciLabel ? (
-                <Badge variant="outline" className="gap-1 font-normal">
-                  <Loader2 className="size-3 animate-spin" />
-                  CI
-                </Badge>
-              ) : null}
-              {dash.ciLabel && (
-                <Badge
-                  variant={
-                    dash.ciState === "fail"
-                      ? "destructive"
-                      : dash.ciState === "pass"
-                        ? "secondary"
-                        : "outline"
-                  }
-                  title={[dash.ciHost, dash.ciFromCache ? "cache offline" : ""]
-                    .filter(Boolean)
-                    .join(" · ")}
-                  className="gap-1"
-                >
-                  <Workflow className="size-3" />
-                  {dash.ciLabel}
-                  {dash.ciFromCache ? " · off" : ""}
-                  {ciLoading ? <Loader2 className="size-3 animate-spin opacity-60" /> : null}
-                </Badge>
-              )}
-              <Button
-                size="sm"
-                variant="outline"
-                className="h-7 gap-1 px-2 text-xs"
-                disabled={!openPREnabled}
-                title={openPRTitle}
-                onClick={() => {
-                  const url = dash.openPR?.url
-                  if (!url) return
-                  void Browser.OpenURL(url).catch(() => {
-                    window.open(url, "_blank", "noopener,noreferrer")
-                  })
-                }}
-              >
-                <ExternalLink className="size-3" />
-                Open PR in web
-              </Button>
-            </div>
-            <div className="flex flex-wrap gap-1.5 text-xs text-muted-foreground">
-              <Badge variant="outline">staged {dash.staged}</Badge>
-              <Badge variant="outline">mod {dash.modified}</Badge>
-              <Badge variant="outline">untracked {dash.untracked}</Badge>
-            </div>
-
-            {pr && (
-              <div className="mt-1 flex flex-col gap-2 rounded-lg border border-border/60 bg-muted/20 p-2">
-                <div className="flex flex-wrap items-center gap-1.5 text-xs">
-                  <Badge variant={pr.isDraft ? "outline" : "default"}>
-                    PR #{pr.number}
-                    {pr.isDraft ? " · draft" : ""}
-                  </Badge>
-                  {pr.checksSummary && (
-                    <Badge
-                      variant={
-                        (pr.checksFail ?? 0) > 0
-                          ? "destructive"
-                          : (pr.checksPending ?? 0) > 0
-                            ? "outline"
-                            : "secondary"
-                      }
-                    >
-                      checks: {pr.checksSummary}
-                    </Badge>
-                  )}
-                </div>
-                <p className="line-clamp-2 text-xs text-muted-foreground">{pr.title}</p>
-                {pr.isDraft && (
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      className="h-7 text-xs"
-                      disabled={busy || prManageBusy}
-                      onClick={onMarkPRReady}
-                    >
-                      {prManageBusy ? <Loader2 className="size-3 animate-spin" /> : null}
-                      Ready for review
-                    </Button>
-                  </div>
-                )}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        <Card size="sm">
-          <CardHeader>
-            <CardTitle className="text-sm">IA</CardTitle>
-          </CardHeader>
-          <CardContent className="flex flex-col gap-1.5 text-xs text-muted-foreground">
-            <div className="flex items-center gap-2">
-              <Badge variant={dash.aiReady ? "default" : "destructive"}>
-                {dash.aiReady ? "pronto" : "config necessária"}
-              </Badge>
-            </div>
-            <span>
-              {dash.provider || "—"} · {dash.model || "—"}
-            </span>
-            {dash.openPR && (
-              <a
-                href={dash.openPR.url}
-                target="_blank"
-                rel="noreferrer"
-                className="flex items-center gap-1 text-sky-500 hover:underline"
-              >
-                <ExternalLink className="size-3" />
-                PR #{dash.openPR.number}
-              </a>
-            )}
-          </CardContent>
-        </Card>
-      </div>
-
-      <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 lg:grid-cols-2">
+      <div className="grid min-h-0 min-w-0 flex-[7] basis-0 grid-cols-1 gap-4 lg:grid-cols-2">
         <Card className="flex min-h-0 flex-col overflow-hidden">
           <CardHeader className="shrink-0 gap-3">
             <CardTitle className="flex items-center gap-2 text-sm">
@@ -1431,7 +1038,9 @@ function DashboardView({
         />
       </div>
 
-      {terminal}
+      <div className="flex min-h-0 min-w-0 flex-[3] basis-0 flex-col overflow-hidden">
+        {terminal}
+      </div>
     </div>
   )
 }
@@ -3690,23 +3299,35 @@ function App() {
       >
         {dash && (
           <div className="pointer-events-none absolute inset-x-0 flex justify-center px-28">
-            <span
-              className="pointer-events-auto relative z-10 flex max-w-full items-center gap-2 truncate font-mono text-xs text-muted-foreground [--wails-draggable:no-drag]"
-              title={dash.path}
-            >
-              <FolderOpen className="size-3.5 shrink-0 opacity-70" />
-              <span className="truncate font-medium text-foreground">{dash.repoName}</span>
-              <DiffStat
-                insertions={
-                  dash.contextIndex?.insertions ??
-                  (dash.changedFiles ?? []).reduce((a, f) => a + (f.insertions || 0), 0)
-                }
-                deletions={
-                  dash.contextIndex?.deletions ??
-                  (dash.changedFiles ?? []).reduce((a, f) => a + (f.deletions || 0), 0)
-                }
-              />
-            </span>
+            <PinnedProjectsMenu
+              statuses={statuses}
+              activePath={dash.path}
+              busy={busy}
+              onSwitch={(p) => void switchProject(p)}
+              onOpenProject={() => openDialog()}
+              trigger={
+                <>
+                  <FolderOpen className="size-3.5 shrink-0 opacity-70" />
+                  <span
+                    className="truncate font-medium text-foreground"
+                    title={dash.path}
+                  >
+                    {dash.repoName}
+                  </span>
+                  <DiffStat
+                    insertions={
+                      dash.contextIndex?.insertions ??
+                      (dash.changedFiles ?? []).reduce((a, f) => a + (f.insertions || 0), 0)
+                    }
+                    deletions={
+                      dash.contextIndex?.deletions ??
+                      (dash.changedFiles ?? []).reduce((a, f) => a + (f.deletions || 0), 0)
+                    }
+                  />
+                  <ChevronDown className="size-3 shrink-0 opacity-60" />
+                </>
+              }
+            />
           </div>
         )}
         <div className="relative z-10 ml-auto flex items-center gap-1 [--wails-draggable:no-drag]">
@@ -3868,23 +3489,8 @@ function App() {
 
         {dash ? (
           <>
-            {statuses.length > 0 && (
-              <div className="shrink-0">
-                <ProjectTabs
-                  statuses={statuses}
-                  activePath={dash.path}
-                  onSwitch={(p) => void switchProject(p)}
-                  onUnpin={(p) => void unpinProject(p)}
-                />
-              </div>
-            )}
-
             {/* Toolbar */}
             <div className="flex shrink-0 flex-wrap items-center gap-2">
-              <Button variant="outline" size="sm" onClick={() => openDialog()} disabled={busy}>
-                <FolderOpen />
-                Projeto
-              </Button>
               <Button variant="outline" size="sm" onClick={() => void refresh()} disabled={busy}>
                 {busy ? <Loader2 className="animate-spin" /> : <RefreshCw />}
                 Atualizar
@@ -4223,12 +3829,7 @@ function App() {
             <DashboardView
               dash={dash}
               busy={busy}
-              prManageBusy={prManageBusy}
-              dockerVisible={dockerVisible}
-              dockerLoading={dockerLoading}
-              ciLoading={!ciReady}
               filesLoading={!filesReady}
-              gitLoading={!gitReady}
               terminal={
                 <TerminalPanel
                   projectPath={dash.path}
@@ -4236,8 +3837,8 @@ function App() {
                   dockerRequest={dockerShellReq}
                 >
                   {({ toolbar, body }) => (
-                    <Card className="flex min-h-0 flex-1 flex-col overflow-hidden">
-                      <CardHeader className="shrink-0">
+                    <Card size="sm" className="flex h-full min-h-0 flex-col overflow-hidden">
+                      <CardHeader className="shrink-0 py-2">
                         <div className="flex min-w-0 items-center gap-2">
                           <CardTitle className="flex shrink-0 items-center gap-2 text-sm">
                             <Terminal className="size-4 text-muted-foreground" />
@@ -4246,7 +3847,7 @@ function App() {
                           {toolbar}
                         </div>
                       </CardHeader>
-                      <CardContent className="min-h-0 flex-1 overflow-hidden">
+                      <CardContent className="min-h-0 flex-1 overflow-hidden p-2 pt-0">
                         {body}
                       </CardContent>
                     </Card>
@@ -4257,16 +3858,7 @@ function App() {
               onStageFile={(f) => void stageOneFile(f)}
               onStageAll={() => void stageAllFiles()}
               onConfigureRemote={() => openRemoteDialog(null)}
-              onOpenBranches={() => void openBranches()}
               onRecommendCommit={() => void startCommit()}
-              onMarkPRReady={() => void markPRReady()}
-              onOpenDockerEnv={() => setDockerEnvOpen(true)}
-              onDockerUp={() => void dockerAction("up", () => AppService.DockerUp(false))}
-              onDockerUpBuild={() => void dockerAction("up --build", () => AppService.DockerUp(true))}
-              onDockerStart={() => void dockerAction("start", () => AppService.DockerStart())}
-              onDockerStop={() => void dockerAction("stop", () => AppService.DockerStop())}
-              onDockerRecreate={() => openRecreate()}
-              onDockerDown={() => void dockerAction("down", () => AppService.DockerDown())}
             />
           </>
         ) : (
@@ -4284,6 +3876,29 @@ function App() {
       </div>
         </div>
       </div>
+
+      {dash ? (
+        <StatusBar
+          dash={dash}
+          busy={busy}
+          prManageBusy={prManageBusy}
+          gitLoading={!gitReady}
+          filesLoading={!filesReady}
+          ciLoading={!ciReady}
+          dockerVisible={dockerVisible}
+          dockerLoading={dockerLoading}
+          onOpenBranches={() => void openBranches()}
+          onMarkPRReady={() => void markPRReady()}
+          onOpenSettings={() => void openSettings()}
+          onOpenDockerEnv={() => setDockerEnvOpen(true)}
+          onDockerUp={() => void dockerAction("up", () => AppService.DockerUp(false))}
+          onDockerUpBuild={() => void dockerAction("up --build", () => AppService.DockerUp(true))}
+          onDockerStart={() => void dockerAction("start", () => AppService.DockerStart())}
+          onDockerStop={() => void dockerAction("stop", () => AppService.DockerStop())}
+          onDockerRecreate={() => openRecreate()}
+          onDockerDown={() => void dockerAction("down", () => AppService.DockerDown())}
+        />
+      ) : null}
 
       {/* Diff — bottom sheet limitado ao viewport; scroll só no viewer */}
       <Sheet open={diffOpen} onOpenChange={setDiffOpen}>
@@ -5729,6 +5344,7 @@ function App() {
         projectPath={dash?.path ?? null}
         open={chatOpen}
         onOpenChange={setChatOpen}
+        bottomOffset={dash ? 40 : 16}
       />
     </div>
   )

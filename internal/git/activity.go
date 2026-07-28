@@ -38,11 +38,18 @@ func (r *Repo) LoadCommitActivity(days int, authorOnly bool) (*CommitActivity, e
 	if days <= 0 {
 		days = 365
 	}
-	until := time.Now()
-	since := until.AddDate(0, 0, -days)
+	until := time.Now().In(time.Local)
+	since := time.Date(until.Year(), until.Month(), until.Day(), 0, 0, 0, 0, time.Local).
+		AddDate(0, 0, -days)
 
 	email, _ := r.run("config", "user.email")
 	name, _ := r.run("config", "user.name")
+
+	// Explicit local midnights + since-as-filter (bare YYYY-MM-DD is "now" for today;
+	// plain --since also prunes walks when tip dates are out of order).
+	sinceBound := since.Format("2006-01-02 15:04:05")
+	untilBound := time.Date(until.Year(), until.Month(), until.Day(), 0, 0, 0, 0, time.Local).
+		AddDate(0, 0, 1).Format("2006-01-02 15:04:05")
 
 	args := []string{
 		"log",
@@ -50,8 +57,8 @@ func (r *Repo) LoadCommitActivity(days int, authorOnly bool) (*CommitActivity, e
 		"--no-merges",
 		"--pretty=format:%h%x00%H%x00%ad%x00%an%x00%ae%x00%s",
 		"--date=short",
-		"--since=" + since.Format("2006-01-02"),
-		"--until=" + until.AddDate(0, 0, 1).Format("2006-01-02"),
+		"--since-as-filter=" + sinceBound,
+		"--until=" + untilBound,
 	}
 	if authorOnly && strings.TrimSpace(email) != "" {
 		args = append(args, "--author="+email)
