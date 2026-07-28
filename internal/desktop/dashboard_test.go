@@ -30,6 +30,9 @@ func TestLoadDashboard_openbenchRepo(t *testing.T) {
 	if dash.StatusLabel == "" {
 		t.Fatal("missing status label")
 	}
+	if dash.HasGH != hasGHCLI() {
+		t.Fatalf("HasGH: got %v want %v", dash.HasGH, hasGHCLI())
+	}
 }
 
 func TestLoadGitStatus_openbenchRepo(t *testing.T) {
@@ -43,5 +46,8 @@ func TestLoadGitStatus_openbenchRepo(t *testing.T) {
 	}
 	if dash.RepoName == "" || dash.Branch == "" || dash.StatusLabel == "" || dash.StatusLabel == "…" {
 		t.Fatalf("incomplete git status: %+v", dash)
+	}
+	if dash.HasGH != hasGHCLI() {
+		t.Fatalf("HasGH: got %v want %v", dash.HasGH, hasGHCLI())
 	}
 }
