@@ -138,18 +138,28 @@
   transition: none !important;
 }
 
-/* Soft pulse for the recommended next toolbar action. */
+/* Outer glow only — button itself stays still. */
 @keyframes next-step-pulse {
   0%,
   100% {
-    box-shadow: 0 0 0 0 color-mix(in oklch, var(--primary) 45%, transparent);
+    box-shadow:
+      0 0 0 0 color-mix(in oklch, var(--primary) 65%, transparent),
+      0 0 0 0 color-mix(in oklch, var(--primary) 30%, transparent);
   }
-  55% {
-    box-shadow: 0 0 0 6px color-mix(in oklch, var(--primary) 0%, transparent);
+  45% {
+    box-shadow:
+      0 0 0 5px color-mix(in oklch, var(--primary) 40%, transparent),
+      0 0 16px 2px color-mix(in oklch, var(--primary) 35%, transparent);
+  }
+  100% {
+    box-shadow:
+      0 0 0 12px color-mix(in oklch, var(--primary) 0%, transparent),
+      0 0 0 0 color-mix(in oklch, var(--primary) 0%, transparent);
   }
 }
 
 .next-step-pulse {
-  animation: next-step-pulse 2.2s ease-out infinite;
+  animation: next-step-pulse 1.6s ease-out infinite;
   position: relative;
+  z-index: 1;
 }

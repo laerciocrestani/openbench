@@ -106,6 +106,14 @@ import { DoctorFixDialog } from "@/components/DoctorFixDialog"
 import { DoctorGateAlert } from "@/components/DoctorGateAlert"
 import { doctorBlocksAction, doctorGate } from "@/lib/doctor-gate"
 import { mergeFastDashboard, applyChangedFilesResult } from "@/lib/merge-dashboard"
+import {
+  hasWorkOnMergedBranch,
+  hygieneNeedsAttention,
+  isOnBase,
+  nextStepTitle,
+  nextToolbarStep,
+  syncNeedsAttention,
+} from "@/lib/next-toolbar-step"
 import { FloatingChat } from "@/components/floating-chat"
 import { StatusBar } from "@/components/status-bar"
 import { SkillsManager } from "@/components/skills-manager"
@@ -206,13 +214,6 @@ type CommitAction = "commit" | "push" | "pr" | "branch-commit" | "branch-commit-
 
 type CreateBranchStep = "from" | "template" | "name"
 
-function isOnBase(dash: Dashboard | null): boolean {
-  if (!dash || dash.detached) return false
-  const base = (dash.baseBranch || "").trim()
-  const branch = (dash.branch || "").trim()
-  if (!base || !branch) return false
-  return branch === base
-}
 
 function parseUnifiedDiff(unified: string): DiffRow[] {
   const rows: DiffRow[] = []
@@ -797,33 +798,11 @@ function pullNeedsAttention(dash: Dashboard): boolean {
   return dash.behind > 0
 }
 
-function syncNeedsAttention(dash: Dashboard): boolean {
-  return dash.baseBehind > 0
-}
-
-function hygieneNeedsAttention(dash: Dashboard): boolean {
-  return (dash.hygieneLocal ?? 0) + (dash.hygieneRemote ?? 0) > 0
-}
-
 /** Badge text: local·remote (e.g. "3·3"), omitting a side only when both would be empty. */
 function hygieneBadgeLabel(dash: Dashboard): string {
   const local = dash.hygieneLocal ?? 0
   const remote = dash.hygieneRemote ?? 0
   return `${local}·${remote}`
-}
-
-type NextToolbarStep = "commit" | "push" | "pull" | "sync" | "pr" | "merge" | "hygiene" | null
-
-function prMergeBlocked(dash: Dashboard | null): string | undefined {
-  const pr = dash?.openPR
-  if (!pr?.url) return "Nenhuma PR aberta nesta branch"
-  if (pr.state && !String(pr.state).toUpperCase().startsWith("OPEN")) {
-    return "PR já fechada/mergeada"
-  }
-  if (pr.isDraft) return "Marque Ready for review antes de mergear"
-  if (String(pr.mergeable || "").toUpperCase() === "CONFLICTING") return "PR com conflitos"
-  if ((pr.checksFail ?? 0) > 0) return "Checks falhando"
-  return undefined
 }
 
 function mergePRDisabledReason(
@@ -832,64 +811,14 @@ function mergePRDisabledReason(
 ): string | undefined {
   if (!dash?.hasGH) return "GitHub CLI necessário para mergear PR"
   if (doctorBlocked) return "Doctor: resolva as recomendações antes de mergear"
-  return prMergeBlocked(dash)
-}
-
-/** Single recommended toolbar action based on repo state. */
-function nextToolbarStep(
-  dash: Dashboard | null,
-  openPRReady = true,
-  hygieneReady = true,
-  gitReady = true,
-): NextToolbarStep {
-  if (!dash || dash.detached) return null
-  if (!gitReady) return null
-  if (dash.dirty) return "commit"
-  const pushCount = dash.hasUpstream
-    ? dash.ahead
-    : Math.max(dash.commitsAheadOfBase ?? 0, dash.unpublished ?? 0)
-  if (pushCount > 0 && (dash.hasUpstream || Boolean(dash.remoteURL))) return "push"
-  if (dash.behind > 0) return "pull"
-  // After a PR merge, local base usually lags origin — Sync before more work.
-  if (syncNeedsAttention(dash)) return "sync"
-  if (
-    !isOnBase(dash) &&
-    dash.commitsAheadOfBase > 0 &&
-    dash.hasBranchDiff &&
-    dash.hasUpstream &&
-    dash.ahead === 0 &&
-    !dash.openPR?.url
-  ) {
-    // Don't pulse "abrir PR" until gh confirms there is no open PR.
-    if (!openPRReady) return null
-    return "pr"
+  if (!dash?.openPR?.url) return "Nenhuma PR aberta nesta branch"
+  if (dash.openPR.state && !String(dash.openPR.state).toUpperCase().startsWith("OPEN")) {
+    return "PR já fechada/mergeada"
   }
-  if (dash.openPR?.url && dash.hasGH && !prMergeBlocked(dash)) {
-    return "merge"
-  }
-  if (hygieneReady && hygieneNeedsAttention(dash)) return "hygiene"
-  return null
-}
-
-function nextStepTitle(step: NextToolbarStep): string {
-  switch (step) {
-    case "commit":
-      return "Próximo passo: Commit"
-    case "push":
-      return "Próximo passo: Push"
-    case "pull":
-      return "Próximo passo: Pull"
-    case "sync":
-      return "Próximo passo: Sync da base"
-    case "pr":
-      return "Próximo passo: abrir Pull Request"
-    case "merge":
-      return "Próximo passo: Merge PR"
-    case "hygiene":
-      return "Próximo passo: Hygiene"
-    default:
-      return ""
-  }
+  if (dash.openPR.isDraft) return "Marque Ready for review antes de mergear"
+  if (String(dash.openPR.mergeable || "").toUpperCase() === "CONFLICTING") return "PR com conflitos"
+  if ((dash.openPR.checksFail ?? 0) > 0) return "Checks falhando"
+  return undefined
 }
 
 function DashboardView({
@@ -1945,15 +1874,32 @@ function App() {
       return
     }
     if (!opts?.skipRemoteCheck && !ensureRemoteOrigin("sync")) return
+    const returnToBase = onMergedBranch
+    const base = dash.baseBranch || "main"
     setSyncBusy(true)
     setError(null)
     setSyncResult(null)
     try {
-      const res = await AppService.RunSync(dash.baseBranch || "main")
+      const res = await AppService.RunSync(base)
       if (res) {
+        // Post-merge: Sync only updates the base tip — also return to base so
+        // Hygiene can see/prune the former feature (current branch is skipped).
+        if (returnToBase && !isOnBase(dash)) {
+          try {
+            const after = await AppService.CheckoutBranch(base)
+            if (after) {
+              applyDashboard(after)
+              setDashEpoch((n) => n + 1)
+            }
+          } catch (e) {
+            if (res.dashboard) applyDashboard(res.dashboard)
+            setError(errText(e))
+          }
+        } else if (res.dashboard) {
+          applyDashboard(res.dashboard)
+        }
         setSyncResult(res)
         setSyncOpen(true)
-        if (res.dashboard) applyDashboard(res.dashboard)
         await refreshStatuses()
       }
     } catch (e) {
@@ -2361,7 +2307,14 @@ function App() {
     !dash!.detached &&
     pushAheadCount > 0 &&
     (dash!.hasUpstream || Boolean(dash!.remoteURL))
-  const suggestedStep = nextToolbarStep(dash, openPRReady, hygieneReady, gitReady)
+  const onMergedBranch = hasWorkOnMergedBranch(doctorReport)
+  const suggestedStep = nextToolbarStep(
+    dash,
+    openPRReady,
+    hygieneReady,
+    gitReady,
+    onMergedBranch,
+  )
   const commitDoctorGate = doctorGate(doctorReport, "commit")
   const pushDoctorGate = doctorGate(doctorReport, "push")
   const prDoctorGate = doctorGate(doctorReport, "pr")
@@ -3775,9 +3728,11 @@ function App() {
                     ? nextStepTitle("sync")
                     : dash.dirty
                       ? "Working tree dirty — commit ou stash antes de sincronizar"
-                      : syncNeedsAttention(dash)
-                        ? `Sync: ${dash.baseBranch || "main"} ↓${dash.baseBehind} no remoto`
-                        : `Sincronizar ${dash.baseBranch || "main"} com origin`
+                      : onMergedBranch && syncNeedsAttention(dash)
+                        ? "PR mergeada — Sync atualiza a base e volta para ela"
+                        : syncNeedsAttention(dash)
+                          ? `Sync: ${dash.baseBranch || "main"} ↓${dash.baseBehind} no remoto`
+                          : `Sincronizar ${dash.baseBranch || "main"} com origin`
                 }
               >
                 {syncBusy ? <Loader2 className="animate-spin" /> : <ArrowDownUp />}

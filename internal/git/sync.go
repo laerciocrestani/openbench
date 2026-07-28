@@ -140,6 +140,20 @@ func (r *Repo) LocalBranchesAbsorbedIntoBase(base string) ([]string, error) {
 	return branches, nil
 }
 
+// BranchTipInBase reports whether all commits on branch are reachable from base
+// (equivalent to membership in `git branch --merged <base>`).
+func (r *Repo) BranchTipInBase(branch, base string) (bool, error) {
+	resolved, err := r.mergedRef(base)
+	if err != nil {
+		return false, err
+	}
+	ahead, err := r.run("rev-list", "--count", fmt.Sprintf("%s..%s", resolved, branch))
+	if err != nil {
+		return false, err
+	}
+	return ahead == "0", nil
+}
+
 // BranchAbsorbedIntoBase reports whether branch has commits not in base but all
 // of its patches already exist in base (git cherry shows no "+" lines).
 func (r *Repo) BranchAbsorbedIntoBase(branch, base string) (bool, error) {

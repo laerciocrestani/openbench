@@ -191,6 +191,8 @@ func ensureHygieneOnBase(prog Progress, repo *gitpkg.Repo, base string, dryRun b
 }
 
 // CountHygieneCandidates returns local/remote prune candidate counts for UI pulse.
+// Includes the current branch when it would be pruned after switching to base
+// (LocalPruneCandidates intentionally skips HEAD so git branch -d is safe).
 func CountHygieneCandidates(workDir, base string) (local, remote int, err error) {
 	repo, err := openRepo(workDir)
 	if err != nil {
@@ -207,9 +209,36 @@ func CountHygieneCandidates(workDir, base string) (local, remote int, err error)
 	if err != nil {
 		return 0, 0, err
 	}
+	if cur, err := repo.CurrentBranch(); err == nil {
+		if cur != "" && cur != base && !containsString(locs, cur) {
+			if ok, _ := branchIsHygieneCandidate(repo, cur, base); ok {
+				locs = append(locs, cur)
+			}
+		}
+	}
 	rems, err := repo.RemotePruneCandidates(base)
 	if err != nil {
 		return 0, 0, err
 	}
 	return len(locs), len(rems), nil
+}
+
+func containsString(list []string, want string) bool {
+	for _, s := range list {
+		if s == want {
+			return true
+		}
+	}
+	return false
+}
+
+func branchIsHygieneCandidate(repo *gitpkg.Repo, name, base string) (bool, error) {
+	merged, err := repo.BranchTipInBase(name, base)
+	if err != nil {
+		return false, err
+	}
+	if merged {
+		return true, nil
+	}
+	return repo.BranchAbsorbedIntoBase(name, base)
 }
