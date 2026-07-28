@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/laerciocrestani/openbench/internal/config"
+	gitpkg "github.com/laerciocrestani/openbench/internal/git"
 	"github.com/laerciocrestani/openbench/internal/ui"
 )
 
@@ -54,7 +55,8 @@ func RunHygiene(opts HygieneOptions) error {
 		return fmt.Errorf("diretório atual não é um repositório git")
 	}
 
-	// Dirty working tree is OK: hygiene only deletes other branches / remotes.
+	// Dirty working tree is usually OK for remote deletes, but local prune
+	// may need checkout to base — that can fail if the tree blocks the switch.
 
 	base := strings.TrimSpace(opts.Base)
 	if base == "" {
@@ -90,6 +92,15 @@ func RunHygiene(opts HygieneOptions) error {
 		DryRun:         opts.DryRun,
 		WorkDir:        opts.WorkDir,
 		Progress:       prog,
+	}
+
+	// Local `git branch -d` checks merge into HEAD, and the current branch is
+	// never a prune candidate. Switch to base first so hygiene can delete the
+	// branch you were on (and so -d is evaluated against main/master).
+	if pruneOpts.pruneLocal() {
+		if err := ensureHygieneOnBase(prog, repo, base, opts.DryRun); err != nil {
+			return err
+		}
 	}
 
 	local, remote, err := discoverPruneCandidates(prog, repo, pruneOpts, base)
@@ -146,6 +157,37 @@ func RunHygiene(opts HygieneOptions) error {
 	}
 	prog.Success(msg)
 	return nil
+}
+
+// ensureHygieneOnBase checks out the base branch before local prune.
+func ensureHygieneOnBase(prog Progress, repo *gitpkg.Repo, base string, dryRun bool) error {
+	base = strings.TrimSpace(base)
+	if base == "" {
+		base = "main"
+	}
+	current, err := repo.CurrentBranch()
+	if err != nil {
+		return err
+	}
+	if strings.TrimSpace(current) == "" || current == base {
+		return nil
+	}
+
+	return prog.Step("Switching to "+base+" before prune", func() error {
+		if dryRun {
+			prog.Detail("git checkout " + base)
+			prog.Detail("(necessário: git branch -d valida merge no HEAD; branch atual não pode ser apagada)")
+			return nil
+		}
+		if err := repo.Checkout(base); err != nil {
+			return fmt.Errorf(
+				"hygiene precisa fazer checkout em %s para apagar branches (atual: %s): %w — faça commit/stash se a working tree bloquear o checkout",
+				base, current, err,
+			)
+		}
+		prog.Detail("git checkout " + base)
+		return nil
+	})
 }
 
 // CountHygieneCandidates returns local/remote prune candidate counts for UI pulse.
