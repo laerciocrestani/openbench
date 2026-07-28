@@ -965,9 +965,6 @@ function DashboardView({
   ciLoading,
   filesLoading,
   gitLoading,
-  commitActivity,
-  activityLoading,
-  activityAuthorOnly,
   terminal,
   onSelectFile,
   onStageFile,
@@ -983,7 +980,6 @@ function DashboardView({
   onDockerStop,
   onDockerRecreate,
   onDockerDown,
-  onToggleActivityAuthor,
 }: {
   dash: Dashboard
   busy: boolean
@@ -993,9 +989,6 @@ function DashboardView({
   ciLoading: boolean
   filesLoading: boolean
   gitLoading: boolean
-  commitActivity: CommitActivityView | null
-  activityLoading: boolean
-  activityAuthorOnly: boolean
   terminal: ReactNode
   onSelectFile: (f: ChangedFileView) => void
   onStageFile: (f: ChangedFileView) => void
@@ -1011,7 +1004,6 @@ function DashboardView({
   onDockerStop: () => void
   onDockerRecreate: () => void
   onDockerDown: () => void
-  onToggleActivityAuthor: () => void
 }) {
   const files = dash.changedFiles ?? []
   const contextIndex = dash.contextIndex
@@ -1060,8 +1052,8 @@ function DashboardView({
           </AlertDescription>
         </Alert>
       ) : null}
-      <div className="grid shrink-0 grid-cols-1 gap-4 lg:grid-cols-3 lg:grid-rows-2">
-        {/* Row 1: Docker | Branch | Calendar */}
+      <div className="grid shrink-0 grid-cols-1 gap-4 sm:grid-cols-2">
+        {/* Row 1: Docker | Branch */}
         <Card size="sm" className="min-h-0">
           <CardHeader
             className={cn(
@@ -1246,22 +1238,7 @@ function DashboardView({
           </Card>
         </button>
 
-        <Card size="sm" className="flex min-h-0 flex-col lg:row-span-2">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm">Calendar</CardTitle>
-          </CardHeader>
-          <CardContent className="flex min-h-0 flex-1 flex-col">
-            <CommitCalendarCard
-              activity={commitActivity}
-              loading={activityLoading}
-              authorOnly={activityAuthorOnly}
-              onToggleAuthorOnly={onToggleActivityAuthor}
-              className="min-h-0 flex-1"
-            />
-          </CardContent>
-        </Card>
-
-        {/* Row 2: Status | IA | (Calendar continues) */}
+        {/* Row 2: Status | IA */}
         <Card size="sm">
           <CardHeader>
             <CardTitle className="text-sm">Status</CardTitle>
@@ -1443,17 +1420,7 @@ function DashboardView({
         </CardContent>
       </Card>
 
-      <Card className="flex h-[min(26vh,14rem)] shrink-0 flex-col overflow-hidden">
-        <CardHeader className="shrink-0 py-3">
-          <CardTitle className="flex items-center gap-2 text-sm">
-            <Terminal className="size-4 text-muted-foreground" />
-            Terminal
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="min-h-0 flex-1 overflow-hidden p-0">
-          {terminal}
-        </CardContent>
-      </Card>
+      {terminal}
     </div>
   )
 }
@@ -3696,35 +3663,10 @@ function App() {
   const dockerVisible = dash?.docker?.visible ?? false
 
   return (
-    <div className="flex h-svh max-h-svh min-h-0 overflow-hidden bg-background text-foreground">
-      {dash && (
-        <ActivitySidebar open={activityOpen}>
-          <div className="flex h-full min-h-0 flex-col border-r border-sidebar-border bg-background">
-            <div className="flex shrink-0 items-center gap-2 border-b px-3 py-2">
-              <span className="text-sm font-medium">Atividade</span>
-              <span className="text-[11px] text-muted-foreground">timeline</span>
-            </div>
-            <div className="min-h-0 flex-1 p-3">
-              <TimelinePanel
-                timeline={timeline}
-                loading={timelineLoading}
-                onLoadMore={loadMoreTimeline}
-                onConfirmAction={handleTimelineConfirm}
-                onCheckoutBranch={handleTimelineCheckout}
-                onMergePR={(number) => void openMergeDialog(number)}
-                actionBusy={timelineActionBusy}
-                compact
-                className="h-full"
-              />
-            </div>
-          </div>
-        </ActivitySidebar>
-      )}
-
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-      {/* Header (draggable) */}
+    <div className="flex h-svh max-h-svh min-h-0 flex-col overflow-hidden bg-background text-foreground">
+      {/* Header — full page width */}
       <header
-        className="relative flex h-12 shrink-0 items-center border-b px-4 pl-20 [--wails-draggable:drag]"
+        className="relative flex h-12 w-full shrink-0 items-center border-b px-4 pl-20 [--wails-draggable:drag]"
         onDoubleClick={() => void Window.ToggleMaximise()}
       >
         {dash && (
@@ -3794,6 +3736,46 @@ function App() {
         </div>
       </header>
 
+      <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
+        {dash && (
+          <ActivitySidebar open={activityOpen} className="hidden md:flex">
+            <div className="flex h-full min-h-0 flex-col bg-background">
+              <div className="flex shrink-0 items-center gap-2 border-b px-3 py-2">
+                <span className="text-sm font-medium">Atividade</span>
+                <span className="text-[11px] text-muted-foreground">commits</span>
+              </div>
+              <div className="min-h-0 flex-1 overflow-hidden p-3">
+                <TimelinePanel
+                  timeline={timeline}
+                  loading={timelineLoading}
+                  onLoadMore={loadMoreTimeline}
+                  onConfirmAction={handleTimelineConfirm}
+                  onCheckoutBranch={handleTimelineCheckout}
+                  onMergePR={(number) => void openMergeDialog(number)}
+                  actionBusy={timelineActionBusy}
+                  compact
+                  className="h-full"
+                />
+              </div>
+              <div className="flex max-h-[42%] min-h-[12rem] shrink-0 flex-col border-t">
+                <div className="flex shrink-0 items-center gap-2 border-b px-3 py-2">
+                  <span className="text-sm font-medium">Calendar</span>
+                </div>
+                <div className="min-h-0 flex-1 overflow-y-auto p-3">
+                  <CommitCalendarCard
+                    activity={commitActivity}
+                    loading={activityLoading}
+                    authorOnly={activityAuthorOnly}
+                    onToggleAuthorOnly={() => setActivityAuthorOnly((v) => !v)}
+                    className="min-h-0"
+                  />
+                </div>
+              </div>
+            </div>
+          </ActivitySidebar>
+        )}
+
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
       {/* Body — altura travada no viewport */}
       <div
         className={
@@ -4202,15 +4184,29 @@ function App() {
               ciLoading={!ciReady}
               filesLoading={!filesReady}
               gitLoading={!gitReady}
-              commitActivity={commitActivity}
-              activityLoading={activityLoading}
-              activityAuthorOnly={activityAuthorOnly}
               terminal={
                 <TerminalPanel
                   projectPath={dash.path}
                   visible
                   dockerRequest={dockerShellReq}
-                />
+                >
+                  {({ toolbar, body }) => (
+                    <Card className="flex min-h-0 flex-1 flex-col overflow-hidden">
+                      <CardHeader className="shrink-0">
+                        <div className="flex min-w-0 items-center gap-2">
+                          <CardTitle className="flex shrink-0 items-center gap-2 text-sm">
+                            <Terminal className="size-4 text-muted-foreground" />
+                            Terminal
+                          </CardTitle>
+                          {toolbar}
+                        </div>
+                      </CardHeader>
+                      <CardContent className="min-h-0 flex-1 overflow-hidden">
+                        {body}
+                      </CardContent>
+                    </Card>
+                  )}
+                </TerminalPanel>
               }
               onSelectFile={(f) => void openFileDiff(f)}
               onStageFile={(f) => void stageOneFile(f)}
@@ -4226,7 +4222,6 @@ function App() {
               onDockerStop={() => void dockerAction("stop", () => AppService.DockerStop())}
               onDockerRecreate={() => openRecreate()}
               onDockerDown={() => void dockerAction("down", () => AppService.DockerDown())}
-              onToggleActivityAuthor={() => setActivityAuthorOnly((v) => !v)}
             />
           </>
         ) : (
@@ -4241,6 +4236,8 @@ function App() {
             onUnpin={(p) => void unpinProject(p)}
           />
         )}
+      </div>
+        </div>
       </div>
 
       {/* Diff — bottom sheet limitado ao viewport; scroll só no viewer */}
@@ -5645,7 +5642,6 @@ function App() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-      </div>
 
       <DoctorDialog
         open={doctorOpen}

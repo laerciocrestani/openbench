@@ -16,18 +16,26 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { cn } from "@/lib/utils"
-import { CalendarDays, Loader2 } from "lucide-react"
+import { Loader2 } from "lucide-react"
 
 function dayKey(d: Date): string {
   return format(d, "yyyy-MM-dd")
 }
 
 function intensityClass(count: number): string {
-  if (count <= 0) return "bg-muted/40"
-  if (count === 1) return "bg-emerald-500/25 hover:bg-emerald-500/35"
-  if (count <= 3) return "bg-emerald-500/45 hover:bg-emerald-500/55"
-  if (count <= 6) return "bg-emerald-600/70 text-primary-foreground hover:bg-emerald-600/80"
-  return "bg-emerald-700 text-primary-foreground hover:bg-emerald-700/90"
+  if (count <= 0) {
+    return "bg-muted/50 text-muted-foreground/70"
+  }
+  if (count === 1) {
+    return "bg-emerald-500/30 text-emerald-900 dark:text-emerald-100"
+  }
+  if (count <= 3) {
+    return "bg-emerald-500/55 text-emerald-950 dark:text-emerald-50"
+  }
+  if (count <= 6) {
+    return "bg-emerald-600 text-primary-foreground"
+  }
+  return "bg-emerald-700 text-primary-foreground"
 }
 
 export function CommitCalendarCard({
@@ -71,19 +79,17 @@ export function CommitCalendarCard({
   }
 
   return (
-    <div className={cn("flex h-full min-h-0 flex-col gap-2", className)}>
-      <div className="flex flex-wrap items-center gap-2">
-        <CalendarDays className="size-4 text-muted-foreground" />
-        <span className="text-sm font-medium">Commits</span>
+    <div className={cn("flex h-full min-h-0 flex-col gap-1.5", className)}>
+      <div className="flex flex-wrap items-center gap-1.5">
         {activity && (
-          <Badge variant="outline" className="font-normal">
-            {activity.total} em 12 meses
+          <Badge variant="outline" className="h-5 px-1.5 text-[10px] font-normal">
+            {activity.total} / 12m
           </Badge>
         )}
         <Button
           size="xs"
           variant={authorOnly ? "secondary" : "outline"}
-          className="ml-auto"
+          className="ml-auto h-5 px-1.5 text-[10px]"
           onClick={onToggleAuthorOnly}
           disabled={loading}
           title={
@@ -92,14 +98,14 @@ export function CommitCalendarCard({
               : "Mostrando commits de todos os autores"
           }
         >
-          {authorOnly ? "Meus commits" : "Todos"}
+          {authorOnly ? "Meus" : "Todos"}
         </Button>
       </div>
 
       {loading && !activity ? (
         <div className="flex flex-1 items-center justify-center gap-2 text-xs text-muted-foreground">
           <Loader2 className="size-3.5 animate-spin" />
-          Carregando calendário…
+          Carregando…
         </div>
       ) : (
         <>
@@ -112,13 +118,18 @@ export function CommitCalendarCard({
               if (date) openDay(date)
             }}
             showOutsideDays={false}
-            className="w-full p-0 [--cell-size:--spacing(6)]"
+            className="w-full p-0 [--cell-size:1.25rem]"
             classNames={{
               weekdays: "hidden",
               weekday: "hidden",
-              week: "mt-1 flex w-full gap-1",
-              day: "flex-1 p-0",
-              month: "flex w-full flex-col gap-2",
+              week: "mt-0.5 flex w-full justify-between gap-0.5",
+              day: "flex size-(--cell-size) items-center justify-center p-0",
+              month: "flex w-full flex-col gap-1",
+              month_caption:
+                "flex h-6 w-full items-center justify-center px-6 text-xs",
+              button_previous: "size-6 p-0",
+              button_next: "size-6 p-0",
+              nav: "absolute inset-x-0 top-0 flex w-full items-center justify-between",
             }}
             modifiers={{
               committed: committedDates,
@@ -128,13 +139,17 @@ export function CommitCalendarCard({
                 const key = dayKey(day.date)
                 const count = byDate.get(key)?.count ?? 0
                 const heat = intensityClass(count)
+                const label =
+                  count > 9 ? "9+" : count > 0 ? String(count) : ""
                 return (
                   <CalendarDayButton
                     day={day}
                     modifiers={modifiers}
                     className={cn(
                       dayClass,
-                      "h-7 min-h-7 gap-0 rounded-sm border-0 text-[10px] font-medium",
+                      "size-5 min-h-5 min-w-5 rounded-full border-0 p-0 text-[9px] leading-none font-semibold tabular-nums shadow-none",
+                      "hover:opacity-90 focus-visible:ring-1 focus-visible:ring-ring",
+                      "data-[selected-single=true]:ring-2 data-[selected-single=true]:ring-ring",
                       heat,
                     )}
                     title={
@@ -144,26 +159,28 @@ export function CommitCalendarCard({
                     }
                     {...props}
                   >
-                    {count > 0 ? count : null}
+                    {label || (
+                      <span className="size-1 rounded-full bg-current opacity-30" />
+                    )}
                   </CalendarDayButton>
                 )
               },
             }}
           />
 
-          <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
+          <div className="flex items-center gap-1 text-[9px] text-muted-foreground">
             <span>Menos</span>
-            <span className="size-2.5 rounded-sm bg-muted/40" />
-            <span className="size-2.5 rounded-sm bg-emerald-500/25" />
-            <span className="size-2.5 rounded-sm bg-emerald-500/45" />
-            <span className="size-2.5 rounded-sm bg-emerald-600/70" />
-            <span className="size-2.5 rounded-sm bg-emerald-700" />
+            <span className="size-2 rounded-full bg-muted/50" />
+            <span className="size-2 rounded-full bg-emerald-500/30" />
+            <span className="size-2 rounded-full bg-emerald-500/55" />
+            <span className="size-2 rounded-full bg-emerald-600" />
+            <span className="size-2 rounded-full bg-emerald-700" />
             <span>Mais</span>
           </div>
 
           {activity?.authorOnly && activity.authorEmail && (
-            <p className="truncate text-[10px] text-muted-foreground">
-              Autor: {activity.authorName || activity.authorEmail}
+            <p className="truncate text-[9px] text-muted-foreground">
+              {activity.authorName || activity.authorEmail}
             </p>
           )}
         </>

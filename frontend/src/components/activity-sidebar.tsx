@@ -23,7 +23,7 @@ function saveOpen(open: boolean) {
   }
 }
 
-/** Independent left Activity sidebar (does not share terminal SidebarProvider state). */
+/** Left column for activity timeline + calendar (below the full-width header). */
 export function useActivitySidebar(defaultOpen = true) {
   const [open, setOpenState] = useState(defaultOpen)
 
@@ -55,33 +55,18 @@ export function ActivitySidebar({
   children: ReactNode
   className?: string
 }) {
-  const state = open ? "expanded" : "collapsed"
+  if (!open) return null
 
   return (
-    <div
-      className={cn("group/activity peer hidden text-sidebar-foreground md:block", className)}
-      data-state={state}
-      data-collapsible={state === "collapsed" ? "offcanvas" : ""}
-      data-side="left"
+    <aside
       data-slot="activity-sidebar"
+      className={cn(
+        "flex h-full min-h-0 w-(--activity-sidebar-width) shrink-0 flex-col border-r bg-sidebar text-sidebar-foreground",
+        className,
+      )}
       style={{ ["--activity-sidebar-width" as string]: ACTIVITY_WIDTH }}
     >
-      <div
-        data-slot="activity-sidebar-gap"
-        className={cn(
-          "relative w-(--activity-sidebar-width) bg-transparent transition-[width] duration-200 ease-linear",
-          "group-data-[collapsible=offcanvas]/activity:w-0",
-        )}
-      />
-      <div
-        data-slot="activity-sidebar-container"
-        className={cn(
-          "fixed inset-y-0 left-0 z-10 hidden h-svh w-(--activity-sidebar-width) border-r bg-sidebar text-sidebar-foreground transition-[left] duration-200 ease-linear md:flex",
-          "group-data-[collapsible=offcanvas]/activity:left-[calc(var(--activity-sidebar-width)*-1)]",
-        )}
-      >
-        <div className="flex size-full flex-col">{children}</div>
-      </div>
-    </div>
+      {children}
+    </aside>
   )
 }

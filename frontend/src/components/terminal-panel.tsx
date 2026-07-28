@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useRef, useState, type ReactNode } from "react"
 import { Terminal } from "@xterm/xterm"
 import { FitAddon } from "@xterm/addon-fit"
 import { WebLinksAddon } from "@xterm/addon-web-links"
@@ -315,15 +315,16 @@ function TerminalPane({
       aria-hidden={!active}
       inert={!active ? true : undefined}
     >
-      <div className="flex shrink-0 items-center justify-end gap-1 border-b px-2 py-1">
+      <div className="absolute top-1.5 right-1.5 z-10">
         <Button
-          variant="ghost"
+          variant="secondary"
           size="icon-xs"
+          className="size-6 bg-background/80 shadow-sm backdrop-blur-sm"
           title="Reiniciar sessão"
           disabled={spec.kind === "docker" && !projectPath}
           onClick={() => void restart()}
         >
-          <RotateCcw />
+          <RotateCcw className="size-3" />
         </Button>
       </div>
 
@@ -334,7 +335,7 @@ function TerminalPane({
       />
 
       {spec.kind === "docker" && !projectPath && (
-        <div className="absolute inset-0 top-8 flex flex-col items-center justify-center gap-2 bg-[#0c0c0c]/95 p-6 text-center text-sm text-muted-foreground">
+        <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-[#0c0c0c]/95 p-6 text-center text-sm text-muted-foreground">
           <TerminalSquare className="size-8 opacity-40" />
           <p>Abra um projeto para usar o shell no container Docker.</p>
         </div>
@@ -343,14 +344,21 @@ function TerminalPane({
   )
 }
 
+export type TerminalPanelSlots = {
+  toolbar: ReactNode
+  body: ReactNode
+}
+
 export function TerminalPanel({
   projectPath,
   visible,
   dockerRequest,
+  children,
 }: {
   projectPath: string | null
   visible: boolean
   dockerRequest?: DockerShellRequest | null
+  children: (slots: TerminalPanelSlots) => ReactNode
 }) {
   const initial = useRef<Tab | null>(null)
   if (!initial.current) initial.current = hostTab()
@@ -432,84 +440,87 @@ export function TerminalPanel({
     return n
   }
 
-  return (
-    <div className="relative flex h-full min-h-0 flex-col">
-      <div className="flex shrink-0 items-center gap-0.5 border-b px-1 py-0.5">
-        <div className="flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto">
-          {tabs.map((tab, i) => {
-            const hi = hostIndex(tab, i)
-            const label = sessionLabel(
-              tab.spec,
-              projectPath,
-              hi ?? undefined
-            )
-            const title =
-              tab.spec.kind === "host"
-                ? projectPath || "~"
-                : label
-            const active = tab.tabId === activeId
-            return (
-              <div
-                key={tab.tabId}
-                className={cn(
-                  "group flex h-7 max-w-[9rem] shrink-0 items-center gap-0.5 rounded-md px-1.5 text-[11px]",
-                  active
-                    ? "bg-muted text-foreground"
-                    : "text-muted-foreground hover:bg-muted/60 hover:text-foreground"
-                )}
+  const toolbar = (
+    <div className="flex min-w-0 flex-1 items-center gap-0.5">
+      <div className="flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto">
+        {tabs.map((tab, i) => {
+          const hi = hostIndex(tab, i)
+          const label = sessionLabel(
+            tab.spec,
+            projectPath,
+            hi ?? undefined
+          )
+          const title =
+            tab.spec.kind === "host"
+              ? projectPath || "~"
+              : label
+          const active = tab.tabId === activeId
+          return (
+            <div
+              key={tab.tabId}
+              className={cn(
+                "group flex h-7 max-w-[9rem] shrink-0 items-center gap-0.5 rounded-md px-1.5 text-[11px]",
+                active
+                  ? "bg-muted text-foreground"
+                  : "text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+              )}
+            >
+              <button
+                type="button"
+                className="min-w-0 flex-1 truncate text-left font-mono"
+                title={title}
+                onClick={() => setActiveId(tab.tabId)}
               >
-                <button
-                  type="button"
-                  className="min-w-0 flex-1 truncate text-left font-mono"
-                  title={title}
-                  onClick={() => setActiveId(tab.tabId)}
-                >
-                  {label}
-                </button>
-                <button
-                  type="button"
-                  className={cn(
-                    "inline-flex size-4 shrink-0 items-center justify-center rounded-sm opacity-0 hover:bg-background/80 group-hover:opacity-100",
-                    active && "opacity-70"
-                  )}
-                  title="Fechar aba"
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    closeTab(tab.tabId)
-                  }}
-                >
-                  <X className="size-3" />
-                </button>
-              </div>
-            )
-          })}
-        </div>
-        <Button
-          variant="ghost"
-          size="icon-xs"
-          title={
-            tabs.length >= MAX_TABS
-              ? `Limite de ${MAX_TABS} terminais`
-              : "Novo terminal (host)"
-          }
-          disabled={tabs.length >= MAX_TABS}
-          onClick={addHostTab}
-        >
-          <Plus />
-        </Button>
+                {label}
+              </button>
+              <button
+                type="button"
+                className={cn(
+                  "inline-flex size-4 shrink-0 items-center justify-center rounded-sm opacity-0 hover:bg-background/80 group-hover:opacity-100",
+                  active && "opacity-70"
+                )}
+                title="Fechar aba"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  closeTab(tab.tabId)
+                }}
+              >
+                <X className="size-3" />
+              </button>
+            </div>
+          )
+        })}
       </div>
-
-      <div className="relative min-h-0 flex-1">
-        {tabs.map((tab) => (
-          <TerminalPane
-            key={tab.tabId}
-            projectPath={projectPath}
-            visible={visible}
-            active={tab.tabId === activeId}
-            spec={tab.spec}
-          />
-        ))}
-      </div>
+      <Button
+        variant="ghost"
+        size="icon-xs"
+        className="shrink-0"
+        title={
+          tabs.length >= MAX_TABS
+            ? `Limite de ${MAX_TABS} terminais`
+            : "Novo terminal (host)"
+        }
+        disabled={tabs.length >= MAX_TABS}
+        onClick={addHostTab}
+      >
+        <Plus />
+      </Button>
     </div>
   )
+
+  const body = (
+    <div className="relative h-full min-h-0 overflow-hidden rounded-lg ring-1 ring-foreground/10">
+      {tabs.map((tab) => (
+        <TerminalPane
+          key={tab.tabId}
+          projectPath={projectPath}
+          visible={visible}
+          active={tab.tabId === activeId}
+          spec={tab.spec}
+        />
+      ))}
+    </div>
+  )
+
+  return <>{children({ toolbar, body })}</>
 }
