@@ -95,7 +95,7 @@ const TOOLBAR_ACTIONS: ToolbarActionHelp[] = [
     icon: Trash2,
     summary: "Limpa branches já mergeadas ou absorvidas.",
     details:
-      "Remove candidatos locais e/ou no GitHub. Não altera a branch atual nem faz Sync — só higiene de refs antigas.",
+      "Faz checkout automático na base (main) e remove candidatos locais e/ou no GitHub. Assim a branch em que você estava também pode ser apagada. Não faz Sync (fast-forward) da base.",
   },
 ]
 

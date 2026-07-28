@@ -2049,7 +2049,15 @@ function App() {
       const res = await AppService.RunHygiene(mode, dash.baseBranch || "main")
       if (res) {
         setHygieneResult(res)
-        if (res.dashboard) applyDashboard(res.dashboard)
+        if (res.dashboard) {
+          setOpenPRReady(false)
+          setHygieneReady(false)
+          setCiReady(Boolean(res.dashboard.ciLabel))
+          setFilesReady(false)
+          setGitReady(false)
+          applyDashboard(res.dashboard)
+          setDashEpoch((n) => n + 1)
+        }
         await refreshStatuses()
       }
     } catch (e) {
@@ -4299,9 +4307,11 @@ function App() {
           ) : (
             <>
               <p className="text-sm text-muted-foreground">
-                Escolha como limpar branches já mergeadas/absorvidas em{" "}
-                <span className="font-mono text-foreground">{dash?.baseBranch || "main"}</span>.
-                Working tree dirty não impede a limpeza.
+                Antes de apagar, o openbench faz checkout em{" "}
+                <span className="font-mono text-foreground">{dash?.baseBranch || "main"}</span>{" "}
+                (necessário para remover a branch atual e para o{" "}
+                <span className="font-mono">git branch -d</span> validar merge na base).
+                Se o checkout falhar por working tree dirty, faça commit ou stash.
               </p>
               <div className="flex flex-wrap gap-2">
                 <Button
