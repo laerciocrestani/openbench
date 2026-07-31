@@ -26,9 +26,11 @@ type Config struct {
 	ChatFallbackModel    string   `yaml:"chat_fallback_model,omitempty"`
 	Language             string   `yaml:"language"`
 	BaseBranch           string   `yaml:"base_branch"`
-	CoAuthor             string   `yaml:"co_author"`
-	MaxDiffBytes         int      `yaml:"max_diff_bytes"`
-	InputPricePer1M      float64  `yaml:"input_price_per_1m,omitempty"`
+	CoAuthor             string      `yaml:"co_author"`
+	MaxDiffBytes         int         `yaml:"max_diff_bytes"`
+	CommitDetail         DetailLevel `yaml:"commit_detail,omitempty"`
+	PRDetail             DetailLevel `yaml:"pr_detail,omitempty"`
+	InputPricePer1M      float64     `yaml:"input_price_per_1m,omitempty"`
 	OutputPricePer1M     float64  `yaml:"output_price_per_1m,omitempty"`
 	ClearScreen          bool     `yaml:"clear_screen,omitempty"`
 	InteractiveUI        bool     `yaml:"interactive_ui,omitempty"`
@@ -44,6 +46,8 @@ func Default() Config {
 		Language:             "pt-BR",
 		BaseBranch:           "main",
 		MaxDiffBytes:         120000,
+		CommitDetail:         DetailStandard,
+		PRDetail:             DetailStandard,
 		InteractiveUI:        true,
 		UIColor:              true,
 		UIAutoRefreshSeconds: 5,
@@ -52,23 +56,35 @@ func Default() Config {
 }
 
 func Load() (*Config, error) {
+	return LoadForWorkDir("")
+}
+
+// LoadForWorkDir loads config preferring {workDir}/.openbench.yaml when present,
+// otherwise the usual local-cwd / global resolution used by Load().
+func LoadForWorkDir(workDir string) (*Config, error) {
 	cfg := Default()
 
-	localPath := LocalConfigPath()
-	if fileExists(localPath) {
-		if err := loadFile(localPath, &cfg); err != nil {
-			return nil, fmt.Errorf("carregar %s: %w", localPath, err)
+	if local := LocalConfigPathIn(workDir); fileExists(local) {
+		if err := loadFile(local, &cfg); err != nil {
+			return nil, fmt.Errorf("carregar %s: %w", local, err)
 		}
 	} else {
-		path, err := ConfigPath()
-		if err != nil {
-			return nil, err
-		}
-		if !fileExists(path) {
-			return nil, fmt.Errorf("config não encontrada. Execute: ob config init")
-		}
-		if err := loadFile(path, &cfg); err != nil {
-			return nil, fmt.Errorf("carregar %s: %w", path, err)
+		localPath := LocalConfigPath()
+		if fileExists(localPath) {
+			if err := loadFile(localPath, &cfg); err != nil {
+				return nil, fmt.Errorf("carregar %s: %w", localPath, err)
+			}
+		} else {
+			path, err := ConfigPath()
+			if err != nil {
+				return nil, err
+			}
+			if !fileExists(path) {
+				return nil, fmt.Errorf("config não encontrada. Execute: ob config init")
+			}
+			if err := loadFile(path, &cfg); err != nil {
+				return nil, fmt.Errorf("carregar %s: %w", path, err)
+			}
 		}
 	}
 
@@ -85,7 +101,21 @@ func Load() (*Config, error) {
 
 // LoadExisting reads saved config without requiring api_key (wizard and preferences).
 func LoadExisting() (*Config, string, error) {
+	return LoadExistingForDir("")
+}
+
+// LoadExistingForDir prefers {dir}/.openbench.yaml when present; otherwise LoadExisting cwd/global.
+// The returned path is the file that was read, or the global path when creating defaults.
+func LoadExistingForDir(dir string) (*Config, string, error) {
 	cfg := Default()
+
+	if local := LocalConfigPathIn(dir); fileExists(local) {
+		if err := loadFile(local, &cfg); err != nil {
+			return nil, "", fmt.Errorf("carregar %s: %w", local, err)
+		}
+		cfg.normalize()
+		return &cfg, local, nil
+	}
 
 	localPath := LocalConfigPath()
 	if fileExists(localPath) {
@@ -101,6 +131,7 @@ func LoadExisting() (*Config, string, error) {
 		return nil, "", err
 	}
 	if !fileExists(path) {
+		cfg.normalize()
 		return &cfg, path, nil
 	}
 	if err := loadFile(path, &cfg); err != nil {
@@ -132,6 +163,8 @@ func (c *Config) normalize() {
 	if c.MaxDiffBytes <= 0 {
 		c.MaxDiffBytes = 120000
 	}
+	c.CommitDetail = NormalizeDetailLevel(c.CommitDetail)
+	c.PRDetail = NormalizeDetailLevel(c.PRDetail)
 }
 
 // EffectiveChatModel returns the chat primary model, falling back to git model.
@@ -208,6 +241,8 @@ func (c *Config) Validate() error {
 	if c.MaxDiffBytes <= 0 {
 		c.MaxDiffBytes = 120000
 	}
+	c.CommitDetail = NormalizeDetailLevel(c.CommitDetail)
+	c.PRDetail = NormalizeDetailLevel(c.PRDetail)
 	return nil
 }
 

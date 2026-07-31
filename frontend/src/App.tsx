@@ -1242,6 +1242,13 @@ function App() {
   const [aiConfigPath, setAiConfigPath] = useState("")
   const [aiBusy, setAiBusy] = useState(false)
 
+  // Settings — detail levels (commit/PR)
+  const [commitDetail, setCommitDetail] = useState("standard")
+  const [prDetail, setPrDetail] = useState("standard")
+  const [detailHasProject, setDetailHasProject] = useState(false)
+  const [detailConfigPath, setDetailConfigPath] = useState("")
+  const [detailBusy, setDetailBusy] = useState(false)
+
   // Floating AI chat (MessageScroller)
   const [chatOpen, setChatOpen] = useState(false)
   const { open: activityOpen, setOpen: setActivityOpen, toggle: toggleActivity } =
@@ -2756,6 +2763,36 @@ function App() {
       }
     } catch (e) {
       setError(errText(e))
+    }
+    try {
+      const d = await AppService.GetDetailSettings()
+      if (d) {
+        setCommitDetail(d.commitDetail || "standard")
+        setPrDetail(d.prDetail || "standard")
+        setDetailHasProject(Boolean(d.hasProject))
+        setDetailConfigPath(d.configPath || "")
+      }
+    } catch (e) {
+      setError(errText(e))
+    }
+  }
+
+  const saveDetailSettings = async (nextCommit: string, nextPR: string) => {
+    setDetailBusy(true)
+    setError(null)
+    try {
+      await AppService.SetDetailSettings(nextCommit, nextPR)
+      setCommitDetail(nextCommit)
+      setPrDetail(nextPR)
+      const d = await AppService.GetDetailSettings()
+      if (d) {
+        setDetailConfigPath(d.configPath || "")
+        setDetailHasProject(Boolean(d.hasProject))
+      }
+    } catch (e) {
+      setError(errText(e))
+    } finally {
+      setDetailBusy(false)
     }
   }
 
@@ -4883,6 +4920,69 @@ function App() {
                   />
                   Validar antes do PR
                 </Label>
+              </section>
+
+              <Separator />
+
+              <section className="flex flex-col gap-3">
+                <h3 className="text-xs font-medium text-muted-foreground uppercase">
+                  Profundidade da IA
+                </h3>
+                <p className="text-xs text-muted-foreground">
+                  Controla quanto do diff entra no prompt e a densidade do texto
+                  gerado. Salvo em{" "}
+                  <span className="font-mono">.openbench.yaml</span> do projeto.
+                </p>
+                {!detailHasProject ? (
+                  <p className="text-xs text-amber-600 dark:text-amber-400">
+                    Abra um projeto para configurar Minimal / Standard / Thorough.
+                  </p>
+                ) : null}
+                <div className="flex flex-col gap-1.5">
+                  <Label htmlFor="commit-detail">Commit</Label>
+                  <Select
+                    value={commitDetail}
+                    disabled={!detailHasProject || detailBusy}
+                    onValueChange={(v) => {
+                      const next = String(v ?? "standard")
+                      void saveDetailSettings(next, prDetail)
+                    }}
+                  >
+                    <SelectTrigger id="commit-detail" className="w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="minimal">Minimal</SelectItem>
+                      <SelectItem value="standard">Standard</SelectItem>
+                      <SelectItem value="thorough">Thorough</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <Label htmlFor="pr-detail">PR</Label>
+                  <Select
+                    value={prDetail}
+                    disabled={!detailHasProject || detailBusy}
+                    onValueChange={(v) => {
+                      const next = String(v ?? "standard")
+                      void saveDetailSettings(commitDetail, next)
+                    }}
+                  >
+                    <SelectTrigger id="pr-detail" className="w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="minimal">Minimal</SelectItem>
+                      <SelectItem value="standard">Standard</SelectItem>
+                      <SelectItem value="thorough">Thorough</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                {detailConfigPath ? (
+                  <p className="font-mono text-[11px] text-muted-foreground">
+                    {detailConfigPath}
+                  </p>
+                ) : null}
               </section>
 
               {prefs?.pinned && prefs.pinned.length > 0 && (

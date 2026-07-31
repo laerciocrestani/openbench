@@ -60,7 +60,7 @@ func TestFormatSplitSuggestion(t *testing.T) {
 }
 
 func TestBuildPrompt_includesStatAndRules(t *testing.T) {
-	prompt := buildPrompt("diff-body", " foo.go | 1 +", "pt-BR")
+	prompt := buildPrompt("diff-body", " foo.go | 1 +", "pt-BR", "standard")
 	for _, want := range []string{
 		"git diff --stat",
 		"foo.go",
@@ -71,5 +71,45 @@ func TestBuildPrompt_includesStatAndRules(t *testing.T) {
 		if !strings.Contains(prompt, want) {
 			t.Fatalf("prompt missing %q:\n%s", want, prompt)
 		}
+	}
+}
+
+func TestBuildPrompt_detailLevels(t *testing.T) {
+	minimal := buildPrompt("d", "a.go | 1 +", "pt-BR", "minimal")
+	if !strings.Contains(minimal, "1-3 bullets") {
+		t.Fatalf("minimal prompt missing short body rule:\n%s", minimal)
+	}
+	thorough := buildPrompt("d", "a.go | 1 +", "pt-BR", "thorough")
+	if !strings.Contains(thorough, "4-8 bullets") {
+		t.Fatalf("thorough prompt missing dense body rule:\n%s", thorough)
+	}
+}
+
+func TestBuildPRPrompt_detailLevels(t *testing.T) {
+	minimal := buildPRPrompt("d", "feat", "main", "pt-BR", "", "minimal")
+	if !strings.Contains(minimal, "1-2 bullets") {
+		t.Fatalf("minimal PR prompt missing short summary rule:\n%s", minimal)
+	}
+	standard := buildPRPrompt("d", "feat", "main", "pt-BR", "abc", "standard")
+	if !strings.Contains(standard, "3-8 bullets") {
+		t.Fatalf("standard PR prompt missing changes rule:\n%s", standard)
+	}
+	thorough := buildPRPrompt("d", "feat", "main", "pt-BR", "", "thorough")
+	if !strings.Contains(thorough, "5-10 bullets") {
+		t.Fatalf("thorough PR prompt missing dense changes rule:\n%s", thorough)
+	}
+}
+
+func TestTruncateDiff(t *testing.T) {
+	in := strings.Repeat("a", 100)
+	got := truncateDiff(in, 50)
+	if !strings.Contains(got, "[diff truncado]") {
+		t.Fatalf("expected truncation marker: %s", got)
+	}
+	if len(got) <= 50 {
+		t.Fatalf("truncated output too short: %d", len(got))
+	}
+	if truncateDiff(in, 200) != in {
+		t.Fatal("expected no truncation under limit")
 	}
 }

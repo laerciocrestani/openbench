@@ -41,6 +41,7 @@ var (
 	dockerFollow        bool
 	dockerComposeFile   string
 	dockerPresetService string
+	detail              string
 )
 
 func main() {
@@ -69,6 +70,7 @@ func main() {
 		RunE:  runCommit,
 	}
 	commitCmd.Flags().BoolVar(&noAdd, "no-add", false, "não executa git add .")
+	commitCmd.Flags().StringVar(&detail, "detail", "", "profundidade do contexto/saída: minimal|standard|thorough (override do .openbench.yaml)")
 
 	pushCmd := &cobra.Command{
 		Use:   "push",
@@ -85,6 +87,7 @@ func main() {
 	prCmd.Flags().BoolVar(&noAdd, "no-add", false, "não executa git add .")
 	prCmd.Flags().BoolVar(&draft, "draft", false, "cria PR como draft")
 	prCmd.Flags().StringVar(&base, "base", "", "branch base (default: config base_branch)")
+	prCmd.Flags().StringVar(&detail, "detail", "", "profundidade do contexto/saída: minimal|standard|thorough (override do .openbench.yaml)")
 
 	prViewCmd := &cobra.Command{
 		Use:   "view",
@@ -612,6 +615,7 @@ func opts() app.Options {
 		Draft:   draft,
 		Base:    base,
 		Verbose: verbose,
+		Detail:  detail,
 	}
 }
 

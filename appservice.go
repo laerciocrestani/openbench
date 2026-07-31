@@ -190,6 +190,16 @@ func (s *AppService) SetValidatePR(enabled bool) error {
 	return desktop.SavePrefs(prefs)
 }
 
+// GetDetailSettings returns commit/PR detail levels for the open project.
+func (s *AppService) GetDetailSettings() (*desktop.DetailSettingsView, error) {
+	return desktop.LoadDetailSettings(s.currentPath())
+}
+
+// SetDetailSettings persists commit/PR detail levels to the open project's .openbench.yaml.
+func (s *AppService) SetDetailSettings(commitDetail, prDetail string) error {
+	return desktop.SaveDetailSettings(s.currentPath(), commitDetail, prDetail)
+}
+
 // PickDirectory opens a native folder picker and returns the selected path.
 // Returns error "cancelled" when the user dismisses the dialog.
 func (s *AppService) PickDirectory(title string) (string, error) {

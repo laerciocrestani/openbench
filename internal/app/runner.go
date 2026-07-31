@@ -22,6 +22,7 @@ type Options struct {
 	Draft               bool
 	Base                string
 	Verbose             bool
+	Detail              string // optional override: minimal|standard|thorough
 	WorkDir             string // optional; when set, git/gh run in this directory
 	UI                  *ui.Session
 	Progress            Progress
@@ -286,8 +287,11 @@ func RunPR(ctx context.Context, opts Options) (*Result, error) {
 	}
 	ctx = withAINotices(ctx, prog)
 
-	cfg, err := config.Load()
+	cfg, err := config.LoadForWorkDir(opts.WorkDir)
 	if err != nil {
+		return nil, err
+	}
+	if err := applyDetailOverride(cfg, opts, true); err != nil {
 		return nil, err
 	}
 
@@ -450,8 +454,11 @@ func RunPR(ctx context.Context, opts Options) (*Result, error) {
 
 func commitFlow(ctx context.Context, opts Options, prog Progress) (*Result, ai.Provider, error) {
 	ctx = withAINotices(ctx, prog)
-	cfg, err := config.Load()
+	cfg, err := config.LoadForWorkDir(opts.WorkDir)
 	if err != nil {
+		return nil, nil, err
+	}
+	if err := applyDetailOverride(cfg, opts, false); err != nil {
 		return nil, nil, err
 	}
 
@@ -681,6 +688,23 @@ func quoteMessage(msg string) string {
 		return fmt.Sprintf("%q...", msg[:80])
 	}
 	return fmt.Sprintf("%q", msg)
+}
+
+// applyDetailOverride sets commit/PR detail from opts.Detail when provided.
+// For PR flows (forPR=true), the same level applies to both commit and PR generation.
+func applyDetailOverride(cfg *config.Config, opts Options, forPR bool) error {
+	if cfg == nil || strings.TrimSpace(opts.Detail) == "" {
+		return nil
+	}
+	level, err := config.ParseDetailLevel(opts.Detail)
+	if err != nil {
+		return err
+	}
+	cfg.CommitDetail = level
+	if forPR {
+		cfg.PRDetail = level
+	}
+	return nil
 }
 
 func openRepo(workDir string) (*gitpkg.Repo, error) {

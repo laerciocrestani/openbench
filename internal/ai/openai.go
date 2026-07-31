@@ -61,8 +61,9 @@ func (c *openAIClient) UsageStats() UsageSummary {
 }
 
 func (c *openAIClient) SuggestCommit(ctx context.Context, diff, diffStat, lang string) (*CommitSuggestion, error) {
-	diff = truncateDiff(diff, c.cfg.MaxDiffBytes)
-	prompt := buildPrompt(diff, diffStat, lang)
+	detail := c.cfg.EffectiveCommitDetail()
+	diff = truncateDiff(diff, c.cfg.DiffBytesFor(detail))
+	prompt := buildPrompt(diff, diffStat, lang, detail)
 
 	var lastErr error
 	for attempt := 0; attempt < 2; attempt++ {
@@ -75,13 +76,14 @@ func (c *openAIClient) SuggestCommit(ctx context.Context, diff, diffStat, lang s
 			return suggestion, nil
 		}
 		lastErr = err
-		prompt = buildPrompt(diff, diffStat, lang) + "\n\nERRO: resposta anterior inválida. Retorne APENAS JSON válido."
+		prompt = buildPrompt(diff, diffStat, lang, detail) + "\n\nERRO: resposta anterior inválida. Retorne APENAS JSON válido."
 	}
 	return nil, lastErr
 }
 
 func (c *openAIClient) SuggestPR(ctx context.Context, diff, branch, base, lang, commitLog string) (*PRSuggestion, error) {
-	return suggestPRWithRetry(ctx, diff, branch, base, lang, commitLog, c.cfg.MaxDiffBytes, c.chat)
+	detail := c.cfg.EffectivePRDetail()
+	return suggestPRWithRetry(ctx, diff, branch, base, lang, commitLog, c.cfg.DiffBytesFor(detail), detail, c.chat)
 }
 
 func (c *openAIClient) ExplainHealth(ctx context.Context, facts, lang string) (*HealthExplanation, error) {

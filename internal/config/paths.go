@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 const (
@@ -34,13 +35,21 @@ func ConfigPath() (string, error) {
 	return filepath.Join(dir, "config.yaml"), nil
 }
 
-// LocalConfigPath returns the per-project config path.
+// LocalConfigPath returns the per-project config path for the current working directory.
 func LocalConfigPath() string {
 	wd, err := os.Getwd()
 	if err != nil {
 		return ""
 	}
-	return filepath.Join(wd, LocalFileName)
+	return LocalConfigPathIn(wd)
+}
+
+// LocalConfigPathIn returns {dir}/.openbench.yaml.
+func LocalConfigPathIn(dir string) string {
+	if strings.TrimSpace(dir) == "" {
+		return ""
+	}
+	return filepath.Join(dir, LocalFileName)
 }
 
 // DataDir returns ~/.config/openbench.

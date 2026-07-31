@@ -110,11 +110,26 @@ func (e CostEstimate) Format(provider config.Provider) string {
 
 // DescribePreparedInput resume o que será enviado ao modelo antes da chamada.
 func DescribePreparedInput(cfg *config.Config, diff, diffStat, task string) string {
-	diff = truncateDiff(diff, cfg.MaxDiffBytes)
+	detail := config.DetailStandard
+	if cfg != nil {
+		switch strings.ToLower(strings.TrimSpace(task)) {
+		case "pr":
+			detail = cfg.EffectivePRDetail()
+		default:
+			detail = cfg.EffectiveCommitDetail()
+		}
+		diff = truncateDiff(diff, cfg.DiffBytesFor(detail))
+	}
 	tokens := estimateInputTokens(diff+diffStat, task)
-	line := fmt.Sprintf("Input: ~%d tokens · modelo %s", tokens, cfg.Model)
-	if fb := strings.TrimSpace(cfg.FallbackModel); fb != "" && fb != cfg.Model {
-		line += fmt.Sprintf(" · fallback %s", fb)
+	model := ""
+	if cfg != nil {
+		model = cfg.Model
+	}
+	line := fmt.Sprintf("Input: ~%d tokens · modelo %s · detail %s", tokens, model, detail)
+	if cfg != nil {
+		if fb := strings.TrimSpace(cfg.FallbackModel); fb != "" && fb != cfg.Model {
+			line += fmt.Sprintf(" · fallback %s", fb)
+		}
 	}
 	return line
 }

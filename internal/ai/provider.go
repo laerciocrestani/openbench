@@ -39,7 +39,8 @@ func New(cfg *config.Config) (Provider, error) {
 	}
 }
 
-func buildPrompt(diff, diffStat, lang string) string {
+func buildPrompt(diff, diffStat, lang string, detail config.DetailLevel) string {
+	detail = config.NormalizeDetailLevel(detail)
 	var b strings.Builder
 	b.WriteString(`Analise o git diff abaixo e gere uma mensagem de commit no formato Conventional Commits.
 
@@ -58,10 +59,9 @@ Regras:
 	b.WriteString(`
 - type deve ser um dos valores Conventional Commits
 - title sem ponto final, máximo 72 caracteres
-- body com 2-6 bullets cobrindo TODAS as áreas alteradas (agrupadas por contexto)
-- cada área/arquivo relevante do resumo deve aparecer no body; não omita mudanças
-- se houver mudanças não relacionadas entre si, use title amplo (sem scope restrito) e detalhe cada área no body
-- se o ideal for commits separados, inclua em notes uma sugestão objetiva de split
+`)
+	b.WriteString(commitDetailRules(detail))
+	b.WriteString(`
 - se scope não aplicável ou abrange múltiplas áreas, use string vazia
 - não invente funcionalidades que não aparecem no diff
 - foque no porquê e no impacto, não em linha a linha
@@ -75,6 +75,27 @@ Diff:
 `)
 	b.WriteString(diff)
 	return b.String()
+}
+
+func commitDetailRules(detail config.DetailLevel) string {
+	switch config.NormalizeDetailLevel(detail) {
+	case config.DetailMinimal:
+		return `- body com 1-3 bullets curtos e de alto nível (visão geral)
+- cubra as áreas principais do resumo (--stat); omita microrrefactors
+- notes: use [] salvo risco óbvio ou split claramente necessário`
+	case config.DetailThorough:
+		return `- body com 4-8 bullets densos cobrindo TODAS as áreas alteradas (agrupadas por contexto)
+- cada área/arquivo relevante do resumo deve aparecer no body; não omita mudanças
+- explique impacto, motivações e interações entre áreas quando aparente no diff
+- se houver mudanças não relacionadas, use title amplo e detalhe cada área no body
+- se o ideal for commits separados, inclua em notes uma sugestão objetiva de split
+- notes: inclua riscos, breaking changes ou follow-ups quando houver indício no diff`
+	default:
+		return `- body com 2-6 bullets cobrindo TODAS as áreas alteradas (agrupadas por contexto)
+- cada área/arquivo relevante do resumo deve aparecer no body; não omita mudanças
+- se houver mudanças não relacionadas entre si, use title amplo (sem scope restrito) e detalhe cada área no body
+- se o ideal for commits separados, inclua em notes uma sugestão objetiva de split`
+	}
 }
 
 func parseSuggestion(raw string) (*CommitSuggestion, error) {
@@ -101,7 +122,7 @@ func parseSuggestion(raw string) (*CommitSuggestion, error) {
 }
 
 func truncateDiff(diff string, maxBytes int) string {
-	if len(diff) <= maxBytes {
+	if maxBytes <= 0 || len(diff) <= maxBytes {
 		return diff
 	}
 	return diff[:maxBytes] + "\n\n... [diff truncado] ..."
