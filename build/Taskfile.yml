@@ -191,15 +191,21 @@ tasks:
       - wails3 generate bindings -f '{{.BUILD_FLAGS}}' -clean=true{{if eq .OBFUSCATED "true"}} -obfuscated{{end}} -ts -i
 
   generate:icons:
-    summary: Generates Windows `.ico` and Mac `.icns` from build/appicon.png (avatar-based). Avoid Icon Composer Assets.car so the dock uses icons.icns.
+    summary: Syncs avatar.png → appicon.png and generates Windows `.ico` / Mac `.icns`. Avoid Icon Composer Assets.car so the dock uses icons.icns.
     run: once
     dir: build
     sources:
+      - "../avatar.png"
       - "appicon.png"
     generates:
       - "darwin/icons.icns"
       - "windows/icon.ico"
     cmds:
+      - sips -z 1024 1024 ../avatar.png --out appicon.png
+      - sips -z 128 128 ../avatar.png --out trayicon.png
+      - sips -z 256 256 ../avatar.png --out ../frontend/public/favicon.png
+      - sips -z 1024 1024 ../avatar.png --out ../frontend/public/openbench.png
+      - cp appicon.png ios/icon.png
       - wails3 generate icons -input appicon.png -macfilename darwin/icons.icns -windowsfilename windows/icon.ico
 
   dev:frontend:

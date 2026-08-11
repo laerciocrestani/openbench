@@ -132,11 +132,42 @@ func resolveShell() (string, []string) {
 	return "/bin/sh", []string{"-i"}
 }
 
+const terminalFlushInterval = 33 * time.Millisecond
+
 func (s *TerminalSession) readLoop() {
 	buf := make([]byte, 32*1024)
 	var pending []byte
-	flush := time.NewTicker(16 * time.Millisecond)
-	defer flush.Stop()
+	// Coalesce PTY output with a one-shot timer so idle sessions do not wake
+	// the CPU at ~60 Hz (a permanent ticker drained battery on macOS).
+	var flushTimer *time.Timer
+	flushCh := make(chan struct{}, 1)
+	armFlush := func() {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		if flushTimer != nil {
+			return
+		}
+		flushTimer = time.AfterFunc(terminalFlushInterval, func() {
+			select {
+			case flushCh <- struct{}{}:
+			default:
+			}
+		})
+	}
+	emitPending := func() {
+		s.mu.Lock()
+		chunk := pending
+		pending = nil
+		closed := s.closed
+		if flushTimer != nil {
+			flushTimer.Stop()
+			flushTimer = nil
+		}
+		s.mu.Unlock()
+		if len(chunk) > 0 && !closed && s.emit != nil {
+			s.emit("terminal:data", base64.StdEncoding.EncodeToString(chunk))
+		}
+	}
 
 	done := make(chan struct{})
 	go func() {
@@ -146,7 +177,11 @@ func (s *TerminalSession) readLoop() {
 			if n > 0 {
 				s.mu.Lock()
 				pending = append(pending, buf[:n]...)
+				needArm := flushTimer == nil
 				s.mu.Unlock()
+				if needArm {
+					armFlush()
+				}
 			}
 			if err != nil {
 				return
@@ -157,24 +192,10 @@ func (s *TerminalSession) readLoop() {
 	for {
 		select {
 		case <-done:
-			s.mu.Lock()
-			chunk := pending
-			pending = nil
-			closed := s.closed
-			s.mu.Unlock()
-			if len(chunk) > 0 && !closed && s.emit != nil {
-				s.emit("terminal:data", base64.StdEncoding.EncodeToString(chunk))
-			}
+			emitPending()
 			return
-		case <-flush.C:
-			s.mu.Lock()
-			chunk := pending
-			pending = nil
-			closed := s.closed
-			s.mu.Unlock()
-			if len(chunk) > 0 && !closed && s.emit != nil {
-				s.emit("terminal:data", base64.StdEncoding.EncodeToString(chunk))
-			}
+		case <-flushCh:
+			emitPending()
 		}
 	}
 }

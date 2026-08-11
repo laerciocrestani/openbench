@@ -18,6 +18,7 @@ type StatusHub struct {
 	emit     StatusEmitter
 	stopCh   chan struct{}
 	running  bool
+	paused   bool
 	tick     int
 	interval time.Duration
 }
@@ -28,7 +29,7 @@ func NewStatusHub(emit StatusEmitter) *StatusHub {
 		aliases:  map[string]string{},
 		cache:    map[string]ProjectStatus{},
 		emit:     emit,
-		interval: 5 * time.Second,
+		interval: 15 * time.Second,
 	}
 }
 
@@ -80,6 +81,20 @@ func (h *StatusHub) SetActive(path string) {
 	h.active = path
 }
 
+// SetPaused suspends background polling (window hidden / app inactive).
+func (h *StatusHub) SetPaused(paused bool) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.paused = paused
+}
+
+// Paused reports whether background polling is suspended.
+func (h *StatusHub) Paused() bool {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.paused
+}
+
 // Snapshot returns cached statuses in pinned order.
 func (h *StatusHub) Snapshot() []ProjectStatus {
 	h.mu.Lock()
@@ -99,6 +114,24 @@ func (h *StatusHub) Snapshot() []ProjectStatus {
 	return out
 }
 
+// CacheStatus upserts one project status without triggering a poll.
+func (h *StatusHub) CacheStatus(st ProjectStatus) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	key := st.Path
+	for _, p := range h.paths {
+		if samePath(p, st.Path) {
+			key = p
+			break
+		}
+	}
+	st.Path = key
+	if alias := h.aliases[key]; alias != "" {
+		st.Alias = alias
+	}
+	h.cache[key] = st
+}
+
 // RefreshNow runs one poll cycle synchronously (light, no PR except active).
 func (h *StatusHub) RefreshNow() []ProjectStatus {
 	h.poll(false)
@@ -115,6 +148,12 @@ func (h *StatusHub) loop(stop <-chan struct{}) {
 		case <-stop:
 			return
 		case <-ticker.C:
+			h.mu.Lock()
+			paused := h.paused
+			h.mu.Unlock()
+			if paused {
+				continue
+			}
 			h.poll(false)
 		}
 	}
@@ -122,6 +161,10 @@ func (h *StatusHub) loop(stop <-chan struct{}) {
 
 func (h *StatusHub) poll(forcePR bool) {
 	h.mu.Lock()
+	if h.paused && !forcePR {
+		h.mu.Unlock()
+		return
+	}
 	paths := append([]string{}, h.paths...)
 	active := h.active
 	aliases := map[string]string{}
@@ -136,7 +179,7 @@ func (h *StatusHub) poll(forcePR bool) {
 		return
 	}
 
-	includePRActive := forcePR || tick%12 == 0 // ~60s with 5s interval
+	includePRActive := forcePR || tick%4 == 0 // ~60s with 15s interval
 
 	var wg sync.WaitGroup
 	sem := make(chan struct{}, 3) // cap parallelism

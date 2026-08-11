@@ -14,11 +14,6 @@ var assets embed.FS
 //go:embed build/appicon.png
 var appIcon []byte
 
-// Tray template icon: black + alpha (macOS tints it to match the menu bar theme).
-//
-//go:embed build/trayicon-template.png
-var trayIconTemplate []byte
-
 func init() {
 	application.RegisterEvent[string]("tray:action")
 	application.RegisterEvent[desktop.ProjectStatus]("project:status")
@@ -38,6 +33,7 @@ func main() {
 	app := application.New(application.Options{
 		Name:        "openbench",
 		Description: "Desktop app for AI commits, PRs and Docker workflows",
+		Icon:        appIcon,
 		Services: []application.Service{
 			application.NewService(svc),
 		},
@@ -61,6 +57,9 @@ func main() {
 			InvisibleTitleBarHeight: 52,
 			Backdrop:                application.MacBackdropTranslucent,
 			TitleBar:                application.MacTitleBarHiddenInset,
+		},
+		Linux: application.LinuxWindow{
+			Icon: appIcon,
 		},
 		BackgroundColour: application.NewRGB(14, 16, 22),
 		URL:              "/",

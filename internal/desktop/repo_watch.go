@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/fsnotify/fsnotify"
@@ -14,7 +15,7 @@ import (
 
 var (
 	repoWatchDebounce     = 400 * time.Millisecond
-	repoWatchPollInterval = 2 * time.Second
+	repoWatchPollInterval = 5 * time.Second
 )
 
 // RepoWatchCallback is invoked (debounced) when the working tree may have changed.
@@ -27,8 +28,9 @@ var statusFingerprinter = gitpkg.StatusFingerprintAt
 // status fingerprint. Full-tree fsnotify is unsafe on macOS: kqueue opens one
 // FD per file in each watched directory and large repos hit EMFILE.
 type RepoWatcher struct {
-	done chan struct{}
-	once sync.Once
+	done   chan struct{}
+	once   sync.Once
+	paused atomic.Bool
 }
 
 // StartRepoWatcher watches git metadata under root and polls fingerprints.
@@ -70,6 +72,14 @@ func (rw *RepoWatcher) Close() {
 	rw.once.Do(func() { close(rw.done) })
 }
 
+// SetPaused suspends fingerprint polling and change notifications (app backgrounded).
+func (rw *RepoWatcher) SetPaused(paused bool) {
+	if rw == nil {
+		return
+	}
+	rw.paused.Store(paused)
+}
+
 func (rw *RepoWatcher) loop(root string, watcher *fsnotify.Watcher, onChange RepoWatchCallback) {
 	defer watcher.Close()
 
@@ -80,7 +90,7 @@ func (rw *RepoWatcher) loop(root string, watcher *fsnotify.Watcher, onChange Rep
 	)
 
 	notify := func() {
-		if onChange == nil {
+		if onChange == nil || rw.paused.Load() {
 			return
 		}
 		onChange()
@@ -135,6 +145,9 @@ func (rw *RepoWatcher) loop(root string, watcher *fsnotify.Watcher, onChange Rep
 			return
 
 		case <-ticker.C:
+			if rw.paused.Load() {
+				continue
+			}
 			pollFingerprint()
 
 		case _, ok := <-watcher.Errors:
@@ -145,6 +158,9 @@ func (rw *RepoWatcher) loop(root string, watcher *fsnotify.Watcher, onChange Rep
 		case event, ok := <-watcher.Events:
 			if !ok {
 				return
+			}
+			if rw.paused.Load() {
+				continue
 			}
 			if event.Has(fsnotify.Chmod) && !event.Has(fsnotify.Write|fsnotify.Create|fsnotify.Remove|fsnotify.Rename) {
 				continue

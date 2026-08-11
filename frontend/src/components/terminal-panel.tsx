@@ -92,24 +92,35 @@ function TerminalPane({
   visible,
   active,
   spec,
+  autoStart,
 }: {
   projectPath: string | null
   visible: boolean
   active: boolean
   spec: TerminalSessionSpec
+  /** Host shells stay idle until the user focuses/clicks (saves CPU/battery). */
+  autoStart: boolean
 }) {
   const hostRef = useRef<HTMLDivElement>(null)
   const termRef = useRef<Terminal | null>(null)
   const fitRef = useRef<FitAddon | null>(null)
   const sessionIdRef = useRef<string | null>(null)
   const startedRef = useRef(false)
+  const [armed, setArmed] = useState(() => autoStart || spec.kind === "docker")
+  const [focused, setFocused] = useState(false)
+
+  useEffect(() => {
+    if (autoStart || spec.kind === "docker") {
+      setArmed(true)
+    }
+  }, [autoStart, spec.kind, spec])
 
   useEffect(() => {
     const host = hostRef.current
     if (!host || termRef.current) return
 
     const term = new Terminal({
-      cursorBlink: true,
+      cursorBlink: false,
       cursorStyle: "block",
       disableStdin: false,
       fontSize: 12,
@@ -161,11 +172,19 @@ function TerminalPane({
     const ro = new ResizeObserver(() => onResize())
     ro.observe(host)
 
-    const focusTerm = () => term.focus()
+    const focusTerm = () => {
+      setArmed(true)
+      setFocused(true)
+      term.focus()
+    }
+    const onBlur = () => setFocused(false)
     host.addEventListener("mousedown", focusTerm)
+    term.textarea?.addEventListener("blur", onBlur)
+    term.textarea?.addEventListener("focus", () => setFocused(true))
 
     return () => {
       host.removeEventListener("mousedown", focusTerm)
+      term.textarea?.removeEventListener("blur", onBlur)
       ro.disconnect()
       const id = sessionIdRef.current
       if (id) {
@@ -178,6 +197,12 @@ function TerminalPane({
       startedRef.current = false
     }
   }, [])
+
+  useEffect(() => {
+    const term = termRef.current
+    if (!term) return
+    term.options.cursorBlink = Boolean(active && focused && armed)
+  }, [active, focused, armed])
 
   useEffect(() => {
     const offData = Events.On("terminal:data", (ev) => {
@@ -216,11 +241,13 @@ function TerminalPane({
     if (dims && id) {
       void AppService.TerminalResize(id, dims.cols, dims.rows).catch(() => {})
     }
-    requestAnimationFrame(() => termRef.current?.focus())
-  }, [visible, active])
+    if (armed) {
+      requestAnimationFrame(() => termRef.current?.focus())
+    }
+  }, [visible, active, armed])
 
   useEffect(() => {
-    if (!visible || !termRef.current || !fitRef.current) return
+    if (!visible || !armed || !termRef.current || !fitRef.current) return
     if (spec.kind === "docker" && !projectPath) return
 
     let cancelled = false
@@ -272,9 +299,10 @@ function TerminalPane({
       }
     }
     // Do not depend on `active`: switching tabs must not spawn extra PTYs.
-  }, [visible, projectPath, spec])
+  }, [visible, projectPath, spec, armed])
 
   const restart = async () => {
+    setArmed(true)
     if (!fitRef.current || !termRef.current) return
     if (spec.kind === "docker" && !projectPath) return
     fitRef.current.fit()
@@ -331,8 +359,27 @@ function TerminalPane({
       <div
         ref={hostRef}
         className="min-h-0 flex-1 cursor-text overflow-hidden bg-[#0c0c0c] p-1 [&_.xterm]:h-full [&_.xterm-screen]:h-full [&_textarea]:pointer-events-auto"
-        onMouseDown={() => termRef.current?.focus()}
+        onMouseDown={() => {
+          setArmed(true)
+          setFocused(true)
+          termRef.current?.focus()
+        }}
       />
+
+      {!armed && spec.kind === "host" && (
+        <div
+          className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-[#0c0c0c]/95 p-6 text-center"
+          onMouseDown={() => setArmed(true)}
+        >
+          <TerminalSquare className="size-8 text-muted-foreground opacity-40" />
+          <p className="text-sm text-muted-foreground">
+            Terminal em espera — clique para iniciar (economiza CPU/bateria).
+          </p>
+          <Button size="sm" variant="secondary" onClick={() => setArmed(true)}>
+            Iniciar terminal
+          </Button>
+        </div>
+      )}
 
       {spec.kind === "docker" && !projectPath && (
         <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-[#0c0c0c]/95 p-6 text-center text-sm text-muted-foreground">
@@ -517,6 +564,7 @@ export function TerminalPanel({
           visible={visible}
           active={tab.tabId === activeId}
           spec={tab.spec}
+          autoStart={tab.spec.kind === "docker"}
         />
       ))}
     </div>

@@ -170,6 +170,25 @@ func (s *AppService) RefreshProjectStatuses() []desktop.ProjectStatus {
 	return hub.RefreshNow()
 }
 
+// SetBackgroundMode pauses StatusHub + repo watcher while the window is hidden
+// (or the document is not visible) to cut idle CPU/battery use.
+func (s *AppService) SetBackgroundMode(paused bool) {
+	s.mu.Lock()
+	hub := s.hub
+	watch := s.repoWatch
+	s.mu.Unlock()
+	if hub != nil {
+		wasPaused := hub.Paused()
+		hub.SetPaused(paused)
+		if wasPaused && !paused {
+			_ = hub.RefreshNow()
+		}
+	}
+	if watch != nil {
+		watch.SetPaused(paused)
+	}
+}
+
 // SetValidateCommit updates the validate_commit preference.
 func (s *AppService) SetValidateCommit(enabled bool) error {
 	prefs, err := desktop.LoadPrefs()

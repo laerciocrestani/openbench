@@ -4,7 +4,6 @@ import (
 	"os/exec"
 	"path/filepath"
 
-	"github.com/laerciocrestani/openbench/internal/config"
 	dockerpkg "github.com/laerciocrestani/openbench/internal/docker"
 	gitpkg "github.com/laerciocrestani/openbench/internal/git"
 	prpkg "github.com/laerciocrestani/openbench/internal/pr"
@@ -57,34 +56,29 @@ func LoadProjectStatus(projectPath string, includePR bool) ProjectStatus {
 		return st
 	}
 
-	base := "main"
-	if cfg, cfgErr := config.Load(); cfgErr == nil && cfg.BaseBranch != "" {
-		base = cfg.BaseBranch
-	}
-
-	overview, err := repo.Overview(base)
+	// Hub hot path: porcelain only (no base/rev-list/numstat/branches/stash).
+	// Empty baseBranch skips ResolveBase / rev-list / BaseBehindOrigin inside LoadStatus.
+	snap, err := repo.LoadStatus("", true)
 	if err != nil {
 		st.Error = err.Error()
 		return st
 	}
-	st.RepoName = filepath.Base(overview.Root)
-	if overview.Root != "" {
-		st.Path = overview.Root
+	st.RepoName = filepath.Base(snap.Root)
+	if snap.Root != "" {
+		st.Path = snap.Root
 	}
-	st.Branch = overview.Branch
-	if overview.Detached {
+	st.Branch = snap.Branch
+	if snap.Detached {
 		st.Branch = "detached HEAD"
 	}
-	st.Dirty = overview.IsDirty()
-	st.StatusLabel = statusLabel(overview.IsDirty(), overview.Staged, overview.Modified, overview.Untracked)
-	st.ChangedFiles = len(overview.FileChanges)
-	for _, c := range overview.FileChanges {
-		st.Insertions += c.Insertions
-		st.Deletions += c.Deletions
-	}
+	dirty := snap.Staged > 0 || snap.Modified > 0 || snap.Untracked > 0
+	st.Dirty = dirty
+	st.StatusLabel = statusLabel(dirty, snap.Staged, snap.Modified, snap.Untracked)
+	st.ChangedFiles = len(snap.FileChanges)
+	// Insertions/deletions intentionally omitted (numstat is too expensive for polling).
 
-	// Avoid docker info / compose ps on the hub hot path (can stall for seconds).
-	if dockerpkg.HasDocker() && dockerpkg.FindComposeFile(abs) != "" {
+	// Root compose detect only — FindComposeFile walks parents and is too heavy here.
+	if dockerpkg.HasDocker() && dockerpkg.DetectComposeFile(abs) != "" {
 		st.DockerVisible = true
 		st.DockerSummary = "…"
 	}

@@ -41,6 +41,8 @@ func (s *AppService) stopRepoWatchLocked() {
 
 // emitDashboardRefresh reloads the dashboard for path and pushes it to the UI.
 // Does not restart the repo watcher (path must still be the active project).
+// Avoids hub.RefreshNow() — that used to re-scan every pinned project on each
+// file save and was a major CPU amplifier alongside the watcher.
 func (s *AppService) emitDashboardRefresh(path string) {
 	path = strings.TrimSpace(path)
 	if path == "" {
@@ -63,8 +65,12 @@ func (s *AppService) emitDashboardRefresh(path string) {
 		// Must emit value type: RegisterEvent[desktop.Dashboard] rejects *Dashboard.
 		appRef.Event.Emit("project:dashboard", *dash)
 	}
-	if hub != nil {
-		_ = hub.RefreshNow()
+	// Light status for the active project only (tabs / tray), not a full hub poll.
+	if hub != nil && appRef != nil {
+		st := desktop.LoadProjectStatus(path, false)
+		st.Active = true
+		hub.CacheStatus(st)
+		appRef.Event.Emit("project:status", st)
 	}
 	s.refreshTray()
 }

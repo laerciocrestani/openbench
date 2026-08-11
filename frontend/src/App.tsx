@@ -1288,6 +1288,22 @@ function App() {
     }
   }
 
+  const applyProjectStatus = useCallback((st: ProjectStatus) => {
+    if (!st?.path) return
+    setStatuses((prev) => {
+      const norm = (p: string) => p.replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase()
+      const key = norm(st.path)
+      let found = false
+      const next = prev.map((s) => {
+        if (norm(s.path) !== key) return s
+        found = true
+        return { ...s, ...st, path: s.path }
+      })
+      if (!found) return [...prev, st]
+      return next
+    })
+  }, [])
+
   const reloadPrefs = async () => {
     try {
       const p = await AppService.GetPrefs()
@@ -1710,10 +1726,14 @@ function App() {
     void openDoctor()
   }
 
-  // Keep Doctor badge fresh when the workspace changes (not only when the dialog opens).
+  // Doctor badge: only refresh while the dialog is open (was re-running on every
+  // working-tree flicker from the repo watcher and burned CPU/`gh` calls).
   useEffect(() => {
     if (!dash?.path) {
       setDoctorReport(null)
+      return
+    }
+    if (!doctorOpen) {
       return
     }
     let cancelled = false
@@ -1732,6 +1752,7 @@ function App() {
       window.clearTimeout(timer)
     }
   }, [
+    doctorOpen,
     dash?.path,
     dash?.branch,
     dash?.headHash,
@@ -3243,7 +3264,13 @@ function App() {
       }
     })
 
-    const offStatus = Events.On("project:status", () => {
+    const offStatus = Events.On("project:status", (ev) => {
+      const st = wailsEventData<ProjectStatus>(ev)
+      if (st && typeof st === "object" && st.path) {
+        applyProjectStatus(st)
+        return
+      }
+      // Fallback if payload shape is unexpected.
       void actionsRef.current.refreshStatuses()
     })
 
@@ -3253,7 +3280,7 @@ function App() {
         applyDashboard(d)
         // Working-tree edits don't change headHash — refresh +/- and invalidate stale fetches.
         refreshChangedFilesNow()
-        void actionsRef.current.refreshStatuses()
+        // Status for active project is emitted separately; avoid N× ListProjectStatuses.
       }
     })
 
@@ -3286,7 +3313,23 @@ function App() {
       offUpdatePrompt()
       offCIWatch()
     }
-  }, [applyDashboard, refreshChangedFilesNow])
+  }, [applyDashboard, applyProjectStatus, refreshChangedFilesNow])
+
+  // Pause StatusHub + repo watcher while the window/tab is not visible.
+  useEffect(() => {
+    const sync = () => {
+      const hidden = document.visibilityState === "hidden"
+      void AppService.SetBackgroundMode(hidden).catch(() => {
+        /* bindings may lag in hot reload */
+      })
+    }
+    sync()
+    document.addEventListener("visibilitychange", sync)
+    return () => {
+      document.removeEventListener("visibilitychange", sync)
+      void AppService.SetBackgroundMode(false).catch(() => {})
+    }
+  }, [])
 
   /* ----------------------------- render ----------------------------- */
 
